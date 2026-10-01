@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { PorterLoadError } from "@/components/porter/porter-load-error";
 import { PorterWorkspace } from "@/components/porter/porter-workspace";
 import { getUserAppContext } from "@/lib/auth/context";
 import { createClient } from "@/lib/supabase/server";
@@ -24,8 +25,16 @@ export default async function PorterPage({
   if (!tenantData) notFound();
 
   const loaded = await loadPorterWorkbenchAction(tenantId);
-  if (!loaded.ok || !loaded.data) {
-    notFound();
+  if (!loaded.ok) {
+    return <PorterLoadError tenantId={tenantId} message={loaded.error} />;
+  }
+  if (!loaded.data) {
+    return (
+      <PorterLoadError
+        tenantId={tenantId}
+        message="Workbench gaf geen data terug."
+      />
+    );
   }
 
   const tenantName = (tenantData as Pick<TenantRow, "name">).name;
