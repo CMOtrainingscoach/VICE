@@ -23,7 +23,9 @@ type ResearchJobRow = {
     phase?: string;
     message?: string;
     dimensions_done?: string[];
+    current_dimension?: string;
   };
+  error_message?: string | null;
   insights_created: number;
 };
 
@@ -107,11 +109,16 @@ async function loadContext(
   );
 }
 
-export async function runPestelResearchStep(jobId: string): Promise<{
+export type PestelResearchStepResult = {
   status: string;
   message: string;
   done: boolean;
-}> {
+  dimensionsDone: string[];
+  currentDimension: PestelDimension | null;
+  phase: string;
+};
+
+export async function runPestelResearchStep(jobId: string): Promise<PestelResearchStepResult> {
   const supabase = await createClient();
 
   const { data: jobData, error: jobError } = await supabase
@@ -124,10 +131,25 @@ export async function runPestelResearchStep(jobId: string): Promise<{
 
   const job = jobData as ResearchJobRow;
   if (job.status === "completed" || job.status === "cancelled") {
-    return { status: job.status, message: "Afgerond", done: true };
+    const finished = job.progress?.dimensions_done ?? [];
+    return {
+      status: job.status,
+      message: "Afgerond",
+      done: true,
+      dimensionsDone: finished,
+      currentDimension: null,
+      phase: "done",
+    };
   }
   if (job.status === "failed") {
-    return { status: job.status, message: "Mislukt", done: true };
+    return {
+      status: job.status,
+      message: job.error_message ?? job.progress?.message ?? "Mislukt",
+      done: true,
+      dimensionsDone: job.progress?.dimensions_done ?? [],
+      currentDimension: (job.progress?.current_dimension as PestelDimension) ?? null,
+      phase: "error",
+    };
   }
 
   const { data: scopeJson, error: scopeError } = await supabase
@@ -182,7 +204,14 @@ export async function runPestelResearchStep(jobId: string): Promise<{
       p_error_message: null,
       p_insights_created_delta: 0,
     });
-    return { status: "completed", message: "Onderzoek afgerond", done: true };
+    return {
+      status: "completed",
+      message: "Onderzoek afgerond",
+      done: true,
+      dimensionsDone: done,
+      currentDimension: null,
+      phase: "done",
+    };
   }
 
   await supabase.schema("app").rpc("update_pestel_research_progress", {
@@ -282,6 +311,9 @@ export async function runPestelResearchStep(jobId: string): Promise<{
       status: hasMore ? "running" : "completed",
       message: hasMore ? `Perspectief ${dimension} opgeslagen` : "Onderzoek afgerond",
       done: !hasMore,
+      dimensionsDone: done,
+      currentDimension: hasMore ? nextDimension(done) : null,
+      phase: hasMore ? "research" : "done",
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Onderzoek mislukt";
@@ -297,6 +329,13 @@ export async function runPestelResearchStep(jobId: string): Promise<{
       p_error_message: msg,
       p_insights_created_delta: 0,
     });
-    return { status: "failed", message: msg, done: true };
+    return {
+      status: "failed",
+      message: msg,
+      done: true,
+      dimensionsDone: done,
+      currentDimension: dimension,
+      phase: "error",
+    };
   }
 }

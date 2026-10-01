@@ -113,7 +113,16 @@ export async function cancelPestelResearchAction(
 export async function runPestelResearchStepAction(
   tenantId: string,
   jobId: string,
-): Promise<ActionResult<{ done: boolean; message: string; status: string }>> {
+): Promise<
+  ActionResult<{
+    done: boolean;
+    message: string;
+    status: string;
+    dimensionsDone: string[];
+    currentDimension: string | null;
+    phase: string;
+  }>
+> {
   const session = await requireSession();
   await requirePlatformAdminMfa(session);
   void tenantId;

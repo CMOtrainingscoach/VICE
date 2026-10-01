@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { loadPestelWorkbenchAction } from "@/modules/pestel/actions";
 import type { TenantRow } from "@/lib/types/tenant";
 
+/** Tavily + OpenAI per perspectief kan meerdere minuten duren (Vercel). */
+export const maxDuration = 300;
+
 export default async function PestelPage({
   params,
 }: PageProps<"/klanten/[tenantId]/strategie/pestel">) {
@@ -30,9 +33,18 @@ export default async function PestelPage({
 
   const tenantName = (tenantData as Pick<TenantRow, "name">).name;
 
+  const job = loaded.data.activeResearchJob;
+  const workspaceKey = [
+    loaded.data.version.id,
+    loaded.data.insights.length,
+    loaded.data.version.updated_at,
+    job?.id ?? "no-job",
+    job?.status ?? "",
+  ].join(":");
+
   return (
     <PestelWorkspace
-      key={loaded.data.version.updated_at}
+      key={workspaceKey}
       tenantId={tenantId}
       tenantName={tenantName}
       initialVersion={loaded.data.version}

@@ -1,6 +1,17 @@
 "use client";
 
-import { FileText, Globe, Link2, Plus, Sparkles, StickyNote, Video, X } from "lucide-react";
+import {
+  CheckCircle2,
+  FileText,
+  Globe,
+  Link2,
+  Loader2,
+  Plus,
+  Sparkles,
+  StickyNote,
+  Video,
+  X,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -175,6 +186,9 @@ export function PestelWorkspace({
   const [researchDimensionsDone, setResearchDimensionsDone] = useState<string[]>(
     initialActiveJob?.progress?.dimensions_done ?? [],
   );
+  const [researchCurrentDimension, setResearchCurrentDimension] = useState<
+    PestelDimension | null
+  >((initialActiveJob?.progress?.current_dimension as PestelDimension) ?? null);
 
   const researchActive =
     Boolean(researchJobId) ||
@@ -182,24 +196,60 @@ export function PestelWorkspace({
     initialActiveJob?.status === "running" ||
     initialActiveJob?.status === "queued";
 
+  const researchUiActive =
+    researchActive || busy === "research-start" || busy === "research-step";
+
+  const researchProgressPct = Math.round(
+    (researchDimensionsDone.length / PESTEL_DIMENSIONS.length) * 100,
+  );
+
+  useEffect(() => {
+    setInsights(initialInsights);
+    setVersion(initialVersion);
+    setResearchInputs(initialResearchInputs);
+  }, [initialInsights, initialVersion, initialResearchInputs]);
+
   useEffect(() => {
     if (!researchJobId || researchLoopRef.current) return;
 
     researchLoopRef.current = true;
     let cancelled = false;
+    const jobId = researchJobId;
 
     void (async () => {
       while (!cancelled) {
-        const step = await runPestelResearchStepAction(tenantId, researchJobId);
+        setBusy("research-step");
+        setVersion((v) => ({ ...v, status: "research_running" }));
+        const step = await runPestelResearchStepAction(tenantId, jobId);
+        setBusy(null);
         if (!step.ok || !step.data) {
           setError(step.ok ? "Onbekende fout" : step.error);
           setResearchJobId(null);
+          router.refresh();
           break;
         }
+
         setResearchMessage(step.data.message);
-        if (step.data.done) {
+        setResearchDimensionsDone(step.data.dimensionsDone);
+        setResearchCurrentDimension(
+          (step.data.currentDimension as PestelDimension | null) ?? null,
+        );
+
+        if (step.data.status === "failed") {
+          setError(step.data.message);
           setResearchJobId(null);
           router.refresh();
+          break;
+        }
+
+        router.refresh();
+
+        if (step.data.done) {
+          setResearchJobId(null);
+          setResearchCurrentDimension(null);
+          if (step.data.status === "completed") {
+            setSaveState("AI-onderzoek afgerond — bekijk de inzichten per kaart.");
+          }
           break;
         }
       }
@@ -220,16 +270,23 @@ export function PestelWorkspace({
 
   async function startAiResearch() {
     setError(null);
+    setSaveState(null);
     setBusy("research-start");
-    await saveScope();
+    const scopeOk = await saveScope({ silent: true });
+    if (!scopeOk) {
+      setBusy(null);
+      return;
+    }
     const result = await startPestelResearchAction(tenantId, version.id);
     setBusy(null);
     if (!result.ok || !result.data) {
       setError(result.ok ? "Start mislukt" : result.error);
       return;
     }
+    setResearchDimensionsDone([]);
+    setResearchCurrentDimension("political");
     setResearchJobId(result.data.jobId);
-    setResearchMessage("Onderzoek gestart…");
+    setResearchMessage("Onderzoek gestart — live web + AI per perspectief (kan enkele minuten duren)…");
     researchLoopRef.current = false;
   }
 
@@ -389,7 +446,7 @@ export function PestelWorkspace({
     setPanelOpen(true);
   }
 
-  async function saveScope() {
+  async function saveScope(options?: { silent?: boolean }): Promise<boolean> {
     setBusy("scope");
     setError(null);
     const result = await savePestelScopeAction(tenantId, {
@@ -414,13 +471,16 @@ export function PestelWorkspace({
     setBusy(null);
     if (!result.ok) {
       setError(result.error);
-      return;
+      return false;
     }
-    setSaveState("Afbakening opgeslagen");
+    if (!options?.silent) {
+      setSaveState("Afbakening opgeslagen");
+    }
     setVersion((v) => ({
       ...v,
       status: v.status === "not_started" ? "draft" : v.status,
     }));
+    return true;
   }
 
   async function saveInsight(markReviewed: boolean) {
@@ -528,6 +588,82 @@ export function PestelWorkspace({
           )}
         </p>
       </header>
+
+      {error && (
+        <div
+          className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-900 dark:text-red-100"
+          role="alert"
+        >
+          <p className="font-medium">Onderzoek gestopt</p>
+          <p className="mt-1">{error}</p>
+          <p className="mt-2 text-xs opacity-90">
+            Controleer TAVILY_API_KEY / OPENAI_API_KEY, migratie 307 op Supabase, en probeer opnieuw.
+            Gedeeltelijke inzichten blijven staan als die al waren opgeslagen.
+          </p>
+        </div>
+      )}
+
+      {researchUiActive && (
+        <div
+          className="mb-6 rounded-2xl border-2 border-vice-gold/50 bg-vice-gold/10 px-5 py-4 shadow-sm"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <Loader2 className="size-5 shrink-0 animate-spin text-vice-gold" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-vice-text">AI-onderzoek bezig</p>
+              <p className="mt-0.5 text-sm text-vice-text-muted">
+                {researchMessage || "Even geduld — dit kan 1–3 minuten per perspectief duren…"}
+              </p>
+            </div>
+            <span className="text-sm font-medium tabular-nums text-vice-text">
+              {researchDimensionsDone.length}/{PESTEL_DIMENSIONS.length} perspectieven
+            </span>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-vice-border/80">
+            <div
+              className="h-full rounded-full bg-vice-gold transition-all duration-500"
+              style={{ width: `${Math.max(researchProgressPct, researchUiActive ? 8 : 0)}%` }}
+            />
+          </div>
+          <ul className="mt-3 flex flex-wrap gap-2 text-xs">
+            {PESTEL_DIMENSIONS.map((dim) => {
+              const done = researchDimensionsDone.includes(dim);
+              const active = researchCurrentDimension === dim && researchUiActive;
+              return (
+                <li
+                  key={dim}
+                  className={cn(
+                    "rounded-full px-2.5 py-1",
+                    done && "bg-green-500/15 text-green-900 dark:text-green-100",
+                    active && !done && "bg-vice-gold/25 font-medium text-vice-text",
+                    !done && !active && "bg-vice-surface-muted text-vice-text-muted",
+                  )}
+                >
+                  {done && <CheckCircle2 className="mr-1 inline size-3" aria-hidden />}
+                  {active && !done && (
+                    <Loader2 className="mr-1 inline size-3 animate-spin" aria-hidden />
+                  )}
+                  {PESTEL_DIMENSION_META[dim].label}
+                </li>
+              );
+            })}
+          </ul>
+          {researchActive && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="mt-3 h-8 text-xs"
+              disabled={busy !== null}
+              onClick={cancelResearch}
+            >
+              Onderzoek annuleren
+            </Button>
+          )}
+        </div>
+      )}
 
       <section className="mb-8 rounded-2xl border border-vice-border bg-vice-surface p-6">
         <h2 className="text-lg font-medium text-vice-text">Onderzoek afbakenen</h2>
@@ -801,49 +937,27 @@ export function PestelWorkspace({
           )}
         </div>
 
-        {researchActive && (
-          <div
-            className="mt-4 rounded-xl border border-vice-gold/40 bg-vice-surface-muted/60 px-4 py-3 text-sm"
-            role="status"
-          >
-            <p className="font-medium text-vice-text">AI-onderzoek bezig</p>
-            <p className="mt-1 text-vice-text-muted">{researchMessage || "Even geduld…"}</p>
-            <p className="mt-2 text-xs text-vice-text-muted">
-              Stappen: live webonderzoek → per PESTEL-perspectief (alleen geverifieerde URLs) →
-              concept opslaan. Vereist{" "}
-              <code className="text-[11px]">TAVILY_API_KEY</code> (aanbevolen) of Serper/OpenAI
-              web search. Model:{" "}
-              <code className="text-[11px]">VICE_PESTEL_RESEARCH_MODEL</code>.
-            </p>
-            {researchDimensionsDone.length > 0 && (
-              <p className="mt-1 text-xs text-vice-text-muted">
-                Verwerkt: {researchDimensionsDone.join(", ")}
-              </p>
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              className="mt-2 h-8 text-xs"
-              disabled={busy !== null}
-              onClick={cancelResearch}
-            >
-              Annuleren
-            </Button>
-          </div>
-        )}
-
         <div className="mt-6 flex flex-wrap gap-3">
-          <Button type="button" variant="secondary" disabled={busy !== null || researchActive} onClick={saveScope}>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy !== null || researchUiActive}
+            onClick={() => void saveScope()}
+          >
             Afbakening opslaan
           </Button>
           <Button
             type="button"
             className="bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover"
-            disabled={busy !== null || researchActive}
+            disabled={busy !== null || researchUiActive}
             onClick={startAiResearch}
           >
-            <Sparkles className="size-4" aria-hidden />
-            Onderzoek de markt met AI
+            {researchUiActive ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <Sparkles className="size-4" aria-hidden />
+            )}
+            {researchUiActive ? "Onderzoek bezig…" : "Onderzoek de markt met AI"}
           </Button>
           <Button type="button" variant="ghost" onClick={() => openNew("political")}>
             <Plus className="size-4" aria-hidden />
@@ -892,7 +1006,13 @@ export function PestelWorkspace({
                   </div>
                   {list.length === 0 ? (
                     <p className="mt-4 text-sm text-vice-text-muted">
-                      Nog geen inzichten. Voeg handmatig toe of start later AI-onderzoek.
+                      {researchUiActive ?
+                        researchDimensionsDone.includes(dim) ?
+                          "Geen inzichten opgeslagen voor dit perspectief."
+                        : researchCurrentDimension === dim ?
+                          "Live web + AI vullen dit perspectief aan…"
+                        : "In wachtrij — volgt na vorige perspectieven."
+                      : "Nog geen inzichten. Start AI-onderzoek of voeg handmatig toe."}
                     </p>
                   ) : (
                     <ul className="mt-3 space-y-2">
@@ -984,12 +1104,6 @@ export function PestelWorkspace({
           {saveState}
         </p>
       )}
-      {error && (
-        <p className="mt-4 text-sm text-vice-danger" role="alert">
-          {error}
-        </p>
-      )}
-
       {panelOpen && (
         <div
           className="fixed inset-0 z-50 flex justify-end bg-black/40"
