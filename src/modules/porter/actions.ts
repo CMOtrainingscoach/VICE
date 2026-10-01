@@ -31,6 +31,7 @@ function revalidatePorter(tenantId: string) {
 export type AuditFrameworkProgress = {
   pestelApproved: boolean;
   porterApproved: boolean;
+  fiveCApproved: boolean;
 };
 
 export async function getAuditFrameworkProgressAction(
@@ -51,6 +52,7 @@ export async function getAuditFrameworkProgressAction(
   const raw = data as {
     pestel_approved?: boolean;
     porter_approved?: boolean;
+    five_c_approved?: boolean;
   };
 
   return {
@@ -58,6 +60,7 @@ export async function getAuditFrameworkProgressAction(
     data: {
       pestelApproved: Boolean(raw?.pestel_approved),
       porterApproved: Boolean(raw?.porter_approved),
+      fiveCApproved: Boolean(raw?.five_c_approved),
     },
   };
 }

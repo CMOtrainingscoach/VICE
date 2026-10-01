@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { MARKETING_5C_ROUTE } from "@/lib/marketing-5c/constants";
+import { MARKETING_5C_ROUTE, SWOT_ROUTE } from "@/lib/marketing-5c/constants";
 import { getUserAppContext } from "@/lib/auth/context";
 import { getAuditFrameworkProgressAction } from "@/modules/porter/actions";
 
@@ -12,6 +12,9 @@ export default async function StrategieHubPage({
 
   if (ctx.isPlatformAdmin) {
     const progress = await getAuditFrameworkProgressAction(tenantId);
+    if (progress.ok && progress.data?.fiveCApproved) {
+      redirect(`/klanten/${tenantId}/strategie/${SWOT_ROUTE}`);
+    }
     if (progress.ok && progress.data?.porterApproved) {
       redirect(`/klanten/${tenantId}/strategie/${MARKETING_5C_ROUTE}`);
     }

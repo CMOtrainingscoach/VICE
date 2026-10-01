@@ -1,15 +1,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { FiveCWorkspace } from "@/components/marketing-5c/five-c-workspace";
 import { getUserAppContext } from "@/lib/auth/context";
-import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
-import {
-  MARKETING_5C_FRAMEWORK_INDEX,
-  MARKETING_5C_LABEL,
-} from "@/lib/marketing-5c/constants";
-import { PORTER_FRAMEWORK_INDEX } from "@/lib/porter/constants";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
+import { loadFiveCWorkbenchAction } from "@/modules/marketing-5c/actions";
+
+/** Eén AI-call over alle bronnen kan langer duren dan de standaardlimiet. */
+export const maxDuration = 300;
 
 export default async function Marketing5CPage({
   params,
@@ -31,38 +29,35 @@ export default async function Marketing5CPage({
 
   if (!tenantData) notFound();
 
+  const loaded = await loadFiveCWorkbenchAction(tenantId);
+  if (!loaded.ok || !loaded.data) {
+    const message = !loaded.ok ? loaded.error : "Workbench gaf geen data terug.";
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-10 md:px-10">
+        <p className="text-sm text-vice-text-muted">
+          <Link href={`/klanten/${tenantId}/strategie/porter`} className="hover:text-vice-gold">
+            ← Porter
+          </Link>
+        </p>
+        <h1 className="mt-2 text-xl font-semibold">5C-analyse kon niet laden</h1>
+        <p className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+          {message}
+        </p>
+        <p className="mt-3 text-xs text-vice-text-muted">
+          Controleer of migratie 20260330132000_five_c_analysis.sql op Supabase is toegepast.
+        </p>
+      </div>
+    );
+  }
+
   const tenantName = (tenantData as Pick<TenantRow, "name">).name;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10 md:px-10">
-      <p className="text-sm text-vice-text-muted">
-        <Link href={`/klanten/${tenantId}/strategie/porter`} className="hover:text-vice-gold">
-          ← Porter
-        </Link>
-        {" · "}
-        Klanten / {tenantName} / Strategie
-      </p>
-      <p className="mt-1 text-xs font-medium uppercase tracking-wide text-vice-gold">
-        Stap {MARKETING_5C_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · {MARKETING_5C_LABEL}
-      </p>
-      <h1 className="mt-2 text-2xl font-semibold text-vice-text md:text-3xl">
-        Marketingmix en merkpositionering
-      </h1>
-      <p className="mt-4 text-sm text-vice-text-muted">
-        Porter is afgerond. De volledige 5C-workbench (Company, Collaborators, Customers,
-        Competitors, Context) bouwen we in de volgende sprint. Je kunt alvast terug naar Porter of
-        PESTEL.
-      </p>
-      <div className="mt-8 flex flex-wrap gap-3">
-        <Button type="button" asChild variant="secondary">
-          <Link href={`/klanten/${tenantId}/strategie/porter`}>
-            Terug naar stap {PORTER_FRAMEWORK_INDEX} (Porter)
-          </Link>
-        </Button>
-        <Button type="button" asChild variant="secondary">
-          <Link href={`/klanten/${tenantId}/strategie/pestel`}>PESTEL bekijken</Link>
-        </Button>
-      </div>
-    </div>
+    <FiveCWorkspace
+      key={loaded.data.version.id}
+      tenantId={tenantId}
+      tenantName={tenantName}
+      initial={loaded.data}
+    />
   );
 }
