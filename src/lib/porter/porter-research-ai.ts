@@ -100,14 +100,77 @@ function resolvePestelInsightId(
   return undefined;
 }
 
-function pickExcerptFromSnippet(excerpt: string, snippet: string): string {
+function ensureMinText(text: string, fallback: string, min = 20): string {
+  const primary = (text.trim() || fallback.trim()).slice(0, 4000);
+  if (primary.length >= min) return primary;
+  const padded = `${primary} — onderbouwing uit markt- en concurrentieanalyse.`.trim();
+  if (padded.length >= min) return padded.slice(0, 4000);
+  return `${padded} ${fallback}`.replace(/\s+/g, " ").trim().slice(0, 4000).padEnd(min, ".");
+}
+
+function pickExcerptFromSnippet(excerpt: string, snippet: string, fallbackLabel = ""): string {
   const e = excerpt.trim();
-  if (e.length < 20) return snippet.slice(0, 400).trim();
-  const norm = (t: string) => t.toLowerCase().replace(/\s+/g, " ");
-  if (snippet.length > 0 && !norm(snippet).includes(norm(e).slice(0, Math.min(40, e.length)))) {
-    return snippet.slice(0, 400).trim();
+  let chosen = e;
+  if (e.length < 20) {
+    chosen = snippet.slice(0, 400).trim();
+  } else {
+    const norm = (t: string) => t.toLowerCase().replace(/\s+/g, " ");
+    if (snippet.length > 0 && !norm(snippet).includes(norm(e).slice(0, Math.min(40, e.length)))) {
+      chosen = snippet.slice(0, 400).trim();
+    }
   }
-  return e.slice(0, 4000);
+  return ensureMinText(chosen, fallbackLabel || e || snippet || "Bron");
+}
+
+function preNormalizeAiForceJson(obj: Record<string, unknown>): Record<string, unknown> {
+  const factors = Array.isArray(obj.factors) ? obj.factors : [];
+  return {
+    ...obj,
+    motivation: ensureMinText(String(obj.motivation ?? ""), String(obj.headline_factor ?? ""), 40),
+    client_relevance: ensureMinText(
+      String(obj.client_relevance ?? ""),
+      String(obj.motivation ?? ""),
+      20,
+    ),
+    headline_factor: ensureMinText(String(obj.headline_factor ?? obj.headline ?? ""), "Factor", 5),
+    factors: factors.map((rawFactor) => {
+      if (!rawFactor || typeof rawFactor !== "object") return rawFactor;
+      const f = rawFactor as Record<string, unknown>;
+      const title = String(f.title ?? "Factor");
+      const observation = ensureMinText(String(f.observation ?? ""), title, 30);
+      const sources = Array.isArray(f.sources) ? f.sources : [];
+      const normalizedSources =
+        sources.length > 0 ?
+          sources.map((rawSource) => {
+            if (!rawSource || typeof rawSource !== "object") return rawSource;
+            const s = rawSource as Record<string, unknown>;
+            const label = String(s.label ?? title);
+            return {
+              ...s,
+              label: ensureMinText(label, title, 1),
+              excerpt: ensureMinText(
+                String(s.excerpt ?? ""),
+                `${label}. ${observation}`.slice(0, 300),
+                20,
+              ),
+            };
+          })
+        : [
+            {
+              source_type: "manual",
+              label: ensureMinText(title, "Factor", 1),
+              excerpt: ensureMinText(observation, title, 20),
+            },
+          ];
+      return {
+        ...f,
+        title: ensureMinText(title, "Factor", 3),
+        observation,
+        effect_note: String(f.effect_note ?? ""),
+        sources: normalizedSources,
+      };
+    }),
+  };
 }
 
 function normalizePayload(
@@ -118,14 +181,10 @@ function normalizePayload(
 ): PorterAiForceAnalysis {
   const allowedPestelIds = new Set(pestelInsights.map((i) => i.id));
   const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const pre = {
+  const pre = preNormalizeAiForceJson({
     ...obj,
     intensity: normalizeIntensity(obj.intensity),
-    headline_factor: String(obj.headline_factor ?? obj.headline ?? "").trim() || "Factor",
-    motivation: String(obj.motivation ?? "").trim(),
-    client_relevance: String(obj.client_relevance ?? "").trim(),
-    factors: Array.isArray(obj.factors) ? obj.factors : [],
-  };
+  });
 
   const parsed = forceResponseSchema.safeParse(pre);
   if (!parsed.success) {
@@ -157,7 +216,7 @@ function normalizePayload(
           {
             source_type: "manual" as const,
             label: s.label || "PESTEL (niet gekoppeld)",
-            excerpt: s.excerpt,
+            excerpt: ensureMinText(s.excerpt, f.observation, 20),
             pestel_insight_id: undefined,
             url: undefined,
             publisher: undefined,
@@ -171,7 +230,11 @@ function normalizePayload(
             {
               ...s,
               url,
-              excerpt: pickExcerptFromSnippet(s.excerpt, urlSnippets.get(url) ?? ""),
+              excerpt: pickExcerptFromSnippet(
+                s.excerpt,
+                urlSnippets.get(url) ?? "",
+                s.label || f.title,
+              ),
             },
           ];
         }
@@ -179,7 +242,7 @@ function normalizePayload(
           {
             source_type: "manual" as const,
             label: s.label || s.url || "Webbron",
-            excerpt: s.excerpt,
+            excerpt: ensureMinText(s.excerpt, f.observation, 20),
             pestel_insight_id: undefined,
             url: undefined,
             publisher: s.publisher,
@@ -196,7 +259,7 @@ function normalizePayload(
           {
             source_type: "manual" as const,
             label: f.title,
-            excerpt: f.observation.slice(0, 400),
+            excerpt: ensureMinText(f.observation.slice(0, 400), f.title, 20),
             pestel_insight_id: undefined,
             url: undefined,
             publisher: undefined,
