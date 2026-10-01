@@ -1,139 +1,4 @@
--- Strategische audit · Porter Five Forces (stap 2 — handmatige slice)
-
-create type app.porter_version_status as enum (
-  'not_started',
-  'research_running',
-  'draft',
-  'in_review',
-  'approved',
-  'needs_revision'
-);
-
-create type app.porter_force_key as enum (
-  'rivalry',
-  'new_entrants',
-  'suppliers',
-  'buyers',
-  'substitutes'
-);
-
-create type app.porter_intensity as enum ('low', 'medium', 'high', 'unknown');
-
-create type app.porter_force_review as enum ('pending', 'reviewed');
-
-create type app.porter_factor_effect as enum ('increases_pressure', 'decreases_pressure', 'unclear');
-
-create type app.porter_factor_origin as enum ('manual', 'ai');
-
-create type app.porter_evidence_level as enum ('provided', 'observed', 'hypothesis');
-
-create type app.porter_source_type as enum (
-  'website',
-  'document',
-  'meeting',
-  'manual',
-  'pestel'
-);
-
-create table app.porter_versions (
-  id uuid primary key default gen_random_uuid(),
-  tenant_id uuid not null references app.tenants (id) on delete cascade,
-  version_number integer not null,
-  status app.porter_version_status not null default 'not_started',
-  pestel_version_id uuid references app.pestel_versions (id) on delete set null,
-  market_sector text not null default '',
-  offering_description text not null default '',
-  geo_markets jsonb not null default '[]'::jsonb,
-  client_segment text not null default '',
-  time_horizon text not null default '',
-  research_question text not null default '',
-  known_competitors jsonb not null default '[]'::jsonb,
-  scope_updated_at timestamptz not null default now(),
-  results_stale boolean not null default false,
-  synthesis_text text not null default '',
-  synthesis_stale boolean not null default false,
-  synthesis_reviewed boolean not null default false,
-  created_by uuid references auth.users (id),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (tenant_id, version_number)
-);
-
-create index porter_versions_tenant_idx on app.porter_versions (tenant_id, updated_at desc);
-
-create table app.porter_forces (
-  id uuid primary key default gen_random_uuid(),
-  version_id uuid not null references app.porter_versions (id) on delete cascade,
-  tenant_id uuid not null references app.tenants (id) on delete cascade,
-  force_key app.porter_force_key not null,
-  intensity app.porter_intensity not null default 'unknown',
-  motivation text not null default '',
-  client_relevance text not null default '',
-  advisor_note text not null default '',
-  headline_factor text not null default '',
-  review_status app.porter_force_review not null default 'pending',
-  sort_order integer not null default 0,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (version_id, force_key)
-);
-
-create table app.porter_factors (
-  id uuid primary key default gen_random_uuid(),
-  force_id uuid not null references app.porter_forces (id) on delete cascade,
-  version_id uuid not null references app.porter_versions (id) on delete cascade,
-  tenant_id uuid not null references app.tenants (id) on delete cascade,
-  title text not null default '',
-  observation text not null default '',
-  effect app.porter_factor_effect not null default 'unclear',
-  effect_note text not null default '',
-  evidence_level app.porter_evidence_level not null default 'hypothesis',
-  origin app.porter_factor_origin not null default 'manual',
-  review_status app.porter_force_review not null default 'pending',
-  pestel_insight_id uuid references app.pestel_insights (id) on delete set null,
-  sort_order integer not null default 0,
-  deleted_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index porter_factors_force_idx on app.porter_factors (force_id)
-where deleted_at is null;
-
-create table app.porter_factor_sources (
-  id uuid primary key default gen_random_uuid(),
-  factor_id uuid not null references app.porter_factors (id) on delete cascade,
-  tenant_id uuid not null references app.tenants (id) on delete cascade,
-  source_type app.porter_source_type not null,
-  label text not null default '',
-  url text,
-  publisher text,
-  excerpt text not null default '',
-  meeting_recording_id uuid references app.meeting_recordings (id) on delete set null,
-  meeting_offset_ms integer,
-  pestel_insight_id uuid references app.pestel_insights (id) on delete set null,
-  sort_order integer not null default 0,
-  created_at timestamptz not null default now()
-);
-
--- ---------------------------------------------------------------------------
-create or replace function app._porter_seed_forces(p_version_id uuid, p_tenant_id uuid)
-returns void
-language plpgsql
-as $$
-declare
-  v_key app.porter_force_key;
-  v_ord integer := 0;
-begin
-  foreach v_key in array enum_range(null::app.porter_force_key)
-  loop
-    insert into app.porter_forces (version_id, tenant_id, force_key, sort_order)
-    values (p_version_id, p_tenant_id, v_key, v_ord)
-    on conflict (version_id, force_key) do nothing;
-    v_ord := v_ord + 1;
-  end loop;
-end;
-$$;
+-- Porter: cast status/review strings to enum types in RPCs
 
 create or replace function app.get_porter_workbench(p_tenant_id uuid)
 returns jsonb
@@ -157,14 +22,14 @@ begin
   select * into v_version
   from app.porter_versions
   where tenant_id = p_tenant_id
-    and status <> 'approved'
+    and status <> 'approved'::app.porter_version_status
   order by version_number desc
   limit 1;
 
   select * into v_pestel
   from app.pestel_versions
   where tenant_id = p_tenant_id
-    and status = 'approved'
+    and status = 'approved'::app.pestel_version_status
   order by version_number desc
   limit 1;
 
@@ -252,7 +117,7 @@ begin
     from app.pestel_insights i
     where i.version_id = v_pestel.id
       and i.deleted_at is null
-      and i.review_status = 'reviewed';
+      and i.review_status = 'reviewed'::app.pestel_insight_review;
   else
     v_pestel_insights := '[]'::jsonb;
   end if;
