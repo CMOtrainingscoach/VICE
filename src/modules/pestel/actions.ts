@@ -43,6 +43,7 @@ export async function loadPestelWorkbenchAction(
     meetings: PestelWorkbench["meetings"];
     research_inputs: PestelWorkbench["researchInputs"];
     active_research_job: PestelResearchJob | null;
+    last_research_error: string | null;
   };
 
   const geo =
@@ -58,6 +59,7 @@ export async function loadPestelWorkbenchAction(
       meetings: raw.meetings ?? [],
       researchInputs: raw.research_inputs ?? [],
       activeResearchJob: raw.active_research_job ?? null,
+      lastResearchError: raw.last_research_error ?? null,
     },
   };
 }

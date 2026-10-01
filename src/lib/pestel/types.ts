@@ -90,4 +90,5 @@ export type PestelWorkbench = {
   meetings: PestelMeetingOption[];
   researchInputs: PestelResearchInput[];
   activeResearchJob: PestelResearchJob | null;
+  lastResearchError: string | null;
 };

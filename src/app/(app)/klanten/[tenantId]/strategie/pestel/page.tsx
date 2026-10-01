@@ -33,18 +33,9 @@ export default async function PestelPage({
 
   const tenantName = (tenantData as Pick<TenantRow, "name">).name;
 
-  const job = loaded.data.activeResearchJob;
-  const workspaceKey = [
-    loaded.data.version.id,
-    loaded.data.insights.length,
-    loaded.data.version.updated_at,
-    job?.id ?? "no-job",
-    job?.status ?? "",
-  ].join(":");
-
   return (
     <PestelWorkspace
-      key={workspaceKey}
+      key={loaded.data.version.id}
       tenantId={tenantId}
       tenantName={tenantName}
       initialVersion={loaded.data.version}
@@ -52,6 +43,7 @@ export default async function PestelPage({
       initialMeetings={loaded.data.meetings}
       initialResearchInputs={loaded.data.researchInputs}
       initialActiveJob={loaded.data.activeResearchJob}
+      initialLastResearchError={loaded.data.lastResearchError}
     />
   );
 }

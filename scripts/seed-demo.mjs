@@ -79,7 +79,7 @@ async function main() {
   );
 
   console.log("Demo seed OK.");
-  console.log("Set NEXT_PUBLIC_VICE_DEMO=true in .env.local to show demo banner.");
+  console.log("Demo seed applied.");
   console.log(`Hardwig: hardwig.demo@vice.local / ${DEMO_PASSWORD}`);
   console.log(`Klant:   klant.demo@vice.local / ${DEMO_PASSWORD}`);
 }

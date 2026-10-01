@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { ThemeScript } from "@/components/theme/theme-script";
-import { DemoBanner } from "@/components/demo-banner";
 import "./globals.css";
 
 const inter = Inter({
@@ -29,7 +28,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full antialiased">
         <ThemeScript />
-        <DemoBanner />
         {children}
       </body>
     </html>

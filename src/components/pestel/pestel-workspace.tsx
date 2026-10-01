@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +37,7 @@ import { validateMarketScopeForResearch } from "@/lib/pestel/market-scope";
 import {
   cancelPestelResearchAction,
   deletePestelInsightAction,
+  loadPestelWorkbenchAction,
   runPestelResearchStepAction,
   savePestelInsightAction,
   savePestelScopeAction,
@@ -53,6 +54,7 @@ type PestelWorkspaceProps = {
   initialMeetings: PestelMeetingOption[];
   initialResearchInputs: PestelResearchInput[];
   initialActiveJob: PestelResearchJob | null;
+  initialLastResearchError: string | null;
 };
 
 const MEETING_REVIEW_LABELS: Record<string, string> = {
@@ -147,9 +149,11 @@ export function PestelWorkspace({
   initialMeetings,
   initialResearchInputs,
   initialActiveJob,
+  initialLastResearchError,
 }: PestelWorkspaceProps) {
   const router = useRouter();
   const researchLoopRef = useRef(false);
+  const errorBannerRef = useRef<HTMLDivElement>(null);
   const [version, setVersion] = useState(initialVersion);
   const [insights, setInsights] = useState(initialInsights);
   const [marketSector, setMarketSector] = useState(version.market_sector);
@@ -178,7 +182,7 @@ export function PestelWorkspace({
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState(() => emptyDraft("political"));
-  const [error, setError] = useState<string | null>(null);
+  const [error, setErrorState] = useState<string | null>(initialLastResearchError);
   const [busy, setBusy] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<string | null>(null);
   const [researchJobId, setResearchJobId] = useState<string | null>(
@@ -207,14 +211,31 @@ export function PestelWorkspace({
     (researchDimensionsDone.length / PESTEL_DIMENSIONS.length) * 100,
   );
 
+  const setError = useCallback((message: string | null) => {
+    setErrorState(message);
+    if (message) {
+      requestAnimationFrame(() => {
+        errorBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    }
+  }, []);
+
+  const reloadWorkbenchData = useCallback(async () => {
+    const loaded = await loadPestelWorkbenchAction(tenantId);
+    if (loaded.ok && loaded.data) {
+      setInsights(loaded.data.insights);
+      setVersion(loaded.data.version);
+      setResearchInputs(loaded.data.researchInputs);
+    }
+  }, [tenantId]);
+
   useEffect(() => {
     setInsights(initialInsights);
-    setVersion(initialVersion);
+  }, [initialInsights]);
+
+  useEffect(() => {
     setResearchInputs(initialResearchInputs);
-    setMarketSector(initialVersion.market_sector);
-    setServicesOfferings(initialVersion.services_offerings ?? "");
-    setOfferingAudience(initialVersion.offering_audience);
-  }, [initialInsights, initialVersion, initialResearchInputs]);
+  }, [initialResearchInputs]);
 
   useEffect(() => {
     if (!researchJobId || researchLoopRef.current) return;
@@ -232,7 +253,7 @@ export function PestelWorkspace({
         if (!step.ok || !step.data) {
           setError(step.ok ? "Onbekende fout" : step.error);
           setResearchJobId(null);
-          router.refresh();
+          void reloadWorkbenchData();
           break;
         }
 
@@ -245,17 +266,22 @@ export function PestelWorkspace({
         if (step.data.status === "failed") {
           setError(step.data.message);
           setResearchJobId(null);
-          router.refresh();
+          void reloadWorkbenchData();
           break;
         }
 
-        router.refresh();
+        await reloadWorkbenchData();
 
         if (step.data.done) {
           setResearchJobId(null);
           setResearchCurrentDimension(null);
+          setVersion((v) => ({
+            ...v,
+            status: step.data?.status === "completed" ? "draft" : v.status,
+          }));
           if (step.data.status === "completed") {
             setSaveState("AI-onderzoek afgerond — bekijk de inzichten per kaart.");
+            setError(null);
           }
           break;
         }
@@ -267,7 +293,15 @@ export function PestelWorkspace({
       cancelled = true;
       researchLoopRef.current = false;
     };
-  }, [researchJobId, tenantId, router]);
+  }, [researchJobId, tenantId, reloadWorkbenchData, setError]);
+
+  useEffect(() => {
+    if (initialActiveJob?.id && !researchJobId) {
+      setResearchJobId(initialActiveJob.id);
+      setResearchMessage(initialActiveJob.progress?.message ?? "Onderzoek hervat…");
+      researchLoopRef.current = false;
+    }
+  }, [initialActiveJob, researchJobId]);
 
   useEffect(() => {
     if (initialActiveJob?.progress?.dimensions_done) {
@@ -613,6 +647,7 @@ export function PestelWorkspace({
 
       {error && (
         <div
+          ref={errorBannerRef}
           className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-900 dark:text-red-100"
           role="alert"
         >
@@ -982,7 +1017,8 @@ export function PestelWorkspace({
           )}
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-3">
+        <div className="mt-6 flex flex-col gap-3">
+          <div className="flex flex-wrap gap-3">
           <Button
             type="button"
             variant="secondary"
@@ -1008,6 +1044,12 @@ export function PestelWorkspace({
             <Plus className="size-4" aria-hidden />
             Zelf een inzicht toevoegen
           </Button>
+          </div>
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-300" role="alert">
+              {error}
+            </p>
+          )}
         </div>
       </section>
 
