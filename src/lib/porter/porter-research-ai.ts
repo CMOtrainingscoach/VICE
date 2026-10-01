@@ -13,6 +13,7 @@ import {
 import { resolvePorterResearchModel, porterResearchMaxOutputTokens } from "@/lib/openai/models";
 import { formatZodIssue, zodString } from "@/lib/pestel/zod-form";
 import { normalizeWebUrl } from "@/lib/pestel/pestel-web-evidence";
+import type { PorterPestelInsightSummary } from "@/lib/porter/types";
 
 const INTENSITY_VALUES = ["low", "medium", "high", "unknown"] as const;
 const EFFECT_VALUES = ["increases_pressure", "decreases_pressure", "unclear"] as const;
@@ -72,6 +73,33 @@ function normalizeIntensity(raw: unknown): (typeof INTENSITY_VALUES)[number] {
   return "medium";
 }
 
+function resolvePestelInsightId(
+  raw: string | undefined,
+  label: string,
+  insights: PorterPestelInsightSummary[],
+): string | undefined {
+  const allowed = new Map(insights.map((i) => [i.id, i]));
+  if (raw) {
+    const trimmed = raw.trim();
+    if (allowed.has(trimmed)) return trimmed;
+    const match = trimmed.match(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i,
+    );
+    if (match && allowed.has(match[0])) return match[0];
+  }
+
+  const labelNorm = label.trim().toLowerCase();
+  if (labelNorm.length >= 4) {
+    for (const ins of insights) {
+      const titleNorm = ins.title.trim().toLowerCase();
+      if (titleNorm.includes(labelNorm) || labelNorm.includes(titleNorm.slice(0, 40))) {
+        return ins.id;
+      }
+    }
+  }
+  return undefined;
+}
+
 function pickExcerptFromSnippet(excerpt: string, snippet: string): string {
   const e = excerpt.trim();
   if (e.length < 20) return snippet.slice(0, 400).trim();
@@ -85,9 +113,10 @@ function pickExcerptFromSnippet(excerpt: string, snippet: string): string {
 function normalizePayload(
   raw: unknown,
   allowedWebUrls: Set<string>,
-  allowedPestelIds: Set<string>,
+  pestelInsights: PorterPestelInsightSummary[],
   urlSnippets: Map<string, string>,
 ): PorterAiForceAnalysis {
+  const allowedPestelIds = new Set(pestelInsights.map((i) => i.id));
   const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const pre = {
     ...obj,
@@ -104,32 +133,77 @@ function normalizePayload(
   }
 
   const factors = parsed.data.factors.map((f) => {
-    let pestelId = f.pestel_insight_id;
+    let pestelId =
+      resolvePestelInsightId(f.pestel_insight_id, f.title, pestelInsights)
+      ?? f.pestel_insight_id;
     if (pestelId && !allowedPestelIds.has(pestelId)) pestelId = undefined;
 
-    const sources = f.sources.map((s) => {
+    const sources = f.sources.flatMap((s) => {
       if (s.source_type === "pestel") {
-        const pid = s.pestel_insight_id;
-        if (!pid || !allowedPestelIds.has(pid)) {
-          throw new Error("PESTEL-bron vereist geldig pestel_insight_id uit de context");
+        const pid =
+          resolvePestelInsightId(s.pestel_insight_id, s.label, pestelInsights)
+          ?? resolvePestelInsightId(pestelId, s.label, pestelInsights);
+        if (pid && allowedPestelIds.has(pid)) {
+          return [
+            {
+              ...s,
+              source_type: "pestel" as const,
+              pestel_insight_id: pid,
+              url: undefined,
+            },
+          ];
         }
-        return { ...s, pestel_insight_id: pid, url: undefined };
+        return [
+          {
+            source_type: "manual" as const,
+            label: s.label || "PESTEL (niet gekoppeld)",
+            excerpt: s.excerpt,
+            pestel_insight_id: undefined,
+            url: undefined,
+            publisher: undefined,
+          },
+        ];
       }
       if (s.source_type === "website") {
         const url = s.url ? normalizeWebUrl(s.url) : "";
-        if (!url || !allowedWebUrls.has(url)) {
-          throw new Error(`Website-bron URL niet toegestaan: ${s.url ?? "(leeg)"}`);
+        if (url && allowedWebUrls.has(url)) {
+          return [
+            {
+              ...s,
+              url,
+              excerpt: pickExcerptFromSnippet(s.excerpt, urlSnippets.get(url) ?? ""),
+            },
+          ];
         }
-        return {
-          ...s,
-          url,
-          excerpt: pickExcerptFromSnippet(s.excerpt, urlSnippets.get(url) ?? ""),
-        };
+        return [
+          {
+            source_type: "manual" as const,
+            label: s.label || s.url || "Webbron",
+            excerpt: s.excerpt,
+            pestel_insight_id: undefined,
+            url: undefined,
+            publisher: s.publisher,
+          },
+        ];
       }
-      return s;
+      return [s];
     });
 
-    return { ...f, pestel_insight_id: pestelId, sources };
+    const safeSources =
+      sources.length > 0 ?
+        sources
+      : [
+          {
+            source_type: "manual" as const,
+            label: f.title,
+            excerpt: f.observation.slice(0, 400),
+            pestel_insight_id: undefined,
+            url: undefined,
+            publisher: undefined,
+          },
+        ];
+
+    return { ...f, pestel_insight_id: pestelId, sources: safeSources };
   });
 
   return { ...parsed.data, factors };
@@ -146,7 +220,6 @@ export async function generatePorterForceAnalysis(input: {
     throw new Error("OPENAI_API_KEY ontbreekt");
   }
 
-  const allowedPestelIds = new Set(input.context.pestelInsights.map((i) => i.id));
   const meta = PORTER_FORCE_META[input.forceKey];
   const model = resolvePorterResearchModel();
   const openai = new OpenAI({ apiKey });
@@ -174,8 +247,9 @@ Regels:
 - motivation: waarom deze inschatting (feiten + marktlogica)
 - client_relevance: wat dit betekent voor de klant
 - factors: 1–4 concrete factoren met bronnen
-- Koppel waar relevant PESTEL-inzichten via source_type "pestel" + pestel_insight_id uit de context
+- PESTEL-koppeling: alleen source_type "pestel" met exacte uuid uit [id] in de PESTEL-sectie; anders website-bron
 - Website-bronnen: alleen URLs uit live webonderzoek; excerpt uit fragment
+- Minstens één bron per factor (website heeft voorrang boven pestel als uuid onduidelijk is)
 - effect: increases_pressure | decreases_pressure | unclear`,
       },
       {
@@ -204,5 +278,5 @@ Regels:
     throw new Error("AI-antwoord is geen geldige JSON");
   }
 
-  return normalizePayload(json, allowedWebUrls, allowedPestelIds, urlSnippets);
+  return normalizePayload(json, allowedWebUrls, input.context.pestelInsights, urlSnippets);
 }
