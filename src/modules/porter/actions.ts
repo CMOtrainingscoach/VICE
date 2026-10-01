@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireSession, requirePlatformAdminMfa } from "@/lib/auth/session";
-import type { PorterWorkbench } from "@/lib/porter/types";
+import { porterWebResearchConfigured } from "@/lib/porter/porter-web-evidence";
+import { runPorterResearchStep } from "@/lib/porter/run-porter-research-step";
+import type { PorterResearchJob, PorterWorkbench } from "@/lib/porter/types";
 import { formatZodIssue } from "@/lib/pestel/zod-form";
 import {
   porterForceSchema,
@@ -39,6 +41,8 @@ export async function loadPorterWorkbenchAction(
     version: PorterWorkbench["version"] & { geo_markets: unknown; known_competitors: unknown };
     forces: PorterWorkbench["forces"];
     pestel_context: PorterWorkbench["pestelContext"] & { insights: unknown };
+    active_research_job: PorterResearchJob | null;
+    last_research_error: string | null;
   };
 
   const geo = Array.isArray(raw.version.geo_markets) ?
@@ -64,8 +68,87 @@ export async function loadPorterWorkbenchAction(
         approved: Boolean(raw.pestel_context?.approved),
         insights: (raw.pestel_context?.insights ?? []) as PorterWorkbench["pestelContext"]["insights"],
       },
+      activeResearchJob: raw.active_research_job ?? null,
+      lastResearchError: raw.last_research_error ?? null,
     },
   };
+}
+
+export async function startPorterResearchAction(
+  tenantId: string,
+  versionId: string,
+): Promise<ActionResult<{ jobId: string }>> {
+  const session = await requireSession();
+  await requirePlatformAdminMfa(session);
+
+  if (!porterWebResearchConfigured()) {
+    return {
+      ok: false,
+      error:
+        "Live webonderzoek ontbreekt: voeg TAVILY_API_KEY toe in Vercel/.env.local (zelfde als PESTEL).",
+    };
+  }
+
+  const supabase = await createClient();
+  const { data: jobId, error } = await supabase.schema("app").rpc("start_porter_research", {
+    p_version_id: versionId,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePorter(tenantId);
+  return { ok: true, data: { jobId: jobId as string } };
+}
+
+export async function cancelPorterResearchAction(
+  tenantId: string,
+  jobId: string,
+): Promise<ActionResult> {
+  const session = await requireSession();
+  await requirePlatformAdminMfa(session);
+
+  const supabase = await createClient();
+  const { error } = await supabase.schema("app").rpc("cancel_porter_research", {
+    p_job_id: jobId,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePorter(tenantId);
+  return { ok: true };
+}
+
+export async function runPorterResearchStepAction(
+  tenantId: string,
+  jobId: string,
+): Promise<
+  ActionResult<{
+    done: boolean;
+    message: string;
+    status: string;
+    forcesDone: string[];
+    currentForce: string | null;
+    phase: string;
+  }>
+> {
+  const session = await requireSession();
+  await requirePlatformAdminMfa(session);
+  void tenantId;
+
+  try {
+    const result = await runPorterResearchStep(jobId);
+    revalidatePorter(tenantId);
+    return { ok: true, data: result };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Stap mislukt",
+    };
+  }
 }
 
 export async function savePorterScopeAction(

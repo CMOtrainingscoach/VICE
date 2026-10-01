@@ -46,6 +46,21 @@ export type PorterVersion = {
   updated_at: string;
 };
 
+export type PorterResearchJob = {
+  id: string;
+  version_id: string;
+  tenant_id: string;
+  status: string;
+  progress: {
+    phase?: string;
+    message?: string;
+    forces_done?: string[];
+    current_force?: string;
+  };
+  error_message: string | null;
+  forces_updated: number;
+};
+
 export type PorterWorkbench = {
   version: PorterVersion;
   forces: PorterForce[];
@@ -55,4 +70,6 @@ export type PorterWorkbench = {
     approved: boolean;
     insights: PorterPestelInsightSummary[];
   };
+  activeResearchJob: PorterResearchJob | null;
+  lastResearchError: string | null;
 };

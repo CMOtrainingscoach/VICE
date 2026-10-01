@@ -84,7 +84,7 @@ function buildSearchQueries(
   return [...new Set(queries.map((q) => q.replace(/\s+/g, " ").trim()))].slice(0, 3);
 }
 
-function mergeHits(existing: PestelWebHit[], incoming: PestelWebHit[]): PestelWebHit[] {
+export function mergeHits(existing: PestelWebHit[], incoming: PestelWebHit[]): PestelWebHit[] {
   const byUrl = new Map<string, PestelWebHit>();
   for (const hit of [...existing, ...incoming]) {
     if (!isPublicHttpsUrl(hit.url)) continue;

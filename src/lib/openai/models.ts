@@ -28,3 +28,21 @@ export function pestelResearchMaxOutputTokens(): number {
   const n = raw ? Number.parseInt(raw, 10) : 4096;
   return Number.isFinite(n) && n > 256 ? Math.min(n, 16_384) : 4096;
 }
+
+/** Porter Five Forces AI-onderzoek (1 call per kracht). */
+export function resolvePorterResearchModel(): string {
+  return (
+    process.env.VICE_PORTER_RESEARCH_MODEL?.trim() ||
+    process.env.VICE_PESTEL_RESEARCH_MODEL?.trim() ||
+    process.env.VICE_RESEARCH_MODEL?.trim() ||
+    "gpt-4o"
+  );
+}
+
+export function porterResearchMaxOutputTokens(): number {
+  const raw =
+    process.env.VICE_PORTER_RESEARCH_MAX_TOKENS?.trim()
+    || process.env.VICE_PESTEL_RESEARCH_MAX_TOKENS?.trim();
+  const n = raw ? Number.parseInt(raw, 10) : 4096;
+  return Number.isFinite(n) && n > 256 ? Math.min(n, 16_384) : 4096;
+}

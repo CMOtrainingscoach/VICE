@@ -762,10 +762,11 @@ export function PestelWorkspace({
   const isResearchErrorBanner =
     Boolean(initialLastResearchError) && error === initialLastResearchError;
 
+  const errorText = error ?? "";
   const isStrictApproveError =
-    Boolean(error) &&
-    (/openstaande inzichten|beoordeeld inzicht|Elk PESTEL-perspectief/i.test(error) ||
-      /Strategische synthese ontbreekt/i.test(error));
+    errorText.length > 0 &&
+    (/openstaande inzichten|beoordeeld inzicht|Elk PESTEL-perspectief/i.test(errorText) ||
+      /Strategische synthese ontbreekt/i.test(errorText));
 
   return (
     <div className="relative mx-auto max-w-5xl px-6 py-8 md:px-10">

@@ -1,8 +1,9 @@
 "use client";
 
-import { CheckCircle2, Sparkles, X } from "lucide-react";
+import { CheckCircle2, Loader2, Sparkles, X } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,12 +18,16 @@ import {
   type PorterForceKey,
   type PorterIntensity,
 } from "@/lib/porter/constants";
+import { validatePorterScopeForResearch } from "@/lib/porter/market-scope";
 import type { PorterForce, PorterVersion, PorterWorkbench } from "@/lib/porter/types";
 import {
+  cancelPorterResearchAction,
   loadPorterWorkbenchAction,
+  runPorterResearchStepAction,
   savePorterForceAction,
   savePorterScopeAction,
   savePorterSynthesisAction,
+  startPorterResearchAction,
 } from "@/modules/porter/actions";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +55,8 @@ function competitorsToText(list: PorterVersion["known_competitors"]): string {
 }
 
 export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspaceProps) {
+  const router = useRouter();
+  const researchLoopRef = useRef(false);
   const [version, setVersion] = useState(initial.version);
   const [forces, setForces] = useState(initial.forces);
   const [pestelContext] = useState(initial.pestelContext);
@@ -75,8 +82,38 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
   });
 
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initial.lastResearchError);
   const [saveState, setSaveState] = useState<string | null>(null);
+  const [researchJobId, setResearchJobId] = useState<string | null>(
+    initial.activeResearchJob?.id ?? null,
+  );
+  const [researchMessage, setResearchMessage] = useState(
+    initial.activeResearchJob?.progress?.message ?? "",
+  );
+  const [researchForcesDone, setResearchForcesDone] = useState<string[]>(
+    initial.activeResearchJob?.progress?.forces_done ?? [],
+  );
+
+  const researchActive =
+    Boolean(researchJobId) ||
+    version.status === "research_running" ||
+    initial.activeResearchJob?.status === "running" ||
+    initial.activeResearchJob?.status === "queued";
+
+  const researchUiActive =
+    researchActive || busy === "research-start" || busy === "research-step";
+
+  const researchProgressPct = Math.round(
+    (researchForcesDone.length / PORTER_FORCES.length) * 100,
+  );
+
+  const reloadWorkbench = useCallback(async () => {
+    const reloaded = await loadPorterWorkbenchAction(tenantId);
+    if (reloaded.ok && reloaded.data) {
+      setForces(reloaded.data.forces);
+      setVersion(reloaded.data.version);
+    }
+  }, [tenantId]);
 
   const forcesByKey = useMemo(() => {
     const map = Object.fromEntries(PORTER_FORCES.map((k) => [k, null as PorterForce | null]));
@@ -92,9 +129,71 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
     (f) => f.headline_factor.trim() || f.motivation.trim() || f.intensity !== "unknown",
   );
 
-  async function saveScope() {
+  useEffect(() => {
+    if (!researchJobId || researchLoopRef.current) return;
+
+    researchLoopRef.current = true;
+    let cancelled = false;
+    const jobId = researchJobId;
+
+    void (async () => {
+      while (!cancelled) {
+        setBusy("research-step");
+        setVersion((v) => ({ ...v, status: "research_running" }));
+        const step = await runPorterResearchStepAction(tenantId, jobId);
+        setBusy(null);
+        if (!step.ok || !step.data) {
+          setError(step.ok ? "Onbekende fout" : step.error);
+          setResearchJobId(null);
+          void reloadWorkbench();
+          break;
+        }
+
+        setResearchMessage(step.data.message);
+        setResearchForcesDone(step.data.forcesDone);
+
+        if (step.data.status === "failed") {
+          setError(step.data.message);
+          setResearchJobId(null);
+          void reloadWorkbench();
+          break;
+        }
+
+        await reloadWorkbench();
+
+        if (step.data.done) {
+          setResearchJobId(null);
+          setVersion((v) => ({
+            ...v,
+            status: step.data?.status === "completed" ? "draft" : v.status,
+          }));
+          if (step.data.status === "completed") {
+            setSaveState("AI-analyse afgerond — bekijk en beoordeel elke kracht.");
+            setError(null);
+          }
+          break;
+        }
+      }
+      researchLoopRef.current = false;
+    })();
+
+    return () => {
+      cancelled = true;
+      researchLoopRef.current = false;
+    };
+  }, [researchJobId, tenantId, reloadWorkbench]);
+
+  useEffect(() => {
+    if (initial.activeResearchJob?.id && !researchJobId) {
+      setResearchJobId(initial.activeResearchJob.id);
+      setResearchMessage(initial.activeResearchJob.progress?.message ?? "Analyse hervat…");
+      researchLoopRef.current = false;
+    }
+  }, [initial.activeResearchJob, researchJobId]);
+
+  async function saveScope(silent = false): Promise<boolean> {
     setBusy("scope");
-    setError(null);
+    if (!silent) setError(null);
     const geo = geoMarkets
       .split(/[,;\n]/)
       .map((s) => s.trim())
@@ -112,10 +211,62 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
     setBusy(null);
     if (!result.ok) {
       setError(result.error);
+      return false;
+    }
+    if (!silent) setSaveState("Marktafbakening opgeslagen");
+    setVersion((v) => ({ ...v, status: v.status === "not_started" ? "draft" : v.status }));
+    return true;
+  }
+
+  async function startAiAnalysis() {
+    setError(null);
+    setSaveState(null);
+    const scopeCheck = validatePorterScopeForResearch({
+      tenantName,
+      marketSector,
+      offeringDescription: offering,
+      clientSegment,
+      geoMarkets: geoMarkets
+        .split(/[,;\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    });
+    if (!scopeCheck.ok) {
+      setError(scopeCheck.message);
       return;
     }
-    setSaveState("Marktafbakening opgeslagen");
-    setVersion((v) => ({ ...v, status: v.status === "not_started" ? "draft" : v.status }));
+    setBusy("research-start");
+    const scopeOk = await saveScope(true);
+    if (!scopeOk) {
+      setBusy(null);
+      return;
+    }
+    const result = await startPorterResearchAction(tenantId, version.id);
+    setBusy(null);
+    if (!result.ok || !result.data) {
+      setError(result.ok ? "Start mislukt" : result.error);
+      return;
+    }
+    setResearchForcesDone([]);
+    setResearchJobId(result.data.jobId);
+    setResearchMessage(
+      "Analyse gestart — live web + AI per kracht (kan enkele minuten duren)…",
+    );
+    researchLoopRef.current = false;
+  }
+
+  async function cancelResearch() {
+    const jobId = researchJobId ?? initial.activeResearchJob?.id;
+    if (!jobId) return;
+    setBusy("research-cancel");
+    const result = await cancelPorterResearchAction(tenantId, jobId);
+    setBusy(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setResearchJobId(null);
+    router.refresh();
   }
 
   async function saveSynthesis() {
@@ -235,6 +386,43 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
         </p>
       )}
 
+      {researchUiActive && (
+        <div
+          className="mb-6 rounded-2xl border-2 border-vice-gold/50 bg-vice-gold/10 px-5 py-4 shadow-sm"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <Loader2 className="size-5 shrink-0 animate-spin text-vice-gold" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-vice-text">AI-analyse bezig</p>
+              <p className="mt-0.5 text-sm text-vice-text-muted">
+                {researchMessage || "Even geduld — per kracht webonderzoek + analyse…"}
+              </p>
+            </div>
+            <span className="text-sm font-medium tabular-nums text-vice-text">
+              {researchForcesDone.length}/{PORTER_FORCES.length} krachten
+            </span>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-vice-border/80">
+            <div
+              className="h-full rounded-full bg-vice-gold transition-all duration-500"
+              style={{ width: `${researchProgressPct}%` }}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-3 h-8 text-xs"
+            disabled={busy !== null}
+            onClick={cancelResearch}
+          >
+            Annuleren
+          </Button>
+        </div>
+      )}
+
       <section className="rounded-2xl border border-vice-border bg-vice-surface p-6">
         <h2 className="text-lg font-medium">Markt en concurrentie afbakenen</h2>
         {pestelContext.approved ? (
@@ -288,16 +476,23 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" disabled={busy !== null} onClick={saveScope}>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy !== null || researchUiActive}
+            onClick={() => void saveScope()}
+          >
             Afbakening opslaan
           </Button>
           <Button
             type="button"
             className="gap-2 bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover"
-            disabled
-            title="AI-onderzoek per kracht volgt in sprint 3"
+            disabled={busy !== null || researchUiActive}
+            onClick={() => void startAiAnalysis()}
           >
-            <Sparkles className="size-4" aria-hidden />
+            {busy === "research-start" ?
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            : <Sparkles className="size-4" aria-hidden />}
             Analyseer de vijf krachten met AI
           </Button>
         </div>
@@ -464,7 +659,7 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
                 />
               </div>
               <div className="space-y-2">
-                <Label>Eigen aanvulling (Hardwig)</Label>
+                <Label>Eigen aanvulling ({tenantName})</Label>
                 <textarea
                   className="min-h-[60px] w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
                   value={forceDraft.advisor_note}

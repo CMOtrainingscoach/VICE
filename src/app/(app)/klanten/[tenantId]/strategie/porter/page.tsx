@@ -1,4 +1,7 @@
 import { notFound, redirect } from "next/navigation";
+
+/** Tavily + OpenAI per kracht kan meerdere minuten duren (Vercel). */
+export const maxDuration = 300;
 import { PorterLoadError } from "@/components/porter/porter-load-error";
 import { PorterWorkspace } from "@/components/porter/porter-workspace";
 import { getUserAppContext } from "@/lib/auth/context";
