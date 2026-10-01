@@ -73,3 +73,17 @@ export const pestelSynthesisSchema = z.object({
   versionId: z.string().uuid(),
   synthesisText: zodString(12_000),
 });
+
+export const pestelSynthesisAiSchema = z.object({
+  versionId: z.string().uuid(),
+  tenantName: zodString(500, 1),
+});
+
+export const pestelInsightRelevanceAiSchema = z.object({
+  versionId: z.string().uuid(),
+  tenantName: zodString(500, 1),
+  dimension: z.enum(PESTEL_DIMENSIONS),
+  title: zodString(300, 1),
+  observation: zodString(8000, 20),
+  sourceExcerpts: z.array(zodString(2000)).max(8).optional(),
+});

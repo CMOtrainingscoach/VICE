@@ -8,6 +8,13 @@ import {
 } from "@/lib/openai/models";
 import { serializeResearchContextForPrompt, type PestelResearchContext } from "@/lib/pestel/build-research-context";
 import {
+  EVIDENCE_LEVEL_VALUES,
+  IMPACT_VALUES,
+  normalizeAiDimensionPayload,
+  OPPORTUNITY_RISK_VALUES,
+  websiteFactExcerpt,
+} from "@/lib/pestel/pestel-ai-insight-normalize";
+import {
   normalizeWebUrl,
   serializeWebEvidenceForPrompt,
   type PestelWebHit,
@@ -38,11 +45,11 @@ const insightSchema = z.object({
   title: zodString(300, 1),
   observation: zodString(8000, 20),
   client_relevance: zodString(4000, 10),
-  opportunity_risk: z.enum(["opportunity", "risk", "both", "unclear"]),
-  impact: z.enum(["low", "medium", "high", "unknown"]),
+  opportunity_risk: z.enum(OPPORTUNITY_RISK_VALUES),
+  impact: z.enum(IMPACT_VALUES),
   impact_note: zodString(1000),
   insight_time_horizon: zodString(200),
-  evidence_level: z.enum(["provided", "observed", "hypothesis"]),
+  evidence_level: z.enum(EVIDENCE_LEVEL_VALUES),
   sources: z.array(sourceSchema).min(1, "Minstens één bron verplicht"),
 });
 
@@ -52,52 +59,30 @@ const dimensionResponseSchema = z.object({
 
 export type PestelAiInsight = z.infer<typeof insightSchema>;
 
-function deriveInsightTitle(observation: string): string {
-  const trimmed = observation.trim();
-  if (!trimmed) return "Extern PESTEL-inzicht";
-  const firstLine = (trimmed.split(/\n/)[0] ?? trimmed).trim();
-  const sentence =
-    firstLine.match(/^[^.!?…]+[.!?…]?/)?.[0]?.trim() ?? firstLine;
-  const candidate = sentence.length > 0 ? sentence : firstLine;
-  if (candidate.length <= 300) return candidate;
-  return `${candidate.slice(0, 297).trim()}…`;
-}
-
-/** Repair common model omissions before Zod (empty title/label, null fields). */
-function normalizeAiDimensionPayload(raw: unknown): unknown {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
-  const obj = raw as Record<string, unknown>;
-  if (!Array.isArray(obj.insights)) return raw;
-
-  return {
-    ...obj,
-    insights: obj.insights.map((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
-      const ins = item as Record<string, unknown>;
-      const observation = ins.observation == null ? "" : String(ins.observation);
-      let title = ins.title == null ? "" : String(ins.title).trim();
-      if (!title) title = deriveInsightTitle(observation);
-
-      const sources = Array.isArray(ins.sources)
-        ? ins.sources.map((s) => {
-            if (!s || typeof s !== "object" || Array.isArray(s)) return s;
-            const src = s as Record<string, unknown>;
-            let label = src.label == null ? "" : String(src.label).trim();
-            if (!label && src.url) label = String(src.url).slice(0, 500);
-            if (!label) label = "Bron";
-            return { ...src, label };
-          })
-        : ins.sources;
-
-      return { ...ins, title, sources };
-    }),
-  };
-}
-
-function findWebHit(url: string, hits: PestelWebHit[]): PestelWebHit | undefined {
-  const key = normalizeWebUrl(url);
-  return hits.find((h) => normalizeWebUrl(h.url) === key);
-}
+const AI_INSIGHT_JSON_SHAPE = `{
+  "insights": [
+    {
+      "title": "string",
+      "observation": "string (≥40 tekens)",
+      "client_relevance": "string (≥20 tekens)",
+      "opportunity_risk": "opportunity|risk|both|unclear",
+      "impact": "low|medium|high|unknown",
+      "impact_note": "string (mag leeg)",
+      "insight_time_horizon": "string (mag leeg)",
+      "evidence_level": "provided|observed|hypothesis",
+      "sources": [
+        {
+          "source_type": "website|meeting|document|manual",
+          "label": "string",
+          "url": "https://… (website)",
+          "excerpt": "string (≥20 tekens)",
+          "is_ai_interpretation": false,
+          "meeting_recording_id": "uuid (meeting)"
+        }
+      ]
+    }
+  ]
+}`;
 
 export async function generatePestelDimensionInsights(input: {
   dimension: PestelDimension;
@@ -133,9 +118,8 @@ Zoek ontwikkelingen die gelden voor de branche, diensten en regio in de afbakeni
 
 Regels (strikt):
 - Antwoord in het Nederlands.
-- JSON: { "insights": [ ... ] }
-- Elk inzicht: verplicht niet-lege "title" (korte kop, 4–12 woorden, geen lege string).
-- Per inzicht minstens 1 bron in "sources"; elke bron heeft niet-lege "label".
+- Gebruik exact deze JSON-veldnamen (snake_case, Engelse enum-waarden):
+${AI_INSIGHT_JSON_SHAPE}
 - Meeting-bron: meeting_recording_id MOET exact overeenkomen met een ID uit «Interne / gekoppelde bronnen»; excerpt = letterlijk citaat (max 400 tekens).
 - Document/notitie (intern): source_type document; label + excerpt alleen uit gekoppelde fragmenten in de context.
 - Website-bron (extern): url MOET exact voorkomen in «Live webonderzoek»; excerpt = letterlijk citaat uit het fragment daar (max 400 tekens).
@@ -161,7 +145,10 @@ Geef 2-4 concrete externe ontwikkelingen relevant voor deze klant en afbakening.
   }
 
   const parsed = dimensionResponseSchema.safeParse(
-    normalizeAiDimensionPayload(JSON.parse(raw)),
+    normalizeAiDimensionPayload(JSON.parse(raw), {
+      webEvidence: input.webEvidence,
+      defaultTimeHorizon: input.context.scope.time_horizon,
+    }),
   );
   if (!parsed.success) {
     throw new Error(`AI-JSON ongeldig (${formatZodIssue(parsed.error)})`);
@@ -184,15 +171,12 @@ Geef 2-4 concrete externe ontwikkelingen relevant voor deze klant en afbakening.
             `Website ${src.url} staat niet in live webonderzoek voor "${ins.title}"`,
           );
         }
-        const hit = findWebHit(src.url, input.webEvidence);
-        if (hit && src.excerpt) {
-          const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
-          const needle = norm(src.excerpt).slice(0, 48);
-          if (needle.length >= 20 && !norm(hit.snippet).includes(needle)) {
-            throw new Error(
-              `Excerpt komt niet overeen met live fragment voor "${ins.title}" (${src.url})`,
-            );
-          }
+        if (!src.is_ai_interpretation) {
+          src.excerpt = websiteFactExcerpt(
+            src.url,
+            input.webEvidence,
+            src.excerpt,
+          );
         }
       }
     }

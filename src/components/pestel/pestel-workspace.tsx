@@ -13,7 +13,14 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +46,8 @@ import {
   deletePestelInsightAction,
   loadPestelWorkbenchAction,
   runPestelResearchStepAction,
+  generatePestelInsightRelevanceAiAction,
+  generatePestelSynthesisAiAction,
   savePestelInsightAction,
   savePestelScopeAction,
   savePestelSynthesisAction,
@@ -604,6 +613,54 @@ export function PestelWorkspace({
     setSaveState("Synthese opgeslagen");
   }
 
+  async function runAiSynthesis() {
+    setBusy("synthesis-ai");
+    setError(null);
+    const result = await generatePestelSynthesisAiAction(tenantId, {
+      versionId: version.id,
+      tenantName,
+    });
+    setBusy(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (result.data?.text) {
+      setSynthesisText(result.data.text);
+      setSaveState("AI-synthese gegenereerd — controleer en sla op");
+    }
+  }
+
+  async function runInsightRelevanceAi() {
+    setBusy("insight-relevance-ai");
+    setError(null);
+    const sourceExcerpts = draft.sources
+      .map((s) => s.excerpt.trim())
+      .filter(Boolean);
+    if (editingId && sourceExcerpts.length === 0) {
+      const saved = insights.find((i) => i.id === editingId);
+      saved?.sources.forEach((s) => {
+        if (s.excerpt?.trim()) sourceExcerpts.push(s.excerpt.trim());
+      });
+    }
+    const result = await generatePestelInsightRelevanceAiAction(tenantId, {
+      versionId: version.id,
+      tenantName,
+      dimension: draft.dimension,
+      title: draft.title,
+      observation: draft.observation,
+      sourceExcerpts,
+    });
+    setBusy(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (result.data?.text) {
+      setDraft((d) => ({ ...d, client_relevance: result.data!.text }));
+    }
+  }
+
   function addSourceRow() {
     setDraft((d) => ({
       ...d,
@@ -623,6 +680,17 @@ export function PestelWorkspace({
   }
 
   const showMatrix = insights.length > 0 || version.status !== "not_started";
+
+  const hasPestelInsightInput = useMemo(
+    () =>
+      insights.some(
+        (i) => i.title.trim().length > 0 || i.observation.trim().length > 0,
+      ),
+    [insights],
+  );
+
+  const clientRelevanceUnlocked =
+    draft.title.trim().length >= 1 && draft.observation.trim().length >= 20;
 
   return (
     <div className="relative mx-auto max-w-5xl px-6 py-8 md:px-10">
@@ -1142,27 +1210,59 @@ export function PestelWorkspace({
             })}
           </div>
 
-          <section className="mt-8 rounded-2xl border border-vice-border bg-vice-surface p-6">
+          <section
+            className={cn(
+              "mt-8 rounded-2xl border border-vice-border bg-vice-surface p-6",
+              !hasPestelInsightInput && "opacity-90",
+            )}
+          >
             <h2 className="text-lg font-medium">Wat betekent dit voor {tenantName}?</h2>
             <p className="mt-1 text-xs text-vice-text-muted">
-              Strategische synthese — pas aan wanneer inzichten wijzigen
+              Strategische synthese — handmatig of via AI op basis van de PESTEL-inzichten hierboven
               {version.synthesis_stale && " · herziening aanbevolen"}
             </p>
+            {!hasPestelInsightInput && (
+              <p className="mt-3 rounded-lg bg-vice-surface-muted/60 px-3 py-2 text-xs text-vice-text-muted">
+                Vul eerst minstens één PESTEL-inzicht in (AI-onderzoek of handmatig). Daarna kun je
+                hier de synthese schrijven of laten genereren.
+              </p>
+            )}
             <textarea
-              className="mt-4 min-h-[120px] w-full rounded-xl border border-vice-border bg-vice-bg px-4 py-3 text-sm"
+              className={cn(
+                "mt-4 min-h-[120px] w-full rounded-xl border border-vice-border bg-vice-bg px-4 py-3 text-sm",
+                !hasPestelInsightInput && "cursor-not-allowed opacity-60",
+              )}
               value={synthesisText}
               onChange={(e) => setSynthesisText(e.target.value)}
-              placeholder="Belangrijkste externe kansen, risico's, richting en open vragen…"
+              disabled={!hasPestelInsightInput || busy !== null}
+              placeholder={
+                hasPestelInsightInput ?
+                  "Belangrijkste externe kansen, risico's, richting en open vragen…"
+                : "Wacht op PESTEL-inzichten…"
+              }
             />
-            <Button
-              type="button"
-              className="mt-3"
-              variant="secondary"
-              disabled={busy !== null}
-              onClick={saveSynthesis}
-            >
-              Synthese opslaan
-            </Button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="gap-2 border-vice-gold/40"
+                disabled={!hasPestelInsightInput || busy !== null}
+                onClick={runAiSynthesis}
+              >
+                {busy === "synthesis-ai" ?
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                : <Sparkles className="size-4" aria-hidden />}
+                Maak AI synthese
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!hasPestelInsightInput || busy !== null}
+                onClick={saveSynthesis}
+              >
+                Synthese opslaan
+              </Button>
+            </div>
           </section>
 
           <footer className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-vice-border pt-6 text-sm">
@@ -1241,9 +1341,29 @@ export function PestelWorkspace({
                 onChange={(v) => setDraft((d) => ({ ...d, observation: v }))}
               />
               <FieldArea
-                label="Betekenis voor deze klant"
+                label={`Wat betekent dit voor ${tenantName}?`}
                 value={draft.client_relevance}
                 onChange={(v) => setDraft((d) => ({ ...d, client_relevance: v }))}
+                disabled={!clientRelevanceUnlocked || busy !== null}
+                hint={
+                  clientRelevanceUnlocked ?
+                    "Optioneel AI-voorstel op basis van titel en waarneming."
+                  : "Vul eerst titel en waarneming (min. 20 tekens) in."
+                }
+                action={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-8 gap-1.5 px-2 text-xs text-vice-gold"
+                    disabled={!clientRelevanceUnlocked || busy !== null}
+                    onClick={runInsightRelevanceAi}
+                  >
+                    {busy === "insight-relevance-ai" ?
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                    : <Sparkles className="size-3.5" aria-hidden />}
+                    Maak AI synthese
+                  </Button>
+                }
               />
               <div className="grid grid-cols-2 gap-3">
                 <SelectField
@@ -1441,17 +1561,31 @@ function FieldArea({
   label,
   value,
   onChange,
+  disabled,
+  hint,
+  action,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  disabled?: boolean;
+  hint?: string;
+  action?: ReactNode;
 }) {
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      <div className="flex items-start justify-between gap-2">
+        <Label className={disabled ? "text-vice-text-muted" : undefined}>{label}</Label>
+        {action}
+      </div>
+      {hint && <p className="text-xs text-vice-text-muted">{hint}</p>}
       <textarea
-        className="min-h-[80px] w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
+        className={cn(
+          "min-h-[80px] w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm",
+          disabled && "cursor-not-allowed opacity-60",
+        )}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
       />
     </div>

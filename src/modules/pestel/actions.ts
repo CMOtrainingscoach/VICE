@@ -8,9 +8,16 @@ import { pestelWebResearchConfigured } from "@/lib/pestel/pestel-web-evidence";
 import { runPestelResearchStep } from "@/lib/pestel/run-pestel-research-step";
 import type { PestelResearchJob } from "@/lib/pestel/types";
 import { formatZodIssue } from "@/lib/pestel/zod-form";
+import type { PestelDimension } from "@/lib/pestel/constants";
 import {
+  generatePestelInsightClientRelevance,
+  generatePestelVersionSynthesis,
+} from "@/lib/pestel/pestel-synthesis-ai";
+import {
+  pestelInsightRelevanceAiSchema,
   pestelInsightSchema,
   pestelScopeSchema,
+  pestelSynthesisAiSchema,
   pestelSynthesisSchema,
 } from "@/modules/pestel/schema";
 
@@ -310,4 +317,121 @@ export async function savePestelSynthesisAction(
 
   revalidatePestel(tenantId);
   return { ok: true };
+}
+
+async function loadWorkbenchForTenant(
+  tenantId: string,
+): Promise<ActionResult<PestelWorkbench>> {
+  return loadPestelWorkbenchAction(tenantId);
+}
+
+function workbenchScope(version: PestelWorkbench["version"]) {
+  return {
+    market_sector: version.market_sector,
+    geo_markets: version.geo_markets,
+    time_horizon: version.time_horizon,
+    services_offerings: version.services_offerings ?? "",
+    offering_audience: version.offering_audience,
+    research_question: version.research_question ?? "",
+  };
+}
+
+export async function generatePestelSynthesisAiAction(
+  tenantId: string,
+  input: unknown,
+): Promise<ActionResult<{ text: string }>> {
+  const parsed = pestelSynthesisAiSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: formatZodIssue(parsed.error) };
+  }
+
+  const session = await requireSession();
+  await requirePlatformAdminMfa(session);
+
+  const loaded = await loadWorkbenchForTenant(tenantId);
+  if (!loaded.ok) {
+    return { ok: false, error: loaded.error };
+  }
+  const workbench = loaded.data;
+  if (!workbench) {
+    return { ok: false, error: "Workbench laden mislukt" };
+  }
+
+  if (workbench.version.id !== parsed.data.versionId) {
+    return { ok: false, error: "Versie komt niet overeen" };
+  }
+
+  const insights = workbench.insights.filter(
+    (i) => i.title.trim() || i.observation.trim(),
+  );
+  if (insights.length === 0) {
+    return {
+      ok: false,
+      error: "Voeg eerst PESTEL-inzichten toe (AI-onderzoek of handmatig).",
+    };
+  }
+
+  try {
+    const text = await generatePestelVersionSynthesis({
+      tenantName: parsed.data.tenantName,
+      scope: workbenchScope(workbench.version),
+      insights: insights.map((i) => ({
+        dimension: i.dimension as PestelDimension,
+        title: i.title,
+        observation: i.observation,
+        client_relevance: i.client_relevance,
+        opportunity_risk: i.opportunity_risk,
+        impact: i.impact,
+      })),
+    });
+    return { ok: true, data: { text } };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "AI-synthese mislukt",
+    };
+  }
+}
+
+export async function generatePestelInsightRelevanceAiAction(
+  tenantId: string,
+  input: unknown,
+): Promise<ActionResult<{ text: string }>> {
+  const parsed = pestelInsightRelevanceAiSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: formatZodIssue(parsed.error) };
+  }
+
+  const session = await requireSession();
+  await requirePlatformAdminMfa(session);
+
+  const loaded = await loadWorkbenchForTenant(tenantId);
+  if (!loaded.ok) {
+    return { ok: false, error: loaded.error };
+  }
+  const workbench = loaded.data;
+  if (!workbench) {
+    return { ok: false, error: "Workbench laden mislukt" };
+  }
+
+  if (workbench.version.id !== parsed.data.versionId) {
+    return { ok: false, error: "Versie komt niet overeen" };
+  }
+
+  try {
+    const text = await generatePestelInsightClientRelevance({
+      tenantName: parsed.data.tenantName,
+      scope: workbenchScope(workbench.version),
+      dimension: parsed.data.dimension,
+      title: parsed.data.title,
+      observation: parsed.data.observation,
+      sourceExcerpts: parsed.data.sourceExcerpts,
+    });
+    return { ok: true, data: { text } };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "AI-betekenis mislukt",
+    };
+  }
 }
