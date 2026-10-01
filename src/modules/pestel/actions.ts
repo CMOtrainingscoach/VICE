@@ -7,6 +7,7 @@ import type { PestelWorkbench } from "@/lib/pestel/types";
 import { pestelWebResearchConfigured } from "@/lib/pestel/pestel-web-evidence";
 import { runPestelResearchStep } from "@/lib/pestel/run-pestel-research-step";
 import type { PestelResearchJob } from "@/lib/pestel/types";
+import { formatZodIssue } from "@/lib/pestel/zod-form";
 import {
   pestelInsightSchema,
   pestelScopeSchema,
@@ -54,7 +55,14 @@ export async function loadPestelWorkbenchAction(
   return {
     ok: true,
     data: {
-      version: { ...raw.version, geo_markets: geo },
+      version: {
+        ...raw.version,
+        geo_markets: geo,
+        services_offerings: raw.version.services_offerings ?? "",
+        research_question: raw.version.research_question ?? "",
+        offering_audience: raw.version.offering_audience ?? "",
+        market_sector: raw.version.market_sector ?? "",
+      },
       insights: raw.insights ?? [],
       meetings: raw.meetings ?? [],
       researchInputs: raw.research_inputs ?? [],
@@ -147,7 +155,7 @@ export async function savePestelScopeAction(
 ): Promise<ActionResult> {
   const parsed = pestelScopeSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Ongeldige afbakening" };
+    return { ok: false, error: formatZodIssue(parsed.error) };
   }
 
   const session = await requireSession();
@@ -201,7 +209,7 @@ export async function savePestelInsightAction(
 ): Promise<ActionResult<{ insightId: string }>> {
   const parsed = pestelInsightSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Ongeldig inzicht" };
+    return { ok: false, error: formatZodIssue(parsed.error) };
   }
 
   const session = await requireSession();

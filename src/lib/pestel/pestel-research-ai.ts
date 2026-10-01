@@ -12,26 +12,36 @@ import {
   serializeWebEvidenceForPrompt,
   type PestelWebHit,
 } from "@/lib/pestel/pestel-web-evidence";
+import { formatZodIssue, zodString } from "@/lib/pestel/zod-form";
 
 const sourceSchema = z.object({
   source_type: z.enum(["website", "meeting", "manual", "document"]),
-  label: z.string().min(1),
-  url: z.string().optional(),
-  publisher: z.string().optional(),
-  meeting_recording_id: z.string().uuid().optional(),
+  label: zodString(500, 1),
+  url: z.preprocess(
+    (v) => (v == null || v === "" ? undefined : String(v)),
+    z.string().optional(),
+  ),
+  publisher: z.preprocess(
+    (v) => (v == null || v === "" ? undefined : String(v)),
+    z.string().optional(),
+  ),
+  meeting_recording_id: z.preprocess(
+    (v) => (v == null || v === "" ? undefined : String(v)),
+    z.string().uuid().optional(),
+  ),
   meeting_offset_ms: z.number().int().min(0).optional(),
-  excerpt: z.string().min(20, "Bronfragment te kort"),
+  excerpt: zodString(4000, 20),
   is_ai_interpretation: z.boolean().optional(),
 });
 
 const insightSchema = z.object({
-  title: z.string().min(1),
-  observation: z.string().min(20),
-  client_relevance: z.string().min(10),
+  title: zodString(300, 1),
+  observation: zodString(8000, 20),
+  client_relevance: zodString(4000, 10),
   opportunity_risk: z.enum(["opportunity", "risk", "both", "unclear"]),
   impact: z.enum(["low", "medium", "high", "unknown"]),
-  impact_note: z.string().optional(),
-  insight_time_horizon: z.string().optional(),
+  impact_note: zodString(1000),
+  insight_time_horizon: zodString(200),
   evidence_level: z.enum(["provided", "observed", "hypothesis"]),
   sources: z.array(sourceSchema).min(1, "Minstens één bron verplicht"),
 });
@@ -109,7 +119,7 @@ Geef 2-4 concrete externe ontwikkelingen relevant voor deze klant en afbakening.
 
   const parsed = dimensionResponseSchema.safeParse(JSON.parse(raw));
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0]?.message ?? "AI-JSON ongeldig");
+    throw new Error(`AI-JSON ongeldig (${formatZodIssue(parsed.error)})`);
   }
 
   for (const ins of parsed.data.insights) {

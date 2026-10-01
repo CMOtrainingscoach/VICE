@@ -152,7 +152,7 @@ export function serializeResearchContextForPrompt(ctx: PestelResearchContext): s
     `Vakgebied/branche (externe markt): ${ctx.scope.market_sector}`,
     `Regio's: ${ctx.scope.geo_markets.join(", ")}`,
     `Horizon: ${ctx.scope.time_horizon}`,
-    `Diensten & producten: ${ctx.scope.services_offerings}`,
+    `Diensten & producten: ${ctx.scope.services_offerings ?? ""}`,
     `Doelgroep / segment: ${ctx.scope.offering_audience}`,
     `Onderzoeksvraag: ${ctx.scope.research_question || "—"}`,
     "",
