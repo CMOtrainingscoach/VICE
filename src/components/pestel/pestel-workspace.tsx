@@ -654,8 +654,9 @@ export function PestelWorkspace({
           <p className="font-medium">Onderzoek gestopt</p>
           <p className="mt-1">{error}</p>
           <p className="mt-2 text-xs opacity-90">
-            Controleer TAVILY_API_KEY / OPENAI_API_KEY, migratie 307 op Supabase, en probeer opnieuw.
-            Gedeeltelijke inzichten blijven staan als die al waren opgeslagen.
+            Los de oorzaak hierboven op (vaak Supabase-migratie 310, API-keys op Vercel, of
+            ontbrekende vakgebied/diensten). Gedeeltelijke inzichten blijven staan als die al waren
+            opgeslagen.
           </p>
         </div>
       )}

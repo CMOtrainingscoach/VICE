@@ -42,27 +42,41 @@ async function loadContext(
   version: PestelVersion,
   versionId: string,
 ): Promise<PestelResearchContext> {
-  const { data: tenant } = await supabase
+  const { data: tenantJson, error: tenantError } = await supabase
     .schema("app")
-    .from("my_tenants")
-    .select("name, website, audit_goal, vat_number")
-    .eq("id", tenantId)
-    .maybeSingle();
+    .rpc("get_pestel_research_tenant_profile", { p_tenant_id: tenantId });
 
-  const { data: meetings } = await supabase
-    .schema("app")
-    .from("meeting_recordings")
-    .select(
-      "id, title, review_status, summary_text, full_text, notes, created_at",
-    )
-    .eq("tenant_id", tenantId)
-    .eq("transcript_status", "ready")
-    .order("created_at", { ascending: false })
-    .limit(12);
-
-  if (!tenant) {
-    throw new Error("Klant niet gevonden");
+  if (tenantError) {
+    throw new Error(tenantError.message);
   }
+  if (!tenantJson || typeof tenantJson !== "object") {
+    throw new Error("Klantprofiel kon niet worden geladen");
+  }
+
+  const tenant = tenantJson as {
+    name: string;
+    website: string | null;
+    audit_goal: string;
+    vat_number: string | null;
+  };
+
+  const { data: meetingsJson, error: meetingsError } = await supabase
+    .schema("app")
+    .rpc("list_pestel_research_meetings", { p_tenant_id: tenantId });
+
+  if (meetingsError) {
+    throw new Error(meetingsError.message);
+  }
+
+  const meetings = (meetingsJson ?? []) as {
+    id: string;
+    title: string | null;
+    review_status: string;
+    summary_text: string | null;
+    full_text: string | null;
+    notes: string | null;
+    created_at: string;
+  }[];
 
   const { data: inputsJson, error: inputsError } = await supabase
     .schema("app")
@@ -82,22 +96,9 @@ async function loadContext(
   }[];
 
   return buildResearchContextPayload(
-    tenant as {
-      name: string;
-      website: string | null;
-      audit_goal: string;
-      vat_number: string | null;
-    },
+    tenant,
     version,
-    (meetings ?? []) as {
-      id: string;
-      title: string | null;
-      review_status: string;
-      summary_text: string | null;
-      full_text: string | null;
-      notes: string | null;
-      created_at: string;
-    }[],
+    meetings,
     researchInputs.map((i) => ({
       id: i.id,
       kind: i.kind,
