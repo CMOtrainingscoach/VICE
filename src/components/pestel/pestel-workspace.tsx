@@ -190,6 +190,14 @@ export function PestelWorkspace({
     "meeting" | "website" | "document" | "note" | null
   >(null);
   const [synthesisText, setSynthesisText] = useState(version.synthesis_text);
+  const [lastSavedSynthesis, setLastSavedSynthesis] = useState(version.synthesis_text);
+  const [synthesisSaved, setSynthesisSaved] = useState(
+    () =>
+      version.synthesis_text.trim().length >= 20 && !version.synthesis_stale,
+  );
+  const [expandedDimensions, setExpandedDimensions] = useState<Set<PestelDimension>>(
+    () => new Set(),
+  );
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState(() => emptyDraft("political"));
@@ -391,20 +399,18 @@ export function PestelWorkspace({
 
   const canApprovePestel = useMemo(() => {
     if (researchActive || version.status === "approved") return false;
-    if (synthesisText.trim().length < 20) return false;
-    if (pendingInsightCount > 0) return false;
-    if (insights.length === 0) return false;
-    return PESTEL_DIMENSIONS.every((d) =>
-      byDimension[d].some((i) => i.review_status === "reviewed"),
-    );
-  }, [
-    byDimension,
-    insights.length,
-    pendingInsightCount,
-    researchActive,
-    synthesisText,
-    version.status,
-  ]);
+    if (!synthesisSaved) return false;
+    return synthesisText.trim().length >= 20;
+  }, [researchActive, synthesisSaved, synthesisText, version.status]);
+
+  function toggleDimensionExpanded(dim: PestelDimension) {
+    setExpandedDimensions((prev) => {
+      const next = new Set(prev);
+      if (next.has(dim)) next.delete(dim);
+      else next.add(dim);
+      return next;
+    });
+  }
 
   const linkedMeetingIds = useMemo(
     () =>
@@ -634,7 +640,15 @@ export function PestelWorkspace({
       setError(result.error);
       return;
     }
-    setSaveState("Synthese opgeslagen");
+    setLastSavedSynthesis(synthesisText);
+    setSynthesisSaved(true);
+    setSaveState("Synthese opgeslagen — je kunt nu goedkeuren en verder");
+    const loaded = await loadPestelWorkbenchAction(tenantId);
+    if (loaded.ok && loaded.data) {
+      setVersion(loaded.data.version);
+      setLastSavedSynthesis(loaded.data.version.synthesis_text);
+      setSynthesisText(loaded.data.version.synthesis_text);
+    }
   }
 
   async function approveAndContinue() {
@@ -666,6 +680,7 @@ export function PestelWorkspace({
     }
     if (result.data?.text) {
       setSynthesisText(result.data.text);
+      setSynthesisSaved(false);
       setSaveState("AI-synthese gegenereerd — controleer en sla op");
     }
   }
@@ -1176,7 +1191,8 @@ export function PestelWorkspace({
             {PESTEL_DIMENSIONS.map((dim) => {
               const meta = PESTEL_DIMENSION_META[dim];
               const list = byDimension[dim];
-              const preview = list.slice(0, 2);
+              const expanded = expandedDimensions.has(dim);
+              const visible = expanded ? list : list.slice(0, 2);
               return (
                 <article
                   key={dim}
@@ -1211,7 +1227,7 @@ export function PestelWorkspace({
                     </p>
                   ) : (
                     <ul className="mt-3 space-y-2">
-                      {preview.map((ins) => (
+                      {visible.map((ins) => (
                         <li key={ins.id}>
                           <button
                             type="button"
@@ -1234,7 +1250,15 @@ export function PestelWorkspace({
                     </ul>
                   )}
                   {list.length > 2 && (
-                    <p className="mt-2 text-xs text-vice-text-muted">+{list.length - 2} meer</p>
+                    <button
+                      type="button"
+                      className="mt-2 text-xs text-vice-gold hover:underline"
+                      onClick={() => toggleDimensionExpanded(dim)}
+                    >
+                      {expanded ?
+                        "Minder tonen"
+                      : `+${list.length - 2} meer — alles tonen`}
+                    </button>
                   )}
                   <Button
                     type="button"
@@ -1272,7 +1296,13 @@ export function PestelWorkspace({
                 !hasPestelInsightInput && "cursor-not-allowed opacity-60",
               )}
               value={synthesisText}
-              onChange={(e) => setSynthesisText(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setSynthesisText(next);
+                if (next.trim() !== lastSavedSynthesis.trim()) {
+                  setSynthesisSaved(false);
+                }
+              }}
               disabled={!hasPestelInsightInput || busy !== null}
               placeholder={
                 hasPestelInsightInput ?
@@ -1312,8 +1342,9 @@ export function PestelWorkspace({
               </p>
               {!canApprovePestel && version.status !== "approved" && showMatrix && (
                 <p className="mt-1 text-xs">
-                  Goedkeuren kan wanneer elk perspectief een beoordeeld inzicht heeft, geen open
-                  inzichten resteren en de synthese minstens 20 tekens bevat.
+                  Sla de strategische synthese op (min. 20 tekens) om door te gaan naar Porter.
+                  {pendingInsightCount > 0 &&
+                    ` Nog ${pendingInsightCount} open inzicht${pendingInsightCount === 1 ? "" : "en"} — mag, maar beoordeel ze best vóór Porter.`}
                 </p>
               )}
             </div>
