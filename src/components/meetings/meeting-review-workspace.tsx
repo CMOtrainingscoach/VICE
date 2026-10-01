@@ -9,6 +9,12 @@ import {
   analysisStatusLabel,
   reviewStatusLabel,
 } from "@/lib/meetings/status-labels";
+import { MeetingTimelineNotes } from "@/components/meetings/meeting-timeline-notes";
+import {
+  parseTimelineNotes,
+  serializeTimelineNotes,
+  type MeetingTimelineNote,
+} from "@/lib/meetings/timeline-notes";
 import {
   approveMeetingTranscriptAction,
   generateMeetingAnalysisAction,
@@ -47,7 +53,9 @@ export function MeetingReviewWorkspace({
   const router = useRouter();
   const [title, setTitle] = useState(initialTitle);
   const [subject, setSubject] = useState(initialSubject);
-  const [notes, setNotes] = useState(initialNotes);
+  const [timelineNotes, setTimelineNotes] = useState<MeetingTimelineNote[]>(() =>
+    parseTimelineNotes(initialNotes),
+  );
   const [fullText, setFullText] = useState(initialFullText);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -61,7 +69,7 @@ export function MeetingReviewWorkspace({
       values: {
         title,
         subject,
-        notes,
+        notes: serializeTimelineNotes(timelineNotes),
         ...(canEditTranscript ? { fullText } : {}),
       },
     });
@@ -123,20 +131,19 @@ export function MeetingReviewWorkspace({
               onChange={(e) => setSubject(e.target.value)}
             />
           </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="notes">Notities</Label>
-            <textarea
-              id="notes"
-              className="min-h-[88px] w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
         </div>
         <Button type="button" disabled={busy !== null} onClick={saveMeta}>
           {busy === "save" ? "Opslaan…" : "Opslaan"}
         </Button>
       </section>
+
+      <MeetingTimelineNotes
+        items={timelineNotes}
+        onChange={setTimelineNotes}
+        canPost={false}
+        disabled={busy !== null}
+        emptyHint="Geen notities tijdens deze opname."
+      />
 
       <section className="space-y-4 rounded-xl border border-vice-border bg-vice-surface p-6">
         <h2 className="text-lg font-medium">Transcript review</h2>

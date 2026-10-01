@@ -9,6 +9,7 @@ import {
   transcribeRecordingFromStorage,
 } from "@/lib/transcription/transcribe-recording";
 import { generateMeetingAnalysis } from "@/lib/analysis/generate-meeting-analysis";
+import { formatTimelineNotesForAnalysis } from "@/lib/meetings/timeline-notes";
 import { estimateTokenStorageBytes, textToTokenIds } from "@/lib/transcription/tokens";
 import { updateMeetingRecordingSchema } from "@/modules/meetings/schema";
 
@@ -303,7 +304,7 @@ export async function generateMeetingAnalysisAction(input: {
     const result = await generateMeetingAnalysis({
       title: (row.title as string) ?? "",
       subject: (row.subject as string) ?? "",
-      notes: (row.notes as string) ?? "",
+      notes: formatTimelineNotesForAnalysis((row.notes as string) ?? ""),
       transcript: row.full_text as string,
     });
 

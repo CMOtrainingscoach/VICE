@@ -18,6 +18,11 @@ import {
 } from "@/hooks/use-meeting-recorder";
 import { formatRecorderTimer } from "@/lib/recording/format-timer";
 import { cn } from "@/lib/utils";
+import { MeetingTimelineNotes } from "@/components/meetings/meeting-timeline-notes";
+import {
+  serializeTimelineNotes,
+  type MeetingTimelineNote,
+} from "@/lib/meetings/timeline-notes";
 import { updateMeetingRecordingAction } from "@/modules/meetings/actions";
 
 type MeetingRecorderStudioProps = {
@@ -72,7 +77,7 @@ export function MeetingRecorderStudio({
   const [captureMode, setCaptureMode] = useState<CaptureMode>("tab_audio");
   const [meetingTitle, setMeetingTitle] = useState("Kennismaking");
   const [meetingSubject, setMeetingSubject] = useState("Online meeting");
-  const [notes, setNotes] = useState("");
+  const [timelineNotes, setTimelineNotes] = useState<MeetingTimelineNote[]>([]);
   const [participantsInformed, setParticipantsInformed] = useState(false);
 
   const {
@@ -80,7 +85,6 @@ export function MeetingRecorderStudio({
     error,
     elapsedMs,
     tokenCount,
-    transcriptPreview,
     lastRecordingId,
     liveStream,
     start,
@@ -107,7 +111,7 @@ export function MeetingRecorderStudio({
         values: {
           title: meetingTitle,
           subject: meetingSubject,
-          notes,
+          notes: serializeTimelineNotes(timelineNotes),
         },
       });
       router.push(`/klanten/${tenantId}/meetings/${lastRecordingId}`);
@@ -119,7 +123,7 @@ export function MeetingRecorderStudio({
     tenantId,
     meetingTitle,
     meetingSubject,
-    notes,
+    timelineNotes,
     router,
   ]);
 
@@ -128,7 +132,13 @@ export function MeetingRecorderStudio({
 
   async function handleStart() {
     if (!participantsInformed) return;
+    setTimelineNotes([]);
     await start();
+  }
+
+  function handleReset() {
+    setTimelineNotes([]);
+    reset();
   }
 
   return (
@@ -324,7 +334,7 @@ export function MeetingRecorderStudio({
               type="button"
               className="h-12 flex-1 rounded-xl bg-vice-gold text-base text-[#1a1814] hover:bg-vice-gold-hover"
               disabled={!participantsInformed || busy}
-              onClick={phase === "done" ? reset : handleStart}
+              onClick={phase === "done" ? handleReset : handleStart}
             >
               {phase === "done" ? "Nieuwe opname" : "Start opname"}
             </Button>
@@ -347,21 +357,20 @@ export function MeetingRecorderStudio({
         </div>
       </div>
 
-      <div>
-        <textarea
-          className="min-h-[88px] w-full resize-y rounded-xl border border-vice-border bg-vice-surface px-4 py-3 text-sm text-vice-text placeholder:text-vice-text-muted"
-          placeholder="Notitie toevoegen…"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          disabled={busy}
-        />
-        <p className="mt-4 text-center text-xs text-vice-text-muted">
-          Na afloop: transcript, samenvatting en voorgestelde taken.
-          {tokenCount != null && (
-            <span className="block mt-1">{tokenCount} tokens opgeslagen.</span>
-          )}
-        </p>
-      </div>
+      <MeetingTimelineNotes
+        items={timelineNotes}
+        onChange={setTimelineNotes}
+        captureAtMs={elapsedMs}
+        canPost={isLive}
+        disabled={busy}
+      />
+
+      <p className="text-center text-xs text-vice-text-muted">
+        Na afloop: transcript, samenvatting en voorgestelde taken.
+        {tokenCount != null && (
+          <span className="mt-1 block">{tokenCount} tokens opgeslagen.</span>
+        )}
+      </p>
 
       {phase === "done" && (
         <p className="text-sm text-vice-text-muted" role="status">
