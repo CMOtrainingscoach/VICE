@@ -77,6 +77,18 @@ export const PORTER_INTENSITY_LABELS: Record<PorterIntensity, string> = {
   unknown: "Onbekend",
 };
 
+export function porterForceHasContent(force: {
+  intensity: string;
+  motivation: string;
+  headline_factor: string;
+}): boolean {
+  return (
+    force.intensity !== "unknown"
+    || force.motivation.trim().length >= 20
+    || force.headline_factor.trim().length >= 5
+  );
+}
+
 export function porterIntensityBadgeClass(intensity: PorterIntensity): string {
   switch (intensity) {
     case "high":

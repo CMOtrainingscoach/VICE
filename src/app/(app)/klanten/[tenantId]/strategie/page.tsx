@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
+import { MARKETING_5C_ROUTE } from "@/lib/marketing-5c/constants";
 import { getUserAppContext } from "@/lib/auth/context";
-import { loadPorterWorkbenchAction } from "@/modules/porter/actions";
+import { getAuditFrameworkProgressAction } from "@/modules/porter/actions";
 
 export default async function StrategieHubPage({
   params,
@@ -10,8 +11,11 @@ export default async function StrategieHubPage({
   if (!ctx) redirect("/login");
 
   if (ctx.isPlatformAdmin) {
-    const porter = await loadPorterWorkbenchAction(tenantId);
-    if (porter.ok && porter.data?.pestelContext.approved) {
+    const progress = await getAuditFrameworkProgressAction(tenantId);
+    if (progress.ok && progress.data?.porterApproved) {
+      redirect(`/klanten/${tenantId}/strategie/${MARKETING_5C_ROUTE}`);
+    }
+    if (progress.ok && progress.data?.pestelApproved) {
       redirect(`/klanten/${tenantId}/strategie/porter`);
     }
   }

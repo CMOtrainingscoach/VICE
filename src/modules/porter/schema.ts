@@ -39,3 +39,13 @@ export const porterApprovePestelSchema = z.object({
   versionId: z.string().uuid(),
   expectedUpdatedAt: z.string().min(1),
 });
+
+export const porterApproveSchema = z.object({
+  versionId: z.string().uuid(),
+  expectedUpdatedAt: z.string().min(1),
+});
+
+export const porterSynthesisAiSchema = z.object({
+  versionId: z.string().uuid(),
+  tenantName: zodString(300, 1),
+});

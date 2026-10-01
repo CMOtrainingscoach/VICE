@@ -3,13 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireSession, requirePlatformAdminMfa } from "@/lib/auth/session";
+import { MARKETING_5C_ROUTE } from "@/lib/marketing-5c/constants";
 import { porterWebResearchConfigured } from "@/lib/porter/porter-web-evidence";
+import { generatePorterVersionSynthesis } from "@/lib/porter/porter-synthesis-ai";
 import { runPorterResearchStep } from "@/lib/porter/run-porter-research-step";
+import type { PorterForceKey } from "@/lib/porter/constants";
 import type { PorterResearchJob, PorterWorkbench } from "@/lib/porter/types";
 import { formatZodIssue } from "@/lib/pestel/zod-form";
 import {
+  porterApproveSchema,
   porterForceSchema,
   porterScopeSchema,
+  porterSynthesisAiSchema,
   porterSynthesisSchema,
 } from "@/modules/porter/schema";
 
@@ -19,7 +24,42 @@ export type ActionResult<T = undefined> =
 
 function revalidatePorter(tenantId: string) {
   revalidatePath(`/klanten/${tenantId}/strategie/porter`);
+  revalidatePath(`/klanten/${tenantId}/strategie/${MARKETING_5C_ROUTE}`);
   revalidatePath(`/klanten/${tenantId}/strategie`);
+}
+
+export type AuditFrameworkProgress = {
+  pestelApproved: boolean;
+  porterApproved: boolean;
+};
+
+export async function getAuditFrameworkProgressAction(
+  tenantId: string,
+): Promise<ActionResult<AuditFrameworkProgress>> {
+  const session = await requireSession();
+  await requirePlatformAdminMfa(session);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema("app").rpc("get_audit_framework_progress", {
+    p_tenant_id: tenantId,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  const raw = data as {
+    pestel_approved?: boolean;
+    porter_approved?: boolean;
+  };
+
+  return {
+    ok: true,
+    data: {
+      pestelApproved: Boolean(raw?.pestel_approved),
+      porterApproved: Boolean(raw?.porter_approved),
+    },
+  };
 }
 
 export async function loadPorterWorkbenchAction(
@@ -232,6 +272,98 @@ export async function savePorterSynthesisAction(
   const { error } = await supabase.schema("app").rpc("update_porter_synthesis", {
     p_version_id: parsed.data.versionId,
     p_synthesis_text: parsed.data.synthesisText,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePorter(tenantId);
+  return { ok: true };
+}
+
+export async function generatePorterSynthesisAiAction(
+  tenantId: string,
+  input: unknown,
+): Promise<ActionResult<{ text: string }>> {
+  const parsed = porterSynthesisAiSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: formatZodIssue(parsed.error) };
+  }
+
+  const session = await requireSession();
+  await requirePlatformAdminMfa(session);
+
+  const loaded = await loadPorterWorkbenchAction(tenantId);
+  if (!loaded.ok) {
+    return { ok: false, error: loaded.error };
+  }
+  if (!loaded.data) {
+    return { ok: false, error: "Workbench laden mislukt" };
+  }
+
+  if (loaded.data.version.id !== parsed.data.versionId) {
+    return { ok: false, error: "Versie komt niet overeen" };
+  }
+
+  const forces = loaded.data.forces.filter(
+    (f) =>
+      f.intensity !== "unknown"
+      || f.motivation.trim().length >= 20
+      || f.headline_factor.trim().length >= 5,
+  );
+
+  if (forces.length < 5) {
+    return {
+      ok: false,
+      error: "Vul eerst alle vijf krachten in voordat je een AI-synthese maakt.",
+    };
+  }
+
+  try {
+    const text = await generatePorterVersionSynthesis({
+      tenantName: parsed.data.tenantName,
+      scope: {
+        market_sector: loaded.data.version.market_sector,
+        offering_description: loaded.data.version.offering_description,
+        geo_markets: loaded.data.version.geo_markets,
+        client_segment: loaded.data.version.client_segment,
+        time_horizon: loaded.data.version.time_horizon,
+        research_question: loaded.data.version.research_question,
+      },
+      forces: forces.map((f) => ({
+        force_key: f.force_key as PorterForceKey,
+        intensity: f.intensity,
+        headline_factor: f.headline_factor,
+        motivation: f.motivation,
+        client_relevance: f.client_relevance,
+      })),
+    });
+    return { ok: true, data: { text } };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "AI-synthese mislukt",
+    };
+  }
+}
+
+export async function approvePorterVersionAction(
+  tenantId: string,
+  input: unknown,
+): Promise<ActionResult> {
+  const parsed = porterApproveSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: formatZodIssue(parsed.error) };
+  }
+
+  const session = await requireSession();
+  await requirePlatformAdminMfa(session);
+
+  const supabase = await createClient();
+  const { error } = await supabase.schema("app").rpc("approve_porter_version", {
+    p_version_id: parsed.data.versionId,
+    p_expected_updated_at: parsed.data.expectedUpdatedAt,
   });
 
   if (error) {

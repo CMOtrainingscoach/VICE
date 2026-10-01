@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
+import { MARKETING_5C_ROUTE } from "@/lib/marketing-5c/constants";
 import {
   PORTER_FORCE_META,
   PORTER_FORCES,
   PORTER_FRAMEWORK_INDEX,
   PORTER_INTENSITY_LABELS,
   PORTER_STATUS_LABELS,
+  porterForceHasContent,
   porterIntensityBadgeClass,
   type PorterForceKey,
   type PorterIntensity,
@@ -21,7 +23,9 @@ import {
 import { validatePorterScopeForResearch } from "@/lib/porter/market-scope";
 import type { PorterForce, PorterVersion, PorterWorkbench } from "@/lib/porter/types";
 import {
+  approvePorterVersionAction,
   cancelPorterResearchAction,
+  generatePorterSynthesisAiAction,
   loadPorterWorkbenchAction,
   runPorterResearchStepAction,
   savePorterForceAction,
@@ -57,6 +61,7 @@ function competitorsToText(list: PorterVersion["known_competitors"]): string {
 export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspaceProps) {
   const router = useRouter();
   const researchLoopRef = useRef(false);
+  const synthesisSectionRef = useRef<HTMLElement>(null);
   const [version, setVersion] = useState(initial.version);
   const [forces, setForces] = useState(initial.forces);
   const [pestelContext] = useState(initial.pestelContext);
@@ -71,6 +76,9 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
     competitorsToText(version.known_competitors),
   );
   const [synthesisText, setSynthesisText] = useState(version.synthesis_text);
+  const [synthesisSaved, setSynthesisSaved] = useState(
+    () => version.synthesis_text.trim().length >= 20 && !version.synthesis_stale,
+  );
 
   const [panelForce, setPanelForce] = useState<PorterForce | null>(null);
   const [forceDraft, setForceDraft] = useState({
@@ -125,9 +133,29 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
 
   const reviewedForces = forces.filter((f) => f.review_status === "reviewed").length;
 
-  const hasForceInput = forces.some(
-    (f) => f.headline_factor.trim() || f.motivation.trim() || f.intensity !== "unknown",
+  const porterForcesComplete = useMemo(
+    () => PORTER_FORCES.every((k) => {
+      const f = forcesByKey[k];
+      return f != null && porterForceHasContent(f);
+    }),
+    [forcesByKey],
   );
+
+  const synthesisUnlocked = porterForcesComplete && !researchUiActive;
+  const synthesisHighlight = synthesisUnlocked && !synthesisSaved;
+
+  const canContinueTo5C = useMemo(() => {
+    if (version.status === "approved") return true;
+    if (!synthesisSaved) return false;
+    return synthesisText.trim().length >= 20;
+  }, [synthesisSaved, synthesisText, version.status]);
+
+  useEffect(() => {
+    if (!porterForcesComplete || researchUiActive) return;
+    requestAnimationFrame(() => {
+      synthesisSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, [porterForcesComplete, researchUiActive]);
 
   useEffect(() => {
     if (!researchJobId || researchLoopRef.current) return;
@@ -168,7 +196,9 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
             status: step.data?.status === "completed" ? "draft" : v.status,
           }));
           if (step.data.status === "completed") {
-            setSaveState("AI-analyse afgerond — bekijk en beoordeel elke kracht.");
+            setSaveState(
+              "AI-analyse afgerond — schrijf of genereer hieronder de strategische synthese.",
+            );
             setError(null);
           }
           break;
@@ -280,7 +310,41 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
       setError(result.error);
       return;
     }
-    setSaveState("Synthese opgeslagen");
+    setSynthesisSaved(true);
+    setVersion((v) => ({ ...v, synthesis_stale: false }));
+    setSaveState("Synthese opgeslagen — je kunt nu verder naar de 5C's");
+  }
+
+  async function runAiSynthesis() {
+    setBusy("synthesis-ai");
+    setError(null);
+    const result = await generatePorterSynthesisAiAction(tenantId, {
+      versionId: version.id,
+      tenantName,
+    });
+    setBusy(null);
+    if (!result.ok || !result.data) {
+      setError(result.ok ? "AI-synthese mislukt" : result.error);
+      return;
+    }
+    setSynthesisText(result.data.text);
+    setSynthesisSaved(false);
+    setSaveState("AI-synthese klaar — controleer en sla op");
+  }
+
+  async function approveAndContinue() {
+    setBusy("approve");
+    setError(null);
+    const result = await approvePorterVersionAction(tenantId, {
+      versionId: version.id,
+      expectedUpdatedAt: version.updated_at,
+    });
+    setBusy(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    router.push(`/klanten/${tenantId}/strategie/${MARKETING_5C_ROUTE}`);
   }
 
   function openForce(f: PorterForce) {
@@ -546,41 +610,112 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
         </div>
       </section>
 
-      <section className="mt-8 rounded-2xl border border-vice-border bg-vice-surface p-6">
+      <section
+        ref={synthesisSectionRef}
+        className={cn(
+          "mt-8 rounded-2xl border bg-vice-surface p-6 transition-all duration-500",
+          synthesisHighlight &&
+            "border-2 border-vice-gold/70 bg-vice-gold/10 shadow-[0_0_24px_rgba(212,175,55,0.15)]",
+          !synthesisHighlight && "border-vice-border",
+          !synthesisUnlocked && "opacity-90",
+        )}
+      >
         <h2 className="text-lg font-medium">Wat betekent dit voor {tenantName}?</h2>
         <p className="mt-1 text-xs text-vice-text-muted">
-          Strategische synthese over alle vijf krachten
+          Strategische synthese over alle vijf krachten — handmatig of via AI
+          {version.synthesis_stale && " · herziening aanbevolen"}
         </p>
-        {!hasForceInput && (
+        {!synthesisUnlocked && (
           <p className="mt-3 rounded-lg bg-vice-surface-muted/60 px-3 py-2 text-xs text-vice-text-muted">
-            Vul eerst minstens één kracht in. Daarna kun je hier de synthese schrijven.
+            {researchUiActive ?
+              "Wacht tot de AI-analyse van alle vijf krachten klaar is."
+            : "Vul alle vijf krachten in (AI-knop of handmatig per kaart). Daarna licht dit blok op."}
+          </p>
+        )}
+        {synthesisHighlight && (
+          <p className="mt-3 text-sm font-medium text-vice-gold">
+            Porter-analyse compleet — schrijf je synthese of laat AI een voorstel maken.
           </p>
         )}
         <textarea
           className={cn(
             "mt-4 min-h-[120px] w-full rounded-xl border border-vice-border bg-vice-bg px-4 py-3 text-sm",
-            !hasForceInput && "cursor-not-allowed opacity-60",
+            !synthesisUnlocked && "cursor-not-allowed opacity-60",
+            synthesisHighlight && "border-vice-gold/40",
           )}
-          disabled={!hasForceInput || busy !== null}
+          disabled={!synthesisUnlocked || busy !== null}
           value={synthesisText}
-          onChange={(e) => setSynthesisText(e.target.value)}
+          onChange={(e) => {
+            setSynthesisText(e.target.value);
+            if (synthesisSaved) setSynthesisSaved(false);
+          }}
+          placeholder={
+            synthesisUnlocked ?
+              "Belangrijkste concurrentiedruk, implicaties voor positionering en prioriteiten…"
+            : "Beschikbaar zodra alle vijf krachten ingevuld zijn…"
+          }
         />
-        <Button
-          type="button"
-          className="mt-3"
-          variant="secondary"
-          disabled={!hasForceInput || busy !== null}
-          onClick={saveSynthesis}
-        >
-          Synthese opslaan
-        </Button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="gap-2 border-vice-gold/40"
+            disabled={!synthesisUnlocked || busy !== null}
+            onClick={runAiSynthesis}
+          >
+            {busy === "synthesis-ai" ?
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            : <Sparkles className="size-4" aria-hidden />}
+            Maak AI synthese
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={!synthesisUnlocked || busy !== null}
+            onClick={saveSynthesis}
+          >
+            Synthese opslaan
+          </Button>
+        </div>
       </section>
 
       <footer className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-vice-border pt-6 text-sm">
-        <p className="text-vice-text-muted">{reviewedForces} van 5 krachten beoordeeld</p>
-        <Button type="button" variant="secondary" disabled title="Goedkeuring volgt later">
-          Goedkeuren en verder →
-        </Button>
+        <div className="text-vice-text-muted">
+          <p>{reviewedForces} van 5 krachten beoordeeld</p>
+          {!canContinueTo5C && synthesisUnlocked && (
+            <p className="mt-1 text-xs">
+              Sla de synthese op (min. 20 tekens) om door te gaan naar de 5C&apos;s of marketing.
+            </p>
+          )}
+        </div>
+        {version.status === "approved" ? (
+          <Button
+            type="button"
+            asChild
+            className="bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover"
+          >
+            <Link href={`/klanten/${tenantId}/strategie/${MARKETING_5C_ROUTE}`}>
+              Naar 5C&apos;s →
+            </Link>
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            disabled={!canContinueTo5C || busy !== null}
+            className={cn(
+              canContinueTo5C &&
+                "bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover shadow-[0_0_0_1px_rgba(212,175,55,0.4)]",
+            )}
+            onClick={approveAndContinue}
+          >
+            {busy === "approve" ?
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+                Bezig…
+              </>
+            : "Goedkeuren en verder →"}
+          </Button>
+        )}
       </footer>
 
       {saveState && (
