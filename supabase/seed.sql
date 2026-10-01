@@ -1,0 +1,2 @@
+-- Synthetic demo seed is applied via: pnpm seed:demo
+-- (requires Supabase running and SUPABASE_SERVICE_ROLE_KEY in .env.local)
