@@ -12,6 +12,7 @@ import {
   Video,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -42,6 +43,7 @@ import type {
 } from "@/lib/pestel/types";
 import { validateMarketScopeForResearch } from "@/lib/pestel/market-scope";
 import {
+  approvePestelVersionAction,
   cancelPestelResearchAction,
   deletePestelInsightAction,
   loadPestelWorkbenchAction,
@@ -382,6 +384,28 @@ export function PestelWorkspace({
     byDimension[d].some((i) => i.review_status === "reviewed"),
   ).length;
 
+  const pendingInsightCount = useMemo(
+    () => insights.filter((i) => i.review_status === "pending").length,
+    [insights],
+  );
+
+  const canApprovePestel = useMemo(() => {
+    if (researchActive || version.status === "approved") return false;
+    if (synthesisText.trim().length < 20) return false;
+    if (pendingInsightCount > 0) return false;
+    if (insights.length === 0) return false;
+    return PESTEL_DIMENSIONS.every((d) =>
+      byDimension[d].some((i) => i.review_status === "reviewed"),
+    );
+  }, [
+    byDimension,
+    insights.length,
+    pendingInsightCount,
+    researchActive,
+    synthesisText,
+    version.status,
+  ]);
+
   const linkedMeetingIds = useMemo(
     () =>
       new Set(
@@ -611,6 +635,21 @@ export function PestelWorkspace({
       return;
     }
     setSaveState("Synthese opgeslagen");
+  }
+
+  async function approveAndContinue() {
+    setBusy("approve");
+    setError(null);
+    const result = await approvePestelVersionAction(tenantId, {
+      versionId: version.id,
+      expectedUpdatedAt: version.updated_at,
+    });
+    setBusy(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    router.push(`/klanten/${tenantId}/strategie/porter`);
   }
 
   async function runAiSynthesis() {
@@ -1266,16 +1305,43 @@ export function PestelWorkspace({
           </section>
 
           <footer className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-vice-border pt-6 text-sm">
-            <p className="text-vice-text-muted">
-              {reviewedDimensions} van 6 perspectieven met beoordeeld inzicht
-            </p>
+            <div className="text-vice-text-muted">
+              <p>
+                {reviewedDimensions} van 6 perspectieven met beoordeeld inzicht
+                {pendingInsightCount > 0 && ` · ${pendingInsightCount} open`}
+              </p>
+              {!canApprovePestel && version.status !== "approved" && showMatrix && (
+                <p className="mt-1 text-xs">
+                  Goedkeuren kan wanneer elk perspectief een beoordeeld inzicht heeft, geen open
+                  inzichten resteren en de synthese minstens 20 tekens bevat.
+                </p>
+              )}
+            </div>
             <div className="flex gap-2">
-              <Button type="button" variant="secondary" disabled>
-                Beoordeel inzichten
-              </Button>
-              <Button type="button" disabled title="Goedkeuring volgt in sprint 3">
-                Goedkeuren en verder
-              </Button>
+              {version.status === "approved" ? (
+                <Button type="button" asChild className="bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover">
+                  <Link href={`/klanten/${tenantId}/strategie/porter`}>Naar Porter →</Link>
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  disabled={!canApprovePestel || busy !== null}
+                  className={cn(
+                    canApprovePestel &&
+                      "bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover shadow-[0_0_0_1px_rgba(212,175,55,0.4)]",
+                  )}
+                  onClick={approveAndContinue}
+                >
+                  {busy === "approve" ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                      Bezig…
+                    </>
+                  ) : (
+                    "Goedkeuren en verder →"
+                  )}
+                </Button>
+              )}
             </div>
           </footer>
         </>

@@ -20,6 +20,7 @@ import {
   pestelSynthesisAiSchema,
   pestelSynthesisSchema,
 } from "@/modules/pestel/schema";
+import { porterApprovePestelSchema } from "@/modules/porter/schema";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data?: T }
@@ -391,6 +392,33 @@ export async function generatePestelSynthesisAiAction(
       error: err instanceof Error ? err.message : "AI-synthese mislukt",
     };
   }
+}
+
+export async function approvePestelVersionAction(
+  tenantId: string,
+  input: unknown,
+): Promise<ActionResult> {
+  const parsed = porterApprovePestelSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: formatZodIssue(parsed.error) };
+  }
+
+  const session = await requireSession();
+  await requirePlatformAdminMfa(session);
+
+  const supabase = await createClient();
+  const { error } = await supabase.schema("app").rpc("approve_pestel_version", {
+    p_version_id: parsed.data.versionId,
+    p_expected_updated_at: parsed.data.expectedUpdatedAt,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePestel(tenantId);
+  revalidatePath(`/klanten/${tenantId}/strategie/porter`);
+  return { ok: true };
 }
 
 export async function generatePestelInsightRelevanceAiAction(
