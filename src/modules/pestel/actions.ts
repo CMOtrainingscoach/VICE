@@ -108,6 +108,26 @@ export async function startPestelResearchAction(
   return { ok: true, data: { jobId: jobId as string } };
 }
 
+export async function dismissPestelResearchErrorAction(
+  tenantId: string,
+  versionId: string,
+): Promise<ActionResult> {
+  const session = await requireSession();
+  await requirePlatformAdminMfa(session);
+
+  const supabase = await createClient();
+  const { error } = await supabase.schema("app").rpc("dismiss_pestel_research_error", {
+    p_version_id: versionId,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePestel(tenantId);
+  return { ok: true };
+}
+
 export async function cancelPestelResearchAction(
   tenantId: string,
   jobId: string,

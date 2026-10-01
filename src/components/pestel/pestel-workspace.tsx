@@ -45,6 +45,7 @@ import { validateMarketScopeForResearch } from "@/lib/pestel/market-scope";
 import {
   approvePestelVersionAction,
   cancelPestelResearchAction,
+  dismissPestelResearchErrorAction,
   deletePestelInsightAction,
   loadPestelWorkbenchAction,
   runPestelResearchStepAction,
@@ -651,6 +652,18 @@ export function PestelWorkspace({
     }
   }
 
+  async function dismissResearchError() {
+    setBusy("dismiss-error");
+    const result = await dismissPestelResearchErrorAction(tenantId, version.id);
+    setBusy(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setError(null);
+    setSaveState("Foutmelding gesloten");
+  }
+
   async function approveAndContinue() {
     setBusy("approve");
     setError(null);
@@ -776,10 +789,19 @@ export function PestelWorkspace({
           <p className="font-medium">Onderzoek gestopt</p>
           <p className="mt-1">{error}</p>
           <p className="mt-2 text-xs opacity-90">
-            Los de oorzaak hierboven op (vaak Supabase-migratie 310, API-keys op Vercel, of
-            ontbrekende vakgebied/diensten). Gedeeltelijke inzichten blijven staan als die al waren
-            opgeslagen.
+            Dit is meestal een eerdere mislukte AI-run (blijft hangen per klant/versie). Nieuwe
+            deploys lossen excerpt-fouten op; gedeeltelijke inzichten blijven staan. Sluit de melding
+            of start opnieuw onderzoeken.
           </p>
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-3 h-8 text-xs"
+            disabled={busy !== null}
+            onClick={dismissResearchError}
+          >
+            Melding sluiten
+          </Button>
         </div>
       )}
 
@@ -1168,11 +1190,6 @@ export function PestelWorkspace({
             Zelf een inzicht toevoegen
           </Button>
           </div>
-          {error && (
-            <p className="text-sm text-red-600 dark:text-red-300" role="alert">
-              {error}
-            </p>
-          )}
         </div>
       </section>
 
