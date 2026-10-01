@@ -52,6 +52,48 @@ const dimensionResponseSchema = z.object({
 
 export type PestelAiInsight = z.infer<typeof insightSchema>;
 
+function deriveInsightTitle(observation: string): string {
+  const trimmed = observation.trim();
+  if (!trimmed) return "Extern PESTEL-inzicht";
+  const firstLine = (trimmed.split(/\n/)[0] ?? trimmed).trim();
+  const sentence =
+    firstLine.match(/^[^.!?…]+[.!?…]?/)?.[0]?.trim() ?? firstLine;
+  const candidate = sentence.length > 0 ? sentence : firstLine;
+  if (candidate.length <= 300) return candidate;
+  return `${candidate.slice(0, 297).trim()}…`;
+}
+
+/** Repair common model omissions before Zod (empty title/label, null fields). */
+function normalizeAiDimensionPayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const obj = raw as Record<string, unknown>;
+  if (!Array.isArray(obj.insights)) return raw;
+
+  return {
+    ...obj,
+    insights: obj.insights.map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+      const ins = item as Record<string, unknown>;
+      const observation = ins.observation == null ? "" : String(ins.observation);
+      let title = ins.title == null ? "" : String(ins.title).trim();
+      if (!title) title = deriveInsightTitle(observation);
+
+      const sources = Array.isArray(ins.sources)
+        ? ins.sources.map((s) => {
+            if (!s || typeof s !== "object" || Array.isArray(s)) return s;
+            const src = s as Record<string, unknown>;
+            let label = src.label == null ? "" : String(src.label).trim();
+            if (!label && src.url) label = String(src.url).slice(0, 500);
+            if (!label) label = "Bron";
+            return { ...src, label };
+          })
+        : ins.sources;
+
+      return { ...ins, title, sources };
+    }),
+  };
+}
+
 function findWebHit(url: string, hits: PestelWebHit[]): PestelWebHit | undefined {
   const key = normalizeWebUrl(url);
   return hits.find((h) => normalizeWebUrl(h.url) === key);
@@ -92,7 +134,8 @@ Zoek ontwikkelingen die gelden voor de branche, diensten en regio in de afbakeni
 Regels (strikt):
 - Antwoord in het Nederlands.
 - JSON: { "insights": [ ... ] }
-- Per inzicht minstens 1 bron in "sources".
+- Elk inzicht: verplicht niet-lege "title" (korte kop, 4–12 woorden, geen lege string).
+- Per inzicht minstens 1 bron in "sources"; elke bron heeft niet-lege "label".
 - Meeting-bron: meeting_recording_id MOET exact overeenkomen met een ID uit «Interne / gekoppelde bronnen»; excerpt = letterlijk citaat (max 400 tekens).
 - Document/notitie (intern): source_type document; label + excerpt alleen uit gekoppelde fragmenten in de context.
 - Website-bron (extern): url MOET exact voorkomen in «Live webonderzoek»; excerpt = letterlijk citaat uit het fragment daar (max 400 tekens).
@@ -117,7 +160,9 @@ Geef 2-4 concrete externe ontwikkelingen relevant voor deze klant en afbakening.
     throw new Error("Lege AI-response");
   }
 
-  const parsed = dimensionResponseSchema.safeParse(JSON.parse(raw));
+  const parsed = dimensionResponseSchema.safeParse(
+    normalizeAiDimensionPayload(JSON.parse(raw)),
+  );
   if (!parsed.success) {
     throw new Error(`AI-JSON ongeldig (${formatZodIssue(parsed.error)})`);
   }
