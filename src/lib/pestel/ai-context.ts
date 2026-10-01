@@ -9,6 +9,7 @@ export function buildPestelAiContextSnapshot(workbench: PestelWorkbench): string
     `version: ${version.version_number}`,
     `status: ${version.status}`,
     `market_sector: ${version.market_sector}`,
+    `services_offerings: ${version.services_offerings}`,
     `geo_markets: ${version.geo_markets.join(", ")}`,
     `time_horizon: ${version.time_horizon}`,
     `offering_audience: ${version.offering_audience}`,

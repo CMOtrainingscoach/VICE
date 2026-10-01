@@ -5,6 +5,7 @@ import {
 } from "@/lib/pestel/constants";
 import { resolvePestelResearchModel } from "@/lib/openai/models";
 import type { PestelResearchContext } from "@/lib/pestel/build-research-context";
+import { buildIndustrySearchContext } from "@/lib/pestel/market-scope";
 
 export type PestelWebHit = {
   url: string;
@@ -64,16 +65,23 @@ function buildSearchQueries(
   ctx: PestelResearchContext,
 ): string[] {
   const geo = ctx.scope.geo_markets.join(" ");
-  const sector = ctx.scope.market_sector.trim() || ctx.tenant.name;
+  const industry = buildIndustrySearchContext(ctx);
+  if (!industry) {
+    throw new Error(
+      "Marktafbakening onvolledig: vul vakgebied/branche en diensten in vóór webonderzoek.",
+    );
+  }
   const meta = PESTEL_DIMENSION_META[dimension];
   const year = new Date().getFullYear();
+  const rq = ctx.scope.research_question.trim();
   const queries = [
-    `${meta.label} ${sector} ${geo} België ${year} ${meta.hint}`,
-    ctx.scope.research_question.trim()
-      ? `${ctx.scope.research_question} ${geo} ${year}`
-      : `${sector} ${meta.label} ontwikkelingen ${geo}`,
+    `markttrends ${industry} ${geo} België ${year} ${meta.label} ${meta.hint}`,
+    `sector ${industry} ${meta.label} ontwikkelingen regelgeving ${geo} ${year}`,
+    rq
+      ? `${rq} ${industry} ${geo} ${year}`
+      : `toekomst ${industry} ${geo} ${meta.label} prognose ${year}`,
   ];
-  return [...new Set(queries.map((q) => q.replace(/\s+/g, " ").trim()))].slice(0, 2);
+  return [...new Set(queries.map((q) => q.replace(/\s+/g, " ").trim()))].slice(0, 3);
 }
 
 function mergeHits(existing: PestelWebHit[], incoming: PestelWebHit[]): PestelWebHit[] {

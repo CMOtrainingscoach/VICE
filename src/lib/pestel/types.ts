@@ -41,6 +41,7 @@ export type PestelVersion = {
   market_sector: string;
   geo_markets: string[];
   time_horizon: string;
+  services_offerings: string;
   offering_audience: string;
   research_question: string;
   results_stale: boolean;

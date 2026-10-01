@@ -165,6 +165,7 @@ export async function runPestelResearchStep(jobId: string): Promise<PestelResear
     market_sector: string;
     geo_markets: unknown;
     time_horizon: string;
+    services_offerings: string;
     offering_audience: string;
     research_question: string;
   };
@@ -180,6 +181,7 @@ export async function runPestelResearchStep(jobId: string): Promise<PestelResear
     market_sector: versionRow.market_sector as string,
     geo_markets: geo,
     time_horizon: versionRow.time_horizon as string,
+    services_offerings: (versionRow.services_offerings as string) ?? "",
     offering_audience: versionRow.offering_audience as string,
     research_question: versionRow.research_question as string,
     results_stale: false,

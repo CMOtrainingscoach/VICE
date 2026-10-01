@@ -33,6 +33,7 @@ import type {
   PestelResearchJob,
   PestelVersion,
 } from "@/lib/pestel/types";
+import { validateMarketScopeForResearch } from "@/lib/pestel/market-scope";
 import {
   cancelPestelResearchAction,
   deletePestelInsightAction,
@@ -154,6 +155,9 @@ export function PestelWorkspace({
   const [marketSector, setMarketSector] = useState(version.market_sector);
   const [geoMarkets, setGeoMarkets] = useState(version.geo_markets.join(", "));
   const [timeHorizon, setTimeHorizon] = useState(version.time_horizon);
+  const [servicesOfferings, setServicesOfferings] = useState(
+    version.services_offerings ?? "",
+  );
   const [offeringAudience, setOfferingAudience] = useState(version.offering_audience);
   const [researchQuestion, setResearchQuestion] = useState(version.research_question);
   const [researchInputs, setResearchInputs] = useState<PestelResearchInput[]>(
@@ -207,6 +211,9 @@ export function PestelWorkspace({
     setInsights(initialInsights);
     setVersion(initialVersion);
     setResearchInputs(initialResearchInputs);
+    setMarketSector(initialVersion.market_sector);
+    setServicesOfferings(initialVersion.services_offerings ?? "");
+    setOfferingAudience(initialVersion.offering_audience);
   }, [initialInsights, initialVersion, initialResearchInputs]);
 
   useEffect(() => {
@@ -271,6 +278,20 @@ export function PestelWorkspace({
   async function startAiResearch() {
     setError(null);
     setSaveState(null);
+    const scopeCheck = validateMarketScopeForResearch({
+      tenantName,
+      marketSector,
+      servicesOfferings,
+      offeringAudience,
+      geoMarkets: geoMarkets
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    });
+    if (!scopeCheck.ok) {
+      setError(scopeCheck.message);
+      return;
+    }
     setBusy("research-start");
     const scopeOk = await saveScope({ silent: true });
     if (!scopeOk) {
@@ -457,6 +478,7 @@ export function PestelWorkspace({
         .map((s) => s.trim())
         .filter(Boolean),
       timeHorizon,
+      servicesOfferings,
       offeringAudience,
       researchQuestion,
       researchInputs: researchInputs.map((i) => ({
@@ -668,9 +690,18 @@ export function PestelWorkspace({
       <section className="mb-8 rounded-2xl border border-vice-border bg-vice-surface p-6">
         <h2 className="text-lg font-medium text-vice-text">Onderzoek afbakenen</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="market">Markt / sector</Label>
-            <Input id="market" value={marketSector} onChange={(e) => setMarketSector(e.target.value)} />
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="market">Vakgebied / branche (externe markt)</Label>
+            <Input
+              id="market"
+              value={marketSector}
+              onChange={(e) => setMarketSector(e.target.value)}
+              placeholder="Bv. marketing & sales coaching voor KMO’s — niet de bedrijfsnaam"
+            />
+            <p className="text-xs text-vice-text-muted">
+              Waar zoekt de AI markttrends op internet op? Gebruik sector/vakgebied, niet «
+              {tenantName}».
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="geo">Geografische markt</Label>
@@ -687,12 +718,26 @@ export function PestelWorkspace({
             <Input id="horizon" value={timeHorizon} onChange={(e) => setTimeHorizon(e.target.value)} />
           </div>
           <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="offering">Aanbod en doelgroep</Label>
+            <Label htmlFor="services">Diensten & producten (concreet)</Label>
+            <textarea
+              id="services"
+              className="min-h-[72px] w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
+              value={servicesOfferings}
+              onChange={(e) => setServicesOfferings(e.target.value)}
+              placeholder="Welke diensten/producten levert de klant? Bv. training, strategiebegeleiding, audits…"
+            />
+            <p className="text-xs text-vice-text-muted">
+              Verplicht voor AI-onderzoek — wordt meegenomen in live webzoekopdrachten naar trends.
+            </p>
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="offering">Doelgroep & marktsegment</Label>
             <textarea
               id="offering"
-              className="min-h-[72px] w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
+              className="min-h-[56px] w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
               value={offeringAudience}
               onChange={(e) => setOfferingAudience(e.target.value)}
+              placeholder="Bv. KMO’s 10–50 FTE in de Kempen, sectoren bouw & logistiek"
             />
           </div>
           <div className="space-y-2 md:col-span-2">

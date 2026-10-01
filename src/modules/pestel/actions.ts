@@ -157,6 +157,7 @@ export async function savePestelScopeAction(
     p_market_sector: parsed.data.marketSector,
     p_geo_markets: parsed.data.geoMarkets,
     p_time_horizon: parsed.data.timeHorizon,
+    p_services_offerings: parsed.data.servicesOfferings,
     p_offering_audience: parsed.data.offeringAudience,
     p_research_question: parsed.data.researchQuestion,
   });

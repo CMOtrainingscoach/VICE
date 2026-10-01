@@ -15,7 +15,7 @@
 pnpm dlx supabase@latest db push
 ```
 
-Bestanden: `20260330130500_pestel_strategic_audit.sql`, `20260330130600_pestel_research_jobs.sql`, `20260330130700_pestel_research_inputs.sql`
+Bestanden: t/m `20260330130800_pestel_services_offerings.sql` (305 PESTEL, 306 jobs, 307 bronnen, 308 diensten)
 
 ## Route
 

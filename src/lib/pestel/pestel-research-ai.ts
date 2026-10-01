@@ -76,7 +76,8 @@ export async function generatePestelDimensionInsights(input: {
       {
         role: "system",
         content: `Je bent een strategisch onderzoeksassistent voor VICE (Hardwig Aerts). 
-PESTEL = EXTERNE omgeving (politiek, economie, maatschappij, tech, ecologie, regelgeving) — geen interne bedrijfsproblemen van de klant als extern feit presenteren.
+PESTEL = EXTERNE omgeving van het VAKGEBIED en de MARKT (politiek, economie, maatschappij, tech, ecologie, regelgeving) — niet de bedrijfsnaam als sector behandelen.
+Zoek ontwikkelingen die gelden voor de branche, diensten en regio in de afbakening; koppel daarna relevantie voor deze klant.
 
 Regels (strikt):
 - Antwoord in het Nederlands.

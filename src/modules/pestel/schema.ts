@@ -29,6 +29,7 @@ export const pestelScopeSchema = z.object({
   marketSector: z.string().max(500),
   geoMarkets: z.array(z.string().max(200)).max(20),
   timeHorizon: z.string().max(200),
+  servicesOfferings: z.string().max(4000),
   offeringAudience: z.string().max(4000),
   researchQuestion: z.string().max(2000),
   researchInputs: z.array(pestelResearchInputSchema).max(40).optional(),
