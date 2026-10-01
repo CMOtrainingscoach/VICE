@@ -759,6 +759,14 @@ export function PestelWorkspace({
   const clientRelevanceUnlocked =
     draft.title.trim().length >= 1 && draft.observation.trim().length >= 20;
 
+  const isResearchErrorBanner =
+    Boolean(initialLastResearchError) && error === initialLastResearchError;
+
+  const isStrictApproveError =
+    Boolean(error) &&
+    (/openstaande inzichten|beoordeeld inzicht|Elk PESTEL-perspectief/i.test(error) ||
+      /Strategische synthese ontbreekt/i.test(error));
+
   return (
     <div className="relative mx-auto max-w-5xl px-6 py-8 md:px-10">
       <header className="mb-8">
@@ -780,28 +788,78 @@ export function PestelWorkspace({
         </p>
       </header>
 
+      {version.status === "approved" && (
+        <div
+          className="mb-6 rounded-xl border border-vice-gold/40 bg-vice-gold/10 px-4 py-3 text-sm text-vice-text"
+          role="status"
+        >
+          <p className="font-medium">PESTEL stap 1 is goedgekeurd (versie {version.version_number}).</p>
+          <p className="mt-1 text-vice-text-muted">
+            Je ziet de definitieve inzichten en synthese. Ga verder met Porter (stap 2) via de knop
+            onderaan of via Strategie in het menu.
+          </p>
+          <Button
+            type="button"
+            asChild
+            className="mt-3 h-8 bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover"
+          >
+            <Link href={`/klanten/${tenantId}/strategie/porter`}>Naar Porter →</Link>
+          </Button>
+        </div>
+      )}
+
       {error && (
         <div
           ref={errorBannerRef}
           className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-900 dark:text-red-100"
           role="alert"
         >
-          <p className="font-medium">Onderzoek gestopt</p>
-          <p className="mt-1">{error}</p>
-          <p className="mt-2 text-xs opacity-90">
-            Dit is meestal een eerdere mislukte AI-run (blijft hangen per klant/versie). Nieuwe
-            deploys lossen excerpt-fouten op; gedeeltelijke inzichten blijven staan. Sluit de melding
-            of start opnieuw onderzoeken.
+          <p className="font-medium">
+            {isResearchErrorBanner ? "Onderzoek gestopt" : "Actie mislukt"}
           </p>
-          <Button
-            type="button"
-            variant="secondary"
-            className="mt-3 h-8 text-xs"
-            disabled={busy !== null}
-            onClick={dismissResearchError}
-          >
-            Melding sluiten
-          </Button>
+          <p className="mt-1">{error}</p>
+          {isResearchErrorBanner && (
+            <p className="mt-2 text-xs opacity-90">
+              Dit is meestal een eerdere mislukte AI-run (blijft hangen per klant/versie). Nieuwe
+              deploys lossen excerpt-fouten op; gedeeltelijke inzichten blijven staan. Sluit de
+              melding of start opnieuw onderzoeken.
+            </p>
+          )}
+          {isStrictApproveError && (
+            <p className="mt-2 text-xs opacity-90">
+              Sla de strategische synthese op via &quot;Synthese opslaan&quot; (min. 20 tekens). Zie je
+              nog een eis voor alle beoordeelde perspectieven terwijl de app dat niet meer vraagt?
+              Pas op Supabase migratie <strong>20260330131300_pestel_approve_relax</strong> toe en
+              deploy de nieuwste VICE-versie.
+            </p>
+          )}
+          {!isStrictApproveError && !isResearchErrorBanner && (
+            <p className="mt-2 text-xs opacity-90">
+              Controleer de melding hierboven, sla ontbrekende stappen op en probeer opnieuw.
+            </p>
+          )}
+          {isResearchErrorBanner && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-3 h-8 text-xs"
+              disabled={busy !== null}
+              onClick={dismissResearchError}
+            >
+              Melding sluiten
+            </Button>
+          )}
+          {!isResearchErrorBanner && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-3 h-8 text-xs"
+              disabled={busy !== null}
+              onClick={() => setError(null)}
+            >
+              Melding sluiten
+            </Button>
+          )}
         </div>
       )}
 
