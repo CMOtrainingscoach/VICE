@@ -33,6 +33,7 @@ export type AuditFrameworkProgress = {
   porterApproved: boolean;
   fiveCApproved: boolean;
   swotApproved: boolean;
+  vrioApproved: boolean;
 };
 
 export async function getAuditFrameworkProgressAction(
@@ -55,6 +56,7 @@ export async function getAuditFrameworkProgressAction(
     porter_approved?: boolean;
     five_c_approved?: boolean;
     swot_approved?: boolean;
+    vrio_approved?: boolean;
   };
 
   return {
@@ -64,6 +66,7 @@ export async function getAuditFrameworkProgressAction(
       porterApproved: Boolean(raw?.porter_approved),
       fiveCApproved: Boolean(raw?.five_c_approved),
       swotApproved: Boolean(raw?.swot_approved),
+      vrioApproved: Boolean(raw?.vrio_approved),
     },
   };
 }

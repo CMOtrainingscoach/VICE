@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -25,6 +26,7 @@ import {
   type SwotQuadrant,
 } from "@/lib/swot/constants";
 import type { SwotItem, SwotWorkbench } from "@/lib/swot/types";
+import { VRIO_ROUTE } from "@/lib/vrio/constants";
 import {
   approveSwotVersionAction,
   generateSwotAiAction,
@@ -60,6 +62,7 @@ export function SwotWorkspace({
   tenantName: string;
   initial: SwotWorkbench;
 }) {
+  const router = useRouter();
   const [wb, setWb] = useState(initial);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -195,12 +198,13 @@ export function SwotWorkspace({
     if (!reviewed) return;
     const fresh = await loadSwotWorkbenchAction(tenantId);
     const updatedAt = fresh.ok && fresh.data ? fresh.data.version.updated_at : wb.version.updated_at;
-    await run("approve", () =>
+    const approved = await run("approve", () =>
       approveSwotVersionAction(tenantId, {
         versionId: version.id,
         expectedUpdatedAt: updatedAt,
       }),
     );
+    if (approved) router.push(`/klanten/${tenantId}/strategie/${VRIO_ROUTE}`);
   }
 
   function renderQuadrantCard(q: SwotQuadrant) {
@@ -356,9 +360,14 @@ export function SwotWorkspace({
 
       <footer className="mt-6 flex flex-wrap items-center justify-end gap-3">
         {readOnly ?
-          <p className="mr-auto text-sm text-emerald-700 dark:text-emerald-300">
-            SWOT goedgekeurd · volgende stap in de audit volgt binnenkort
-          </p>
+          <>
+            <p className="mr-auto text-sm text-emerald-700 dark:text-emerald-300">
+              SWOT goedgekeurd · de sterktes vormen de input voor VRIO
+            </p>
+            <Button type="button" asChild className="bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover">
+              <Link href={`/klanten/${tenantId}/strategie/${VRIO_ROUTE}`}>Naar VRIO →</Link>
+            </Button>
+          </>
         : <>
             <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => setAdjustOpen(true)}>
               Aanpassing vragen
