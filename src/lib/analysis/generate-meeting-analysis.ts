@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { z } from "zod";
+import { resolveMeetingAnalysisModel } from "@/lib/openai/models";
 
 export const actionItemSchema = z.object({
   text: z.string(),
@@ -23,7 +24,7 @@ export async function generateMeetingAnalysis(input: {
     throw new Error("OPENAI_API_KEY ontbreekt in .env.local");
   }
 
-  const model = process.env.VICE_ANALYSIS_MODEL ?? "gpt-4o-mini";
+  const model = resolveMeetingAnalysisModel();
   const openai = new OpenAI({ apiKey });
 
   const transcript = input.transcript.slice(0, 48_000);
