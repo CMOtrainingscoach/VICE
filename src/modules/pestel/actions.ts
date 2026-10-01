@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireSession, requirePlatformAdminMfa } from "@/lib/auth/session";
 import type { PestelWorkbench } from "@/lib/pestel/types";
+import { pestelWebResearchConfigured } from "@/lib/pestel/pestel-web-evidence";
 import { runPestelResearchStep } from "@/lib/pestel/run-pestel-research-step";
 import type { PestelResearchJob } from "@/lib/pestel/types";
 import {
@@ -40,6 +41,7 @@ export async function loadPestelWorkbenchAction(
     version: PestelWorkbench["version"] & { geo_markets: unknown };
     insights: PestelWorkbench["insights"];
     meetings: PestelWorkbench["meetings"];
+    research_inputs: PestelWorkbench["researchInputs"];
     active_research_job: PestelResearchJob | null;
   };
 
@@ -54,6 +56,7 @@ export async function loadPestelWorkbenchAction(
       version: { ...raw.version, geo_markets: geo },
       insights: raw.insights ?? [],
       meetings: raw.meetings ?? [],
+      researchInputs: raw.research_inputs ?? [],
       activeResearchJob: raw.active_research_job ?? null,
     },
   };
@@ -65,6 +68,14 @@ export async function startPestelResearchAction(
 ): Promise<ActionResult<{ jobId: string }>> {
   const session = await requireSession();
   await requirePlatformAdminMfa(session);
+
+  if (!pestelWebResearchConfigured()) {
+    return {
+      ok: false,
+      error:
+        "Live webonderzoek ontbreekt: voeg TAVILY_API_KEY toe (aanbevolen) in .env.local / Vercel, of Serper/OpenAI web search.",
+    };
+  }
 
   const supabase = await createClient();
   const { data: jobId, error } = await supabase.schema("app").rpc("start_pestel_research", {
@@ -143,6 +154,29 @@ export async function savePestelScopeAction(
 
   if (error) {
     return { ok: false, error: error.message };
+  }
+
+  if (parsed.data.researchInputs !== undefined) {
+    const payload = parsed.data.researchInputs.map((i) => ({
+      kind: i.kind,
+      meeting_recording_id:
+        i.kind === "meeting" ? i.meeting_recording_id || null : null,
+      label: i.label,
+      url: i.url?.trim() || null,
+      excerpt: i.excerpt,
+    }));
+
+    const { error: inputsError } = await supabase.schema("app").rpc(
+      "replace_pestel_research_inputs",
+      {
+        p_version_id: parsed.data.versionId,
+        p_inputs: payload,
+      },
+    );
+
+    if (inputsError) {
+      return { ok: false, error: inputsError.message };
+    }
   }
 
   revalidatePestel(tenantId);

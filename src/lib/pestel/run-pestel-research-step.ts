@@ -8,6 +8,10 @@ import {
   type PestelResearchContext,
 } from "@/lib/pestel/build-research-context";
 import { generatePestelDimensionInsights } from "@/lib/pestel/pestel-research-ai";
+import {
+  allowedWebUrlSet,
+  fetchPestelWebEvidence,
+} from "@/lib/pestel/pestel-web-evidence";
 import type { PestelVersion } from "@/lib/pestel/types";
 
 type ResearchJobRow = {
@@ -34,6 +38,7 @@ async function loadContext(
   supabase: Awaited<ReturnType<typeof createClient>>,
   tenantId: string,
   version: PestelVersion,
+  versionId: string,
 ): Promise<PestelResearchContext> {
   const { data: tenant } = await supabase
     .schema("app")
@@ -57,6 +62,23 @@ async function loadContext(
     throw new Error("Klant niet gevonden");
   }
 
+  const { data: inputsJson, error: inputsError } = await supabase
+    .schema("app")
+    .rpc("get_pestel_version_research_inputs", { p_version_id: versionId });
+
+  if (inputsError) {
+    throw new Error(inputsError.message);
+  }
+
+  const researchInputs = (inputsJson ?? []) as {
+    id: string;
+    kind: "meeting" | "website" | "document" | "note";
+    meeting_recording_id: string | null;
+    label: string;
+    url: string | null;
+    excerpt: string;
+  }[];
+
   return buildResearchContextPayload(
     tenant as {
       name: string;
@@ -74,6 +96,14 @@ async function loadContext(
       notes: string | null;
       created_at: string;
     }[],
+    researchInputs.map((i) => ({
+      id: i.id,
+      kind: i.kind,
+      meeting_recording_id: i.meeting_recording_id,
+      label: i.label ?? "",
+      url: i.url,
+      excerpt: i.excerpt ?? "",
+    })),
   );
 }
 
@@ -159,8 +189,8 @@ export async function runPestelResearchStep(jobId: string): Promise<{
     p_job_id: jobId,
     p_status: "running",
     p_progress: {
-      phase: "research",
-      message: `Perspectief ${dimension} uitwerken…`,
+      phase: "web_search",
+      message: `Live webonderzoek (${dimension})…`,
       dimensions_done: done,
       current_dimension: dimension,
     },
@@ -169,12 +199,30 @@ export async function runPestelResearchStep(jobId: string): Promise<{
   });
 
   try {
-    const ctx = await loadContext(supabase, job.tenant_id, version);
+    const ctx = await loadContext(supabase, job.tenant_id, version, job.version_id);
+    const webEvidence = await fetchPestelWebEvidence({ dimension, context: ctx });
+    const allowedWebUrls = allowedWebUrlSet(webEvidence);
+
+    await supabase.schema("app").rpc("update_pestel_research_progress", {
+      p_job_id: jobId,
+      p_status: "running",
+      p_progress: {
+        phase: "research",
+        message: `Perspectief ${dimension} uitwerken (${webEvidence.length} webbronnen)…`,
+        dimensions_done: done,
+        current_dimension: dimension,
+      },
+      p_error_message: null,
+      p_insights_created_delta: 0,
+    });
+
     const allowedMeetingIds = new Set(ctx.meetings.map((m) => m.id));
     const insights = await generatePestelDimensionInsights({
       dimension,
       context: ctx,
       allowedMeetingIds,
+      webEvidence,
+      allowedWebUrls,
     });
 
     let created = 0;

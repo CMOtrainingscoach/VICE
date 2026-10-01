@@ -38,6 +38,7 @@ export default async function PestelPage({
       initialVersion={loaded.data.version}
       initialInsights={loaded.data.insights}
       initialMeetings={loaded.data.meetings}
+      initialResearchInputs={loaded.data.researchInputs}
       initialActiveJob={loaded.data.activeResearchJob}
     />
   );

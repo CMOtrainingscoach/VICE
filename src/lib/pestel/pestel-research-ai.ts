@@ -7,6 +7,11 @@ import {
   resolvePestelResearchModel,
 } from "@/lib/openai/models";
 import { serializeResearchContextForPrompt, type PestelResearchContext } from "@/lib/pestel/build-research-context";
+import {
+  normalizeWebUrl,
+  serializeWebEvidenceForPrompt,
+  type PestelWebHit,
+} from "@/lib/pestel/pestel-web-evidence";
 
 const sourceSchema = z.object({
   source_type: z.enum(["website", "meeting", "manual", "document"]),
@@ -37,10 +42,17 @@ const dimensionResponseSchema = z.object({
 
 export type PestelAiInsight = z.infer<typeof insightSchema>;
 
+function findWebHit(url: string, hits: PestelWebHit[]): PestelWebHit | undefined {
+  const key = normalizeWebUrl(url);
+  return hits.find((h) => normalizeWebUrl(h.url) === key);
+}
+
 export async function generatePestelDimensionInsights(input: {
   dimension: PestelDimension;
   context: PestelResearchContext;
   allowedMeetingIds: Set<string>;
+  webEvidence: PestelWebHit[];
+  allowedWebUrls: Set<string>;
 }): Promise<PestelAiInsight[]> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -50,7 +62,10 @@ export async function generatePestelDimensionInsights(input: {
   const model = resolvePestelResearchModel();
   const openai = new OpenAI({ apiKey });
   const dimLabel = PESTEL_DIMENSION_META[input.dimension].label;
-  const contextBlock = serializeResearchContextForPrompt(input.context);
+  const contextBlock = [
+    serializeResearchContextForPrompt(input.context),
+    serializeWebEvidenceForPrompt(input.webEvidence),
+  ].join("\n\n");
 
   const completion = await openai.chat.completions.create({
     model,
@@ -67,8 +82,10 @@ Regels (strikt):
 - Antwoord in het Nederlands.
 - JSON: { "insights": [ ... ] }
 - Per inzicht minstens 1 bron in "sources".
-- Meeting-bron: meeting_recording_id MOET exact overeenkomen met een ID uit de context; excerpt = letterlijk citaat uit dat transcript (max 400 tekens).
-- Website-bron: url moet https:// zijn; excerpt = feitelijke bevinding uit die bron (geen verzonnen URLs).
+- Meeting-bron: meeting_recording_id MOET exact overeenkomen met een ID uit «Interne / gekoppelde bronnen»; excerpt = letterlijk citaat (max 400 tekens).
+- Document/notitie (intern): source_type document; label + excerpt alleen uit gekoppelde fragmenten in de context.
+- Website-bron (extern): url MOET exact voorkomen in «Live webonderzoek»; excerpt = letterlijk citaat uit het fragment daar (max 400 tekens).
+- Per inzicht minstens één website-fact (is_ai_interpretation:false) voor externe omgevingsfeiten, naast eventuele meeting/document.
 - Voeg per inzicht minstens één bron met is_ai_interpretation:true toe die uitlegt HOE je van feit naar conclusie gaat (raadpleegbaar voor Hardwig).
 - evidence_level "hypothesis" als onzeker; nooit "provided" zonder meeting/document in sources.
 - Geen percentages of resterende tijd.`,
@@ -101,8 +118,26 @@ Geef 2-4 concrete externe ontwikkelingen relevant voor deze klant en afbakening.
           throw new Error(`Meeting-bron ongeldig voor inzicht "${ins.title}"`);
         }
       }
-      if (src.source_type === "website" && src.url && !src.url.startsWith("https://")) {
-        throw new Error(`Website-bron moet HTTPS zijn voor "${ins.title}"`);
+      if (src.source_type === "website" && src.url) {
+        if (!src.url.startsWith("https://")) {
+          throw new Error(`Website-bron moet HTTPS zijn voor "${ins.title}"`);
+        }
+        const normalized = normalizeWebUrl(src.url);
+        if (!input.allowedWebUrls.has(normalized)) {
+          throw new Error(
+            `Website ${src.url} staat niet in live webonderzoek voor "${ins.title}"`,
+          );
+        }
+        const hit = findWebHit(src.url, input.webEvidence);
+        if (hit && src.excerpt) {
+          const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+          const needle = norm(src.excerpt).slice(0, 48);
+          if (needle.length >= 20 && !norm(hit.snippet).includes(needle)) {
+            throw new Error(
+              `Excerpt komt niet overeen met live fragment voor "${ins.title}" (${src.url})`,
+            );
+          }
+        }
       }
     }
     const hasFact = ins.sources.some((s) => !s.is_ai_interpretation);
@@ -110,6 +145,17 @@ Geef 2-4 concrete externe ontwikkelingen relevant voor deze klant en afbakening.
     if (!hasFact || !hasInterpretation) {
       throw new Error(
         `Inzicht "${ins.title}" moet zowel feitelijke bron als duidingsbron bevatten`,
+      );
+    }
+    const hasExternalWebFact = ins.sources.some(
+      (s) =>
+        s.source_type === "website"
+        && !s.is_ai_interpretation
+        && Boolean(s.url?.startsWith("https://")),
+    );
+    if (!hasExternalWebFact) {
+      throw new Error(
+        `Inzicht "${ins.title}" vereist minstens één externe website-bron (https) als marktbewijs`,
       );
     }
   }

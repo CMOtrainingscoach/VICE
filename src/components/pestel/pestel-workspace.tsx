@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Sparkles, X } from "lucide-react";
+import { FileText, Globe, Link2, Plus, Sparkles, StickyNote, Video, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ import {
 import type {
   PestelInsight,
   PestelMeetingOption,
+  PestelResearchInput,
+  PestelResearchInputKind,
   PestelResearchJob,
   PestelVersion,
 } from "@/lib/pestel/types";
@@ -37,8 +39,43 @@ type PestelWorkspaceProps = {
   initialVersion: PestelVersion;
   initialInsights: PestelInsight[];
   initialMeetings: PestelMeetingOption[];
+  initialResearchInputs: PestelResearchInput[];
   initialActiveJob: PestelResearchJob | null;
 };
+
+const MEETING_REVIEW_LABELS: Record<string, string> = {
+  approved: "Goedgekeurd",
+  pending: "Te beoordelen",
+  draft: "Concept",
+};
+
+function researchInputIcon(kind: PestelResearchInputKind) {
+  switch (kind) {
+    case "meeting":
+      return Video;
+    case "website":
+      return Globe;
+    case "document":
+      return FileText;
+    default:
+      return StickyNote;
+  }
+}
+
+function describeResearchInput(
+  input: PestelResearchInput,
+  meetings: PestelMeetingOption[],
+): string {
+  if (input.kind === "meeting" && input.meeting_recording_id) {
+    const m = meetings.find((x) => x.id === input.meeting_recording_id);
+    const status = m ? MEETING_REVIEW_LABELS[m.review_status] ?? m.review_status : "";
+    return m ? `${m.title}${status ? ` · ${status}` : ""}` : "Meeting";
+  }
+  if (input.kind === "website") {
+    return input.label.trim() || input.url || "Website";
+  }
+  return input.label.trim() || "Bron";
+}
 
 type DraftSource = {
   source_type: "website" | "document" | "meeting" | "manual";
@@ -96,6 +133,7 @@ export function PestelWorkspace({
   initialVersion,
   initialInsights,
   initialMeetings,
+  initialResearchInputs,
   initialActiveJob,
 }: PestelWorkspaceProps) {
   const router = useRouter();
@@ -107,6 +145,20 @@ export function PestelWorkspace({
   const [timeHorizon, setTimeHorizon] = useState(version.time_horizon);
   const [offeringAudience, setOfferingAudience] = useState(version.offering_audience);
   const [researchQuestion, setResearchQuestion] = useState(version.research_question);
+  const [researchInputs, setResearchInputs] = useState<PestelResearchInput[]>(
+    initialResearchInputs,
+  );
+  const [meetingToLink, setMeetingToLink] = useState("");
+  const [newWebsiteUrl, setNewWebsiteUrl] = useState("");
+  const [newWebsiteLabel, setNewWebsiteLabel] = useState("");
+  const [newDocLabel, setNewDocLabel] = useState("");
+  const [newDocUrl, setNewDocUrl] = useState("");
+  const [newDocExcerpt, setNewDocExcerpt] = useState("");
+  const [newNoteLabel, setNewNoteLabel] = useState("");
+  const [newNoteExcerpt, setNewNoteExcerpt] = useState("");
+  const [sourcePanel, setSourcePanel] = useState<
+    "meeting" | "website" | "document" | "note" | null
+  >(null);
   const [synthesisText, setSynthesisText] = useState(version.synthesis_text);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -209,6 +261,122 @@ export function PestelWorkspace({
     byDimension[d].some((i) => i.review_status === "reviewed"),
   ).length;
 
+  const linkedMeetingIds = useMemo(
+    () =>
+      new Set(
+        researchInputs
+          .filter((i) => i.kind === "meeting" && i.meeting_recording_id)
+          .map((i) => i.meeting_recording_id as string),
+      ),
+    [researchInputs],
+  );
+
+  const meetingsAvailableToLink = useMemo(
+    () => initialMeetings.filter((m) => !linkedMeetingIds.has(m.id)),
+    [initialMeetings, linkedMeetingIds],
+  );
+
+  function removeResearchInput(index: number) {
+    setResearchInputs((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function linkMeeting() {
+    if (!meetingToLink) return;
+    const m = initialMeetings.find((x) => x.id === meetingToLink);
+    if (!m) return;
+    setResearchInputs((prev) => [
+      ...prev,
+      {
+        kind: "meeting",
+        meeting_recording_id: m.id,
+        label: m.title,
+        excerpt: "",
+      },
+    ]);
+    setMeetingToLink("");
+    setSourcePanel(null);
+  }
+
+  function linkAllMeetings() {
+    setResearchInputs((prev) => {
+      const existing = new Set(
+        prev
+          .filter((i) => i.kind === "meeting" && i.meeting_recording_id)
+          .map((i) => i.meeting_recording_id as string),
+      );
+      const additions: PestelResearchInput[] = initialMeetings
+        .filter((m) => !existing.has(m.id))
+        .map((m) => ({
+          kind: "meeting",
+          meeting_recording_id: m.id,
+          label: m.title,
+          excerpt: "",
+        }));
+      return [...prev, ...additions];
+    });
+  }
+
+  function addWebsiteSource() {
+    const url = newWebsiteUrl.trim();
+    if (!url) {
+      setError("Vul een URL in voor de website.");
+      return;
+    }
+    setResearchInputs((prev) => [
+      ...prev,
+      {
+        kind: "website",
+        label: newWebsiteLabel.trim() || url,
+        url,
+        excerpt: "",
+      },
+    ]);
+    setNewWebsiteUrl("");
+    setNewWebsiteLabel("");
+    setSourcePanel(null);
+    setError(null);
+  }
+
+  function addDocumentSource() {
+    if (!newDocLabel.trim() && !newDocExcerpt.trim()) {
+      setError("Document: vul minstens een titel of inhoud in.");
+      return;
+    }
+    setResearchInputs((prev) => [
+      ...prev,
+      {
+        kind: "document",
+        label: newDocLabel.trim() || "Document",
+        url: newDocUrl.trim() || null,
+        excerpt: newDocExcerpt,
+      },
+    ]);
+    setNewDocLabel("");
+    setNewDocUrl("");
+    setNewDocExcerpt("");
+    setSourcePanel(null);
+    setError(null);
+  }
+
+  function addNoteSource() {
+    if (!newNoteExcerpt.trim()) {
+      setError("Notitie: vul tekst in.");
+      return;
+    }
+    setResearchInputs((prev) => [
+      ...prev,
+      {
+        kind: "note",
+        label: newNoteLabel.trim() || "Interne notitie",
+        excerpt: newNoteExcerpt,
+      },
+    ]);
+    setNewNoteLabel("");
+    setNewNoteExcerpt("");
+    setSourcePanel(null);
+    setError(null);
+  }
+
   function openNew(dimension: PestelDimension) {
     setEditingId(null);
     setDraft(emptyDraft(dimension));
@@ -234,6 +402,14 @@ export function PestelWorkspace({
       timeHorizon,
       offeringAudience,
       researchQuestion,
+      researchInputs: researchInputs.map((i) => ({
+        kind: i.kind,
+        meeting_recording_id:
+          i.kind === "meeting" ? i.meeting_recording_id ?? "" : "",
+        label: i.label,
+        url: i.url ?? "",
+        excerpt: i.excerpt,
+      })),
     });
     setBusy(null);
     if (!result.ok) {
@@ -392,6 +568,239 @@ export function PestelWorkspace({
             />
           </div>
         </div>
+
+        <div className="mt-8 border-t border-vice-border pt-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="flex items-center gap-2 text-base font-medium text-vice-text">
+                <Link2 className="size-4 text-vice-gold" aria-hidden />
+                Bronnen voor AI-onderzoek
+              </h3>
+              <p className="mt-1 max-w-2xl text-sm text-vice-text-muted">
+                Koppel interne context: meetings, uploads/notities en nuttige start-URLs. De AI
+                doet altijd ook extern onderzoek en levert per inzicht publiek bewijs (https-sites).
+                Zonder opgeslagen lijst geldt voor meetings: alle transcripts (voorkeur
+                goedgekeurd). Na opslaan bepalen gekoppelde meetings/documenten welke interne
+                bronnen citeerbaar zijn — geen blokkade op internetonderzoek.
+              </p>
+            </div>
+            {initialMeetings.length > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-8 text-xs"
+                disabled={researchActive || busy !== null}
+                onClick={linkAllMeetings}
+              >
+                Alle meetings koppelen
+              </Button>
+            )}
+          </div>
+
+          {researchInputs.length > 0 ? (
+            <ul className="mt-4 space-y-2">
+              {researchInputs.map((input, index) => {
+                const Icon = researchInputIcon(input.kind);
+                return (
+                  <li
+                    key={`${input.kind}-${input.meeting_recording_id ?? input.url ?? index}`}
+                    className="flex items-start gap-3 rounded-xl border border-vice-border bg-vice-bg/60 px-3 py-2 text-sm"
+                  >
+                    <Icon className="mt-0.5 size-4 shrink-0 text-vice-gold" aria-hidden />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-vice-text">
+                        {describeResearchInput(input, initialMeetings)}
+                      </p>
+                      <p className="text-xs capitalize text-vice-text-muted">
+                        {input.kind === "note" ? "Interne notitie" : input.kind}
+                      </p>
+                      {input.url && (
+                        <p className="truncate text-xs text-vice-text-muted">{input.url}</p>
+                      )}
+                      {input.excerpt && input.kind !== "meeting" && (
+                        <p className="mt-1 line-clamp-2 text-xs text-vice-text-muted">
+                          {input.excerpt}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="size-8 shrink-0 p-0"
+                      disabled={researchActive}
+                      aria-label="Bron verwijderen"
+                      onClick={() => removeResearchInput(index)}
+                    >
+                      <X className="size-4" aria-hidden />
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="mt-4 rounded-xl border border-dashed border-vice-border px-4 py-3 text-sm text-vice-text-muted">
+              Nog geen bronnen gekoppeld. Voeg meetings of andere bronnen toe vóór AI-onderzoek
+              voor volledige controle.
+            </p>
+          )}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-9 text-xs"
+              disabled={researchActive || meetingsAvailableToLink.length === 0}
+              onClick={() => setSourcePanel(sourcePanel === "meeting" ? null : "meeting")}
+            >
+              <Video className="size-3.5" aria-hidden />
+              Meeting
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-9 text-xs"
+              disabled={researchActive}
+              onClick={() => setSourcePanel(sourcePanel === "website" ? null : "website")}
+            >
+              <Globe className="size-3.5" aria-hidden />
+              Website
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-9 text-xs"
+              disabled={researchActive}
+              onClick={() => setSourcePanel(sourcePanel === "document" ? null : "document")}
+            >
+              <FileText className="size-3.5" aria-hidden />
+              Document
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-9 text-xs"
+              disabled={researchActive}
+              onClick={() => setSourcePanel(sourcePanel === "note" ? null : "note")}
+            >
+              <StickyNote className="size-3.5" aria-hidden />
+              Notitie
+            </Button>
+          </div>
+
+          {sourcePanel === "meeting" && (
+            <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-vice-border bg-vice-surface-muted/40 p-4">
+              <div className="min-w-[200px] flex-1 space-y-1">
+                <Label htmlFor="link-meeting">Meeting met transcript</Label>
+                <select
+                  id="link-meeting"
+                  className="w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
+                  value={meetingToLink}
+                  onChange={(e) => setMeetingToLink(e.target.value)}
+                >
+                  <option value="">Kies…</option>
+                  {meetingsAvailableToLink.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.title} · {MEETING_REVIEW_LABELS[m.review_status] ?? m.review_status}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button type="button" className="h-10" onClick={linkMeeting} disabled={!meetingToLink}>
+                Koppelen
+              </Button>
+            </div>
+          )}
+
+          {sourcePanel === "website" && (
+            <div className="mt-3 space-y-3 rounded-xl border border-vice-border bg-vice-surface-muted/40 p-4">
+              <div className="space-y-1">
+                <Label htmlFor="src-url">URL (https)</Label>
+                <Input
+                  id="src-url"
+                  value={newWebsiteUrl}
+                  onChange={(e) => setNewWebsiteUrl(e.target.value)}
+                  placeholder="https://…"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="src-web-label">Label (optioneel)</Label>
+                <Input
+                  id="src-web-label"
+                  value={newWebsiteLabel}
+                  onChange={(e) => setNewWebsiteLabel(e.target.value)}
+                />
+              </div>
+              <Button type="button" onClick={addWebsiteSource}>
+                Website toevoegen
+              </Button>
+            </div>
+          )}
+
+          {sourcePanel === "document" && (
+            <div className="mt-3 space-y-3 rounded-xl border border-vice-border bg-vice-surface-muted/40 p-4">
+              <p className="text-xs text-vice-text-muted">
+                Documenten-module komt later; plak nu kerninhoud of een link naar een geüpload
+                bestand.
+              </p>
+              <div className="space-y-1">
+                <Label htmlFor="src-doc-title">Titel</Label>
+                <Input
+                  id="src-doc-title"
+                  value={newDocLabel}
+                  onChange={(e) => setNewDocLabel(e.target.value)}
+                  placeholder="Jaarverslag 2024"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="src-doc-url">Link (optioneel)</Label>
+                <Input
+                  id="src-doc-url"
+                  value={newDocUrl}
+                  onChange={(e) => setNewDocUrl(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="src-doc-excerpt">Inhoud / samenvatting voor de AI</Label>
+                <textarea
+                  id="src-doc-excerpt"
+                  className="min-h-[80px] w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
+                  value={newDocExcerpt}
+                  onChange={(e) => setNewDocExcerpt(e.target.value)}
+                />
+              </div>
+              <Button type="button" onClick={addDocumentSource}>
+                Document toevoegen
+              </Button>
+            </div>
+          )}
+
+          {sourcePanel === "note" && (
+            <div className="mt-3 space-y-3 rounded-xl border border-vice-border bg-vice-surface-muted/40 p-4">
+              <div className="space-y-1">
+                <Label htmlFor="src-note-label">Label</Label>
+                <Input
+                  id="src-note-label"
+                  value={newNoteLabel}
+                  onChange={(e) => setNewNoteLabel(e.target.value)}
+                  placeholder="Gesprek met sectorfederatie"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="src-note-text">Tekst voor de AI</Label>
+                <textarea
+                  id="src-note-text"
+                  className="min-h-[80px] w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
+                  value={newNoteExcerpt}
+                  onChange={(e) => setNewNoteExcerpt(e.target.value)}
+                />
+              </div>
+              <Button type="button" onClick={addNoteSource}>
+                Notitie toevoegen
+              </Button>
+            </div>
+          )}
+        </div>
+
         {researchActive && (
           <div
             className="mt-4 rounded-xl border border-vice-gold/40 bg-vice-surface-muted/60 px-4 py-3 text-sm"
@@ -400,10 +809,11 @@ export function PestelWorkspace({
             <p className="font-medium text-vice-text">AI-onderzoek bezig</p>
             <p className="mt-1 text-vice-text-muted">{researchMessage || "Even geduld…"}</p>
             <p className="mt-2 text-xs text-vice-text-muted">
-              Stappen: klantinformatie → per PESTEL-perspectief (met bronnen) → concept opslaan.
-              Model: configureer via{" "}
-              <code className="text-[11px]">VICE_PESTEL_RESEARCH_MODEL</code> (default{" "}
-              <code className="text-[11px]">gpt-4o</code>).
+              Stappen: live webonderzoek → per PESTEL-perspectief (alleen geverifieerde URLs) →
+              concept opslaan. Vereist{" "}
+              <code className="text-[11px]">TAVILY_API_KEY</code> (aanbevolen) of Serper/OpenAI
+              web search. Model:{" "}
+              <code className="text-[11px]">VICE_PESTEL_RESEARCH_MODEL</code>.
             </p>
             {researchDimensionsDone.length > 0 && (
               <p className="mt-1 text-xs text-vice-text-muted">

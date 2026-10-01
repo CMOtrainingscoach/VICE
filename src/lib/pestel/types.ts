@@ -50,7 +50,23 @@ export type PestelVersion = {
   updated_at: string;
 };
 
-export type PestelMeetingOption = { id: string; title: string };
+export type PestelMeetingOption = {
+  id: string;
+  title: string;
+  review_status: string;
+};
+
+export type PestelResearchInputKind = "meeting" | "website" | "document" | "note";
+
+export type PestelResearchInput = {
+  id?: string;
+  kind: PestelResearchInputKind;
+  meeting_recording_id?: string | null;
+  label: string;
+  url?: string | null;
+  excerpt: string;
+  sort_order?: number;
+};
 
 export type PestelResearchJob = {
   id: string;
@@ -71,5 +87,6 @@ export type PestelWorkbench = {
   version: PestelVersion;
   insights: PestelInsight[];
   meetings: PestelMeetingOption[];
+  researchInputs: PestelResearchInput[];
   activeResearchJob: PestelResearchJob | null;
 };
