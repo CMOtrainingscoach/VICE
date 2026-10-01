@@ -32,6 +32,7 @@ export type AuditFrameworkProgress = {
   pestelApproved: boolean;
   porterApproved: boolean;
   fiveCApproved: boolean;
+  swotApproved: boolean;
 };
 
 export async function getAuditFrameworkProgressAction(
@@ -53,6 +54,7 @@ export async function getAuditFrameworkProgressAction(
     pestel_approved?: boolean;
     porter_approved?: boolean;
     five_c_approved?: boolean;
+    swot_approved?: boolean;
   };
 
   return {
@@ -61,6 +63,7 @@ export async function getAuditFrameworkProgressAction(
       pestelApproved: Boolean(raw?.pestel_approved),
       porterApproved: Boolean(raw?.porter_approved),
       fiveCApproved: Boolean(raw?.five_c_approved),
+      swotApproved: Boolean(raw?.swot_approved),
     },
   };
 }

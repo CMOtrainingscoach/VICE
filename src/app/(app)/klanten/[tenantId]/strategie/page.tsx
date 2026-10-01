@@ -12,6 +12,9 @@ export default async function StrategieHubPage({
 
   if (ctx.isPlatformAdmin) {
     const progress = await getAuditFrameworkProgressAction(tenantId);
+    if (progress.ok && progress.data?.swotApproved) {
+      redirect(`/klanten/${tenantId}/strategie/${SWOT_ROUTE}`);
+    }
     if (progress.ok && progress.data?.fiveCApproved) {
       redirect(`/klanten/${tenantId}/strategie/${SWOT_ROUTE}`);
     }

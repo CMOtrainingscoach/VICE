@@ -4,9 +4,7 @@ export const MARKETING_5C_ROUTE = "marketing-5c" as const;
 
 export const MARKETING_5C_LABEL = "5C-analyse";
 
-export const SWOT_FRAMEWORK_INDEX = 4;
-
-export const SWOT_ROUTE = "swot" as const;
+export { SWOT_FRAMEWORK_INDEX, SWOT_ROUTE } from "@/lib/swot/constants";
 
 export const FIVE_C_KEYS = [
   "company",
