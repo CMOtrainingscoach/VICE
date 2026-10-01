@@ -26,6 +26,10 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000). Exposed schema **`app`** in dashboard niet vergeten.
 
+## Vercel
+
+Zie **[docs/VERCEL_DEPLOY.md](docs/VERCEL_DEPLOY.md)** (404-troubleshooting, env vars, Supabase redirects).
+
 ## Starten (met Docker, volledig lokaal)
 
 ```powershell
