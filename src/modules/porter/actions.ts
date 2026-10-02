@@ -36,6 +36,7 @@ export type AuditFrameworkProgress = {
   vrioApproved: boolean;
   bcgApproved: boolean;
   valueChainApproved: boolean;
+  valueChainStarted: boolean;
 };
 
 export async function getAuditFrameworkProgressAction(
@@ -61,6 +62,7 @@ export async function getAuditFrameworkProgressAction(
     vrio_approved?: boolean;
     bcg_approved?: boolean;
     value_chain_approved?: boolean;
+    value_chain_started?: boolean;
   };
 
   return {
@@ -73,6 +75,7 @@ export async function getAuditFrameworkProgressAction(
       vrioApproved: Boolean(raw?.vrio_approved),
       bcgApproved: Boolean(raw?.bcg_approved),
       valueChainApproved: Boolean(raw?.value_chain_approved),
+      valueChainStarted: Boolean(raw?.value_chain_started),
     },
   };
 }

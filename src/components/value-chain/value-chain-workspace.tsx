@@ -278,7 +278,7 @@ export function ValueChainWorkspace({
           </Link>
         ) : (
           <Link href={`/klanten/${tenantId}/strategie/${BCG_ROUTE}`} className="inline-flex items-center rounded-full border border-vice-border px-3 py-1 text-xs">
-            BCG nog niet goedgekeurd
+            BCG nog open
           </Link>
         )}
       </div>

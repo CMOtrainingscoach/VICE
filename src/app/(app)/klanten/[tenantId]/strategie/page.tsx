@@ -17,7 +17,7 @@ export default async function StrategieHubPage({
     if (progress.ok && progress.data?.valueChainApproved) {
       redirect(`/klanten/${tenantId}/strategie/${STP_ROUTE}`);
     }
-    if (progress.ok && progress.data?.bcgApproved) {
+    if (progress.ok && progress.data && (progress.data.valueChainStarted || progress.data.bcgApproved)) {
       redirect(`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`);
     }
     if (progress.ok && progress.data?.vrioApproved) {

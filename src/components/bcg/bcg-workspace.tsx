@@ -221,9 +221,17 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
       {markets.size > 1 && <p className="mb-4 rounded-lg border border-vice-border px-4 py-3 text-sm">Deze items zitten in verschillende markten. De definities blijven per aanbod zichtbaar en worden niet samengevoegd.</p>}
       {overlapIds.size > 0 && <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">Overlappend aanbod telt nog dubbel. Kies per item wat meetelt.</p>}
 
-      <div className="mb-4 flex gap-2">
-        <Button type="button" variant={view === "select" ? "secondary" : "ghost"} onClick={() => setView("select")}>Portfolio</Button>
-        <Button type="button" variant={view === "matrix" ? "secondary" : "ghost"} onClick={() => setView("matrix")}>Matrix</Button>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2">
+          <Button type="button" variant={view === "select" ? "secondary" : "ghost"} onClick={() => setView("select")}>Portfolio</Button>
+          <Button type="button" variant={view === "matrix" ? "secondary" : "ghost"} onClick={() => setView("matrix")}>Matrix</Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="max-w-sm text-xs text-vice-text-muted">Ontbreekt de historiek, dan blijft de BCG open. Niets hoeft bevestigd te zijn om verder te gaan.</p>
+          <Button type="button" asChild variant={readOnly || canApprove(wb, overlapIds) ? "secondary" : "primary"} className={readOnly || canApprove(wb, overlapIds) ? undefined : goldButtonClass}>
+            <Link href={`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`}>Verder naar de waardeketen</Link>
+          </Button>
+        </div>
       </div>
 
       {view === "select" ? (
@@ -394,8 +402,8 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
                   <Button type="button" asChild className={goldButtonClass}><Link href={`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`}>Naar de waardeketen</Link></Button>
                 </>
               ) : (
-                <Button type="button" className={goldButtonClass} disabled={busy !== null || !canApprove(wb, overlapIds)} onClick={() => void run("approve", () => approveBcgAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at })).then((ok) => { if (ok) router.push(`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`); })}>
-                  Goedkeuren en verder
+                <Button type="button" variant="secondary" disabled={busy !== null || !canApprove(wb, overlapIds)} onClick={() => void run("approve", () => approveBcgAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at })).then((ok) => { if (ok) router.push(`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`); })}>
+                  Goedkeuren
                 </Button>
               )}
             </div>
