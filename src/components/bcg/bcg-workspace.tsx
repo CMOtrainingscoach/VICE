@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Loader2, Plus, Sparkles } from "lucide-react";
+import { Loader2, Plus, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -12,10 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   BCG_BASIS_LABELS,
-  BCG_KIND_LABELS,
   BCG_PERIOD_LABELS,
   BCG_STATUS_LABELS,
-  type BcgItemKind,
   type BcgMeasureBasis,
   type BcgPeriodKind,
 } from "@/lib/bcg/constants";
@@ -48,12 +46,9 @@ import {
   unpublishBcgAction,
 } from "@/modules/bcg/actions";
 
-type View = "select" | "matrix";
-
 export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: string; tenantName: string; initial: BcgWorkbench }) {
   const router = useRouter();
   const [wb, setWb] = useState(initial);
-  const [view, setView] = useState<View>(initial.items.some((item) => item.selected) ? "matrix" : "select");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -62,7 +57,8 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
   const [spread, setSpread] = useState(false);
   const [synthesis, setSynthesis] = useState(initial.version.synthesis_text);
   const [newTitle, setNewTitle] = useState("");
-  const [newKind, setNewKind] = useState<BcgItemKind>("service");
+  const [adding, setAdding] = useState(false);
+  const [settings, setSettings] = useState(false);
   const [scopeName, setScopeName] = useState("");
   const [publishFigures, setPublishFigures] = useState(initial.version.publish_figures);
   const version = wb.version;
@@ -108,8 +104,7 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
     const ok = await run("ai", () => prepareBcgAction(tenantId, { versionId: version.id }));
     if (!ok) return;
     await reload();
-    setNotice("De matrix is ingevuld vanuit bestaande bronnen. Cijfers zonder bron zijn leeg gelaten. Bewerkingen blijven staan.");
-    setView("matrix");
+    setNotice("Cijfers zonder bron zijn leeg gelaten. Bewerkingen blijven staan.");
   }
 
   async function addItem() {
@@ -117,12 +112,13 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
     setError(null);
     setNotice(null);
     try {
-      const result = await addBcgItemAction(tenantId, { versionId: version.id, title: newTitle, kind: newKind });
+      const result = await addBcgItemAction(tenantId, { versionId: version.id, title: newTitle, kind: "service" });
       if (!result.ok) {
         setError(result.error);
         return;
       }
       setNewTitle("");
+      setAdding(false);
       await reload();
       if (result.data) setOpenId(result.data.itemId);
     } finally {
@@ -166,45 +162,37 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
     return [{ id: item.id, name: item.title, quadrant: reading.previewQuadrant, x: pos.x, y: pos.y, provisional: reading.provisional }];
   });
 
-  const unplaced = selected.filter((item) => !readings.get(item.id)?.placeable);
+  const gap = sharedGap(wb.items, readings);
+  const scopeLine = [
+    version.market_label.trim(),
+    version.geography.trim(),
+    version.measure_basis ? BCG_BASIS_LABELS[version.measure_basis].toLowerCase() : "",
+    version.period_kind ? BCG_PERIOD_LABELS[version.period_kind].toLowerCase() : "",
+    version.period_label.trim(),
+  ].filter(Boolean).join(" · ");
+  const sourceLine = ([
+    ["VRIO", wb.upstream.vrio],
+    ["5C", wb.upstream.five_c],
+    ["Porter", wb.upstream.porter],
+    ["PESTEL", wb.upstream.pestel],
+    ["SWOT", wb.upstream.swot],
+  ] as const).map(([label, source]) => `${label} ${source ? `v${source.version_number}` : "ontbreekt"}`).join(" · ");
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <header className="mb-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-vice-text-muted">Klanten / {tenantName} / Strategie · {BCG_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · BCG-matrix</p>
-          <Button type="button" asChild variant="secondary" className="h-8 text-xs">
-            <Link href={`/klanten/${tenantId}/strategie/${VRIO_ROUTE}`}>Terug naar VRIO</Link>
-          </Button>
+        <p className="text-sm text-vice-text-muted">Klanten / {tenantName} / Strategie · {BCG_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT}</p>
+        <div className="mt-2 flex flex-wrap gap-4 text-sm">
+          <Link href={`/klanten/${tenantId}/strategie/${VRIO_ROUTE}`} className="text-vice-text-muted hover:text-vice-gold">← VRIO</Link>
+          <Link href={`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`} className="text-vice-text-muted hover:text-vice-gold" title="De BCG mag open blijven. Niets hoeft bevestigd te zijn.">Verder naar de waardeketen</Link>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-semibold text-vice-text md:text-3xl">
-            {view === "select" ? "Waar verdient je portfolio aandacht?" : "Je portfolio in perspectief."}
-          </h1>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold text-vice-text md:text-3xl">Je portfolio in perspectief.</h1>
           <Chip tone="gold">{BCG_STATUS_LABELS[version.status]}</Chip>
         </div>
-        <p className="mt-2 text-sm text-vice-text-muted">
-          {view === "select"
-            ? "AI vult de matrix vanuit het dossier. Jij voegt een aanbod toe, verwijdert het, of bewerkt wat al ingevuld is."
-            : "Alleen onderbouwde cijfers krijgen een plek. Een kwadrant is geen bedrijfsbesluit."}
-        </p>
-        <p className="mt-1 text-xs text-vice-text-muted">Versie {version.version_number}{version.ai_generated_at ? ` · AI-voorbereiding ${formatDate(version.ai_generated_at)}` : ""}</p>
+        <p className="mt-2 text-sm text-vice-text-muted">Alleen onderbouwde cijfers krijgen een plek. Een kwadrant is geen bedrijfsbesluit.</p>
+        <p className="mt-1 text-xs text-vice-text-muted">Versie {version.version_number}{version.ai_generated_at ? ` · AI ${formatDate(version.ai_generated_at)}` : ""} · {sourceLine}</p>
       </header>
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        {([
-          ["VRIO", wb.upstream.vrio],
-          ["5C", wb.upstream.five_c],
-          ["Porter", wb.upstream.porter],
-          ["PESTEL", wb.upstream.pestel],
-          ["SWOT", wb.upstream.swot],
-        ] as const).map(([label, source]) => (
-          <span key={label} className="inline-flex items-center gap-1 rounded-full border border-vice-border px-3 py-1 text-xs">
-            {source ? <CheckCircle2 className="size-3.5 text-emerald-600" aria-hidden /> : null}
-            {label} {source ? `v${source.version_number}` : "ontbreekt"}
-          </span>
-        ))}
-      </div>
 
       {wb.scopes.length > 1 && (
         <div className="mb-4 flex flex-wrap gap-2">
@@ -218,120 +206,8 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
 
       {error && <p className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">{error}</p>}
       {notice && <p className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm" role="status">{notice}</p>}
-      {markets.size > 1 && <p className="mb-4 rounded-lg border border-vice-border px-4 py-3 text-sm">Deze items zitten in verschillende markten. De definities blijven per aanbod zichtbaar en worden niet samengevoegd.</p>}
-      {overlapIds.size > 0 && <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">Overlappend aanbod telt nog dubbel. Kies per item wat meetelt.</p>}
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-2">
-          <Button type="button" variant={view === "select" ? "secondary" : "ghost"} onClick={() => setView("select")}>Portfolio</Button>
-          <Button type="button" variant={view === "matrix" ? "secondary" : "ghost"} onClick={() => setView("matrix")}>Matrix</Button>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="max-w-sm text-xs text-vice-text-muted">Ontbreekt de historiek, dan blijft de BCG open. Niets hoeft bevestigd te zijn om verder te gaan.</p>
-          <Button type="button" asChild variant={readOnly || canApprove(wb, overlapIds) ? "secondary" : "primary"} className={readOnly || canApprove(wb, overlapIds) ? undefined : goldButtonClass}>
-            <Link href={`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`}>Verder naar de waardeketen</Link>
-          </Button>
-        </div>
-      </div>
-
-      {view === "select" ? (
-        <section className="rounded-xl border border-vice-border bg-vice-surface p-5">
-          <h2 className="text-sm font-medium">Vul de matrix met AI</h2>
-          <p className="mt-2 text-sm text-vice-text-muted">
-            AI neemt het aanbod uit de 5C en vult markt, groei en relatief aandeel alleen waar het dossier een bron heeft. Lege velden blijven leeg. Een latere AI-ronde overschrijft geen bewerking.
-          </p>
-          <Button type="button" className={`mt-4 ${goldButtonClass}`} disabled={readOnly || busy !== null} onClick={() => void fillWithAi()}>
-            {busy === "ai" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Vul de BCG-matrix met AI
-          </Button>
-
-          <h2 className="mt-8 text-sm font-medium">Ingevuld aanbod</h2>
-          {wb.items.length === 0 ? (
-            <p className="mt-2 text-sm text-vice-text-muted">Nog leeg. Start de AI, of voeg zelf een aanbod toe.</p>
-          ) : (
-            <ul className="mt-3 divide-y divide-vice-border">
-              {wb.items.map((item) => {
-                const reading = readings.get(item.id);
-                const label = reading ? availabilityLabel(reading, item.selected) : "Nog aanvullen";
-                return (
-                  <li key={item.id} className="flex flex-wrap items-center gap-3 py-3">
-                    <div className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium">{item.title}</span>
-                      <span className="text-xs text-vice-text-muted">{BCG_KIND_LABELS[item.kind]}{item.market_definition ? ` · ${item.market_definition}` : ""}</span>
-                    </div>
-                    <Chip tone={label === "Gegevens beschikbaar" ? "green" : "amber"}>{label}</Chip>
-                    <Button type="button" variant="secondary" className="h-8 text-xs" onClick={() => setOpenId(item.id)}>Bewerken</Button>
-                    <Button type="button" variant="ghost" className="h-8 text-xs" disabled={readOnly || busy !== null} onClick={() => void removeItem(item.id)}>Verwijderen</Button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          <div className="mt-4 flex flex-wrap items-end gap-2">
-            <Label className="text-xs">Aanbod toevoegen
-              <Input className="mt-1" value={newTitle} disabled={readOnly} onChange={(e) => setNewTitle(e.target.value)} placeholder="Naam van product, dienst of eenheid" />
-            </Label>
-            <select className={fieldClass} value={newKind} disabled={readOnly} onChange={(e) => setNewKind(e.target.value as BcgItemKind)}>
-              {Object.entries(BCG_KIND_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-            <Button type="button" variant="secondary" disabled={readOnly || busy !== null || newTitle.trim().length < 2} onClick={() => void addItem()}>
-              <Plus className="size-4" /> Toevoegen
-            </Button>
-          </div>
-          <p className="mt-2 text-xs text-vice-text-muted">Een nieuw aanbod blijft open voor de volgende AI-ronde, tot je het zelf bewerkt.</p>
-
-          <h2 className="mt-8 text-sm font-medium">Afbakening bijstellen</h2>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <Label className="text-xs">Markt
-              <Input className="mt-1" value={version.market_label} disabled={readOnly} onChange={(e) => patchVersion({ market_label: e.target.value })} onBlur={() => void saveScope()} />
-            </Label>
-            <Label className="text-xs">Periode
-              <Input className="mt-1" value={version.period_label} disabled={readOnly} onChange={(e) => patchVersion({ period_label: e.target.value })} onBlur={() => void saveScope()} />
-            </Label>
-            <Label className="text-xs">Geografie
-              <Input className="mt-1" value={version.geography} disabled={readOnly} onChange={(e) => patchVersion({ geography: e.target.value })} onBlur={() => void saveScope()} />
-            </Label>
-            <Label className="text-xs">Meetbasis
-              <select className={`${fieldClass} mt-1`} value={version.measure_basis} disabled={readOnly} onChange={(e) => void saveScope({ measure_basis: e.target.value as BcgMeasureBasis | "" })}>
-                <option value="">Kies</option>
-                {Object.entries(BCG_BASIS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-              </select>
-            </Label>
-            <Label className="text-xs">Soort periode
-              <select className={`${fieldClass} mt-1`} value={version.period_kind} disabled={readOnly} onChange={(e) => void saveScope({ period_kind: e.target.value as BcgPeriodKind | "" })}>
-                <option value="">Kies</option>
-                {Object.entries(BCG_PERIOD_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-              </select>
-            </Label>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Input value={scopeName} disabled={readOnly} onChange={(e) => setScopeName(e.target.value)} placeholder="Nieuwe portfolioanalyse" />
-            <Button type="button" variant="secondary" disabled={readOnly || busy !== null} onClick={() => void addBcgScopeAction(tenantId, { label: scopeName }).then(async (result) => { if (result.ok && result.data) { setScopeName(""); await reload(result.data.versionId); } else setError(result.ok ? "Geen versie" : result.error); })}>Bewaar aparte scope</Button>
-          </div>
-        </section>
-      ) : (
-        <section>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" onClick={() => setAssumptions((open) => !open)}>Aannames bekijken</Button>
-              <Button type="button" variant="secondary" disabled={readOnly || busy !== null} onClick={() => void fillWithAi()}>
-                {busy === "ai" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Werk bij met AI
-              </Button>
-            </div>
-            <label className="flex items-center gap-2 text-xs text-vice-text-muted">
-              <input type="checkbox" checked={spread} onChange={(e) => setSpread(e.target.checked)} />
-              Labels spreiden
-            </label>
-          </div>
-          {assumptions && (
-            <Assumptions version={version} readOnly={readOnly} busy={busy !== null} onSave={async (growth, note, source, share, confirm) => {
-              const ok = await run("thresholds", () => saveBcgThresholdsAction(tenantId, { versionId: version.id, growth, note, source, share, confirm }));
-              if (ok) await reload();
-            }} onQualitative={async (on, reason) => {
-              const ok = await run("qual", () => setBcgQualitativeAction(tenantId, { versionId: version.id, on, reason }));
-              if (ok) await reload();
-            }} />
-          )}
+      <section>
           {version.qualitative ? (
             <div className="rounded-xl border border-vice-border bg-vice-surface p-6 text-sm">
               <p className="font-medium">Kwalitatieve portfoliobespreking</p>
@@ -347,25 +223,75 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
               onSelect={setOpenId}
             />
           )}
-          <p className="mt-2 text-xs text-vice-text-muted">Puntgrootte heeft geen financiële betekenis.</p>
-          {selected.length === 1 && <p className="mt-2 text-xs text-vice-text-muted">Eén aanbod kan een klasse krijgen. Dat is nog geen rijke portfoliovergelijking.</p>}
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-vice-text-muted">
+              {version.qualitative ? "Dit blijft een bespreking, geen matrix." : `Puntgrootte heeft geen financiële betekenis.${selected.length === 1 ? " Eén aanbod is nog geen rijke portfoliovergelijking." : ""}`}
+            </p>
+            <div className="flex items-center gap-4">
+              <button type="button" className="text-xs text-vice-text-muted hover:text-vice-text" onClick={() => setAssumptions((open) => !open)}>
+                {assumptions ? "Aannames sluiten" : "Aannames"}
+              </button>
+              {!version.qualitative && (
+                <label className="flex items-center gap-2 text-xs text-vice-text-muted">
+                  <input type="checkbox" checked={spread} onChange={(e) => setSpread(e.target.checked)} />
+                  Labels spreiden
+                </label>
+              )}
+            </div>
+          </div>
+          {assumptions && (
+            <div className="mt-3">
+              <Assumptions version={version} readOnly={readOnly} busy={busy !== null} onSave={async (growth, note, source, share, confirm) => {
+                const ok = await run("thresholds", () => saveBcgThresholdsAction(tenantId, { versionId: version.id, growth, note, source, share, confirm }));
+                if (ok) await reload();
+              }} onQualitative={async (on, reason) => {
+                const ok = await run("qual", () => setBcgQualitativeAction(tenantId, { versionId: version.id, on, reason }));
+                if (ok) await reload();
+              }} />
+            </div>
+          )}
 
-          <div className="mt-6">
-            <h2 className="text-sm font-medium">Nog niet plaatsbaar ({unplaced.length})</h2>
-            <ul className="mt-2 space-y-2">
-              {unplaced.map((item) => (
-                <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-vice-border px-3 py-2">
-                  <div>
-                    <p className="text-sm font-medium">{item.title}</p>
-                    <p className="text-xs text-vice-text-muted">{readings.get(item.id)?.reasons[0]}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button type="button" variant="secondary" className="h-8 text-xs" onClick={() => setOpenId(item.id)}>Bewerken</Button>
-                    <Button type="button" variant="ghost" className="h-8 text-xs" disabled={readOnly || busy !== null} onClick={() => void removeItem(item.id)}>Verwijderen</Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+          <div className="mt-4">
+            <Button type="button" className={version.ai_generated_at ? undefined : goldButtonClass} variant={version.ai_generated_at ? "secondary" : "primary"} disabled={readOnly || busy !== null} onClick={() => void fillWithAi()}>
+              {busy === "ai" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              {version.ai_generated_at ? "Werk bij met AI" : "Vul de BCG-matrix met AI"}
+            </Button>
+          </div>
+
+          <div className="mt-8">
+            {gap && <p className="text-sm text-vice-text-muted">{gap}</p>}
+            {markets.size > 1 && <p className="mt-1 text-sm text-vice-text-muted">De marktnaam verschilt per aanbod.</p>}
+            {overlapIds.size > 0 && <p className="mt-1 text-sm text-vice-text-muted">Overlappend aanbod telt nog dubbel. Kies in het aanbod wat meetelt.</p>}
+            {wb.items.length === 0 ? (
+              <p className="mt-2 text-sm text-vice-text-muted">Nog geen aanbod.</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-vice-border">
+                {wb.items.map((item) => {
+                  const reading = readings.get(item.id);
+                  const label = reading ? availabilityLabel(reading, item.selected) : "Nog aanvullen";
+                  return (
+                    <li key={item.id}>
+                      <button type="button" className="w-full py-3 text-left" onClick={() => setOpenId(item.id)}>
+                        <span className="text-sm font-medium text-vice-text">{item.title}</span>
+                        {!gap && label !== "Gegevens beschikbaar" && <span className="text-sm text-vice-text-muted"> — {label.charAt(0).toLowerCase()}{label.slice(1)}</span>}
+                        {markets.size > 1 && item.market_definition.trim() && <span className="mt-0.5 block text-xs text-vice-text-muted">{item.market_definition}</span>}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {adding ? (
+              <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); if (newTitle.trim().length >= 2) void addItem(); }}>
+                <Input autoFocus value={newTitle} disabled={readOnly || busy !== null} onChange={(e) => setNewTitle(e.target.value)} placeholder="Naam van het aanbod" className="max-w-sm" />
+                <Button type="submit" variant="secondary" disabled={readOnly || busy !== null || newTitle.trim().length < 2}>Toevoegen</Button>
+                <button type="button" className="text-sm text-vice-text-muted" onClick={() => { setAdding(false); setNewTitle(""); }}>Annuleren</button>
+              </form>
+            ) : (
+              <button type="button" className="mt-3 inline-flex items-center gap-1 text-sm text-vice-text-muted hover:text-vice-text" disabled={readOnly} onClick={() => setAdding(true)}>
+                <Plus className="size-4" /> Aanbod
+              </button>
+            )}
           </div>
 
           {version.ai_questions.length > 0 && (
@@ -375,20 +301,69 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
             </div>
           )}
 
+          <div className="mt-8 flex items-baseline justify-between gap-3">
+            <p className="text-sm text-vice-text">{scopeLine || "Markt en periode nog niet ingevuld"}</p>
+            {!readOnly && (
+              <button type="button" className="shrink-0 text-sm text-vice-text-muted hover:text-vice-text" onClick={() => setSettings((open) => !open)}>
+                {settings ? "Sluiten" : "Wijzigen"}
+              </button>
+            )}
+          </div>
+          {settings && (
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <Label className="text-xs">Markt
+                <Input className="mt-1" value={version.market_label} disabled={readOnly} onChange={(e) => patchVersion({ market_label: e.target.value })} onBlur={() => void saveScope()} />
+              </Label>
+              <Label className="text-xs">Periode
+                <Input className="mt-1" value={version.period_label} disabled={readOnly} onChange={(e) => patchVersion({ period_label: e.target.value })} onBlur={() => void saveScope()} />
+              </Label>
+              <Label className="text-xs">Geografie
+                <Input className="mt-1" value={version.geography} disabled={readOnly} onChange={(e) => patchVersion({ geography: e.target.value })} onBlur={() => void saveScope()} />
+              </Label>
+              <Label className="text-xs">Meetbasis
+                <select className={`${fieldClass} mt-1`} value={version.measure_basis} disabled={readOnly} onChange={(e) => void saveScope({ measure_basis: e.target.value as BcgMeasureBasis | "" })}>
+                  <option value="">Kies</option>
+                  {Object.entries(BCG_BASIS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </Label>
+              <Label className="text-xs">Soort periode
+                <select className={`${fieldClass} mt-1`} value={version.period_kind} disabled={readOnly} onChange={(e) => void saveScope({ period_kind: e.target.value as BcgPeriodKind | "" })}>
+                  <option value="">Kies</option>
+                  {Object.entries(BCG_PERIOD_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </Label>
+              <div className="flex items-end gap-2 md:col-span-2">
+                <Input value={scopeName} disabled={readOnly} onChange={(e) => setScopeName(e.target.value)} placeholder="Naam voor een aparte analyse" />
+                <Button type="button" variant="secondary" disabled={readOnly || busy !== null || scopeName.trim().length < 2} onClick={() => void addBcgScopeAction(tenantId, { label: scopeName }).then(async (result) => { if (result.ok && result.data) { setScopeName(""); await reload(result.data.versionId); } else setError(result.ok ? "Geen versie" : result.error); })}>Aparte analyse</Button>
+              </div>
+            </div>
+          )}
+
           <div className="mt-8">
             <h2 className="text-sm font-medium">Wat betekent dit voor je portfolio?</h2>
-            <textarea className={`${fieldClass} mt-2`} rows={5} value={synthesis} disabled={readOnly} onChange={(e) => setSynthesis(e.target.value)} />
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" disabled={readOnly || busy !== null || selected.length === 0} onClick={() => void run("synthesis-ai", () => generateBcgSynthesisAction(tenantId, { versionId: version.id })).then(async (ok) => { if (ok) { await reload(); setNotice("AI-synthese staat als concept. Markeer ze als beoordeeld voor je verdergaat."); } })}>
+            <textarea
+              className={`${fieldClass} mt-2`}
+              rows={4}
+              value={synthesis}
+              disabled={readOnly}
+              onChange={(e) => setSynthesis(e.target.value)}
+              onBlur={() => {
+                if (readOnly || synthesis.trim() === version.synthesis_text.trim()) return;
+                void run("synthesis", () => saveBcgSynthesisAction(tenantId, { versionId: version.id, text: synthesis, reviewed: false })).then(async (ok) => { if (ok) await reload(); });
+              }}
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-4">
+              <Button type="button" variant="secondary" disabled={readOnly || busy !== null || selected.length === 0} onClick={() => void run("synthesis-ai", () => generateBcgSynthesisAction(tenantId, { versionId: version.id })).then(async (ok) => { if (ok) await reload(); })}>
                 {busy === "synthesis-ai" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Maak AI-synthese
               </Button>
-              <Button type="button" variant="secondary" disabled={readOnly || busy !== null} onClick={() => void run("synthesis", () => saveBcgSynthesisAction(tenantId, { versionId: version.id, text: synthesis, reviewed: false })).then(async (ok) => { if (ok) await reload(); })}>Opslaan als concept</Button>
-              <Button type="button" className={goldButtonClass} disabled={readOnly || busy !== null || synthesis.trim().length < 20} onClick={() => void run("synthesis-ok", () => saveBcgSynthesisAction(tenantId, { versionId: version.id, text: synthesis, reviewed: true })).then(async (ok) => { if (ok) await reload(); })}>Markeer als beoordeeld</Button>
+              <button type="button" className="text-sm text-vice-text-muted hover:text-vice-text disabled:opacity-50" disabled={readOnly || busy !== null || synthesis.trim().length < 20} onClick={() => void run("synthesis-ok", () => saveBcgSynthesisAction(tenantId, { versionId: version.id, text: synthesis, reviewed: true })).then(async (ok) => { if (ok) await reload(); })}>
+                {version.synthesis_reviewed ? "Beoordeeld" : "Markeer als beoordeeld"}
+              </button>
             </div>
           </div>
 
           <footer className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-vice-border pt-4">
-            <p className="text-sm text-vice-text-muted">{reviewed.length} van {selected.length} portfolio-items beoordeeld</p>
+            <p className="text-sm text-vice-text-muted">{reviewed.length} van {selected.length} beoordeeld</p>
             <div className="flex flex-wrap gap-2">
               {readOnly ? (
                 <>
@@ -396,10 +371,9 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
                     <input type="checkbox" checked={publishFigures} onChange={(e) => setPublishFigures(e.target.checked)} />
                     Cijfers vrijgeven
                   </label>
-                  <Button type="button" className={goldButtonClass} disabled={busy !== null} onClick={() => void run("publish", () => publishBcgAction(tenantId, { versionId: version.id, publishFigures })).then(async (ok) => { if (ok) { await reload(); setNotice("De gepubliceerde matrix staat op het klantdashboard."); } })}>Publiceren</Button>
-                  {version.published_at && <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void run("unpublish", () => unpublishBcgAction(tenantId, { versionId: version.id })).then(async (ok) => { if (ok) await reload(); })}>Publicatie intrekken</Button>}
-                  <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void createBcgRevisionAction(tenantId, { versionId: version.id }).then(async (result) => { if (result.ok && result.data) await reload(result.data.versionId); else setError(result.ok ? "Geen versie" : result.error); })}>Nieuwe conceptversie</Button>
-                  <Button type="button" asChild className={goldButtonClass}><Link href={`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`}>Naar de waardeketen</Link></Button>
+                  <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void run("publish", () => publishBcgAction(tenantId, { versionId: version.id, publishFigures })).then(async (ok) => { if (ok) { await reload(); setNotice("De gepubliceerde matrix staat op het klantdashboard."); } })}>Publiceren</Button>
+                  {version.published_at && <Button type="button" variant="ghost" disabled={busy !== null} onClick={() => void run("unpublish", () => unpublishBcgAction(tenantId, { versionId: version.id })).then(async (ok) => { if (ok) await reload(); })}>Intrekken</Button>}
+                  <Button type="button" variant="ghost" disabled={busy !== null} onClick={() => void createBcgRevisionAction(tenantId, { versionId: version.id }).then(async (result) => { if (result.ok && result.data) await reload(result.data.versionId); else setError(result.ok ? "Geen versie" : result.error); })}>Nieuwe versie</Button>
                 </>
               ) : (
                 <Button type="button" variant="secondary" disabled={busy !== null || !canApprove(wb, overlapIds)} onClick={() => void run("approve", () => approveBcgAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at })).then((ok) => { if (ok) router.push(`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`); })}>
@@ -409,7 +383,6 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
             </div>
           </footer>
         </section>
-      )}
 
       {openItem && (
         <BcgItemPanel
@@ -451,6 +424,17 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
       )}
     </div>
   );
+}
+
+function sharedGap(items: BcgItem[], readings: Map<string, ReturnType<typeof readingFor>>): string | null {
+  if (items.length === 0) return null;
+  const labels = items.map((item) => {
+    const reading = readings.get(item.id);
+    return reading ? availabilityLabel(reading, item.selected) : "Nog aanvullen";
+  });
+  const first = labels[0];
+  if (!first || !labels.every((label) => label === first) || first === "Gegevens beschikbaar") return null;
+  return items.length === 1 ? `${first}.` : `${first} bij alle ${items.length}.`;
 }
 
 function canApprove(wb: BcgWorkbench, overlapIds: Set<string>): boolean {
