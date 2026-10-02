@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { getUserAppContext } from "@/lib/auth/context";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
-import { BCG_FRAMEWORK_INDEX, VRIO_FRAMEWORK_INDEX, VRIO_ROUTE } from "@/lib/vrio/constants";
+import { BCG_FRAMEWORK_INDEX, VRIO_ROUTE } from "@/lib/vrio/constants";
+import { VALUE_CHAIN_ROUTE } from "@/lib/value-chain/constants";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
 
@@ -43,14 +44,15 @@ export default async function BcgPage({
       </p>
       <h1 className="mt-2 text-2xl font-semibold text-vice-text md:text-3xl">BCG-matrix</h1>
       <p className="mt-4 text-sm text-vice-text-muted">
-        VRIO is goedgekeurd en vormt samen met de eerdere analyses de input voor de BCG-matrix. Deze workbench
-        bouwen we in de volgende stap.
+        De BCG-matrix zelf volgt nog. De waardeketen gebruikt een portfolio-onderdeel alleen wanneer die analyse er is,
+        en kan nu al verder op het klantdossier, SWOT en VRIO.
       </p>
-      <div className="mt-8">
+      <div className="mt-8 flex flex-wrap gap-2">
+        <Button type="button" asChild className="bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover">
+          <Link href={`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`}>Naar de waardeketen →</Link>
+        </Button>
         <Button type="button" asChild variant="secondary">
-          <Link href={`/klanten/${tenantId}/strategie/${VRIO_ROUTE}`}>
-            Terug naar stap {VRIO_FRAMEWORK_INDEX} (VRIO)
-          </Link>
+          <Link href={`/klanten/${tenantId}/strategie/${VRIO_ROUTE}`}>Terug naar VRIO</Link>
         </Button>
       </div>
     </div>

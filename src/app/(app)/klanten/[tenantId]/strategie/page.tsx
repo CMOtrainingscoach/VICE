@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { MARKETING_5C_ROUTE, SWOT_ROUTE } from "@/lib/marketing-5c/constants";
 import { getUserAppContext } from "@/lib/auth/context";
 import { BCG_ROUTE, VRIO_ROUTE } from "@/lib/vrio/constants";
+import { STP_ROUTE } from "@/lib/value-chain/constants";
 import { getAuditFrameworkProgressAction } from "@/modules/porter/actions";
 
 export default async function StrategieHubPage({
@@ -13,6 +14,9 @@ export default async function StrategieHubPage({
 
   if (ctx.isPlatformAdmin) {
     const progress = await getAuditFrameworkProgressAction(tenantId);
+    if (progress.ok && progress.data?.valueChainApproved) {
+      redirect(`/klanten/${tenantId}/strategie/${STP_ROUTE}`);
+    }
     if (progress.ok && progress.data?.vrioApproved) {
       redirect(`/klanten/${tenantId}/strategie/${BCG_ROUTE}`);
     }
