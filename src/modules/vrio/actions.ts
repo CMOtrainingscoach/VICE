@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireSession, requirePlatformAdminMfa } from "@/lib/auth/session";
 import { SWOT_ROUTE } from "@/lib/swot/constants";
-import { BCG_ROUTE, VRIO_ROUTE } from "@/lib/vrio/constants";
+import { BCG_ROUTE, VRIO_CRITERIA, VRIO_CRITERION_META, VRIO_EVIDENCE_LABELS, VRIO_OUTCOME_META, VRIO_PRIORITY_ACTIONS, VRIO_ROUTE, type VrioAnswer } from "@/lib/vrio/constants";
+import { classifyVrio, suggestedAction, type VrioAnswers } from "@/lib/vrio/classification";
 import { buildVrioCatalog } from "@/lib/vrio/input-catalog";
-import { prepareVrioWithAi } from "@/lib/vrio/vrio-ai";
+import { composeVrioSynthesis, prepareVrioWithAi } from "@/lib/vrio/vrio-ai";
 import type { VrioWorkbench } from "@/lib/vrio/types";
 import { formatZodIssue } from "@/lib/pestel/zod-form";
 import {
@@ -387,6 +388,78 @@ export async function prepareVrioWithAiAction(
     0,
   );
   return { ok: true, data: { resources: proposals.length, unknowns } };
+}
+
+function answersOf(resource: VrioWorkbench["resources"][number]): VrioAnswers {
+  const answers = {
+    value: "not_assessed",
+    rarity: "not_assessed",
+    imitability: "not_assessed",
+    organization: "not_assessed",
+  } as VrioAnswers;
+  for (const assessment of resource.assessments) answers[assessment.criterion] = assessment.answer;
+  return answers;
+}
+
+export async function generateVrioSynthesisAction(
+  tenantId: string,
+  input: unknown,
+): Promise<ActionResult<{ text: string }>> {
+  const parsed = vrioVersionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: formatZodIssue(parsed.error) };
+
+  const loaded = await loadVrioWorkbenchAction(tenantId);
+  if (!loaded.ok || !loaded.data) return { ok: false, error: loaded.ok ? "Laden mislukt" : loaded.error };
+  if (loaded.data.version.id !== parsed.data.versionId) {
+    return { ok: false, error: "Versie komt niet overeen; herlaad de pagina" };
+  }
+  if (loaded.data.version.status === "approved") {
+    return { ok: false, error: "Goedgekeurde versie is alleen-lezen" };
+  }
+
+  const assessed = loaded.data.resources.filter((resource) => {
+    if (!resource.selected) return false;
+    return resource.assessments.some((assessment) => assessment.answer !== "not_assessed");
+  });
+
+  let text: string;
+  try {
+    text = await composeVrioSynthesis({
+      tenantName: loaded.data.inputs.tenant.name,
+      resources: assessed.map((resource) => {
+        const answers = answersOf(resource);
+        const outcome = classifyVrio(answers);
+        return {
+          title: resource.title,
+          description: resource.description,
+          outcomeLabel: VRIO_OUTCOME_META[outcome].label,
+          outcomeNote: VRIO_OUTCOME_META[outcome].note,
+          actionLabel: VRIO_PRIORITY_ACTIONS[suggestedAction(answers)],
+          evidenceLabel: VRIO_EVIDENCE_LABELS[resource.evidence_level],
+          hypothetical: resource.evidence_level === "hypothesis" || resource.assessments.some((assessment) => assessment.evidence_level === "hypothesis"),
+          criteria: VRIO_CRITERIA.map((criterion) => ({
+            label: VRIO_CRITERION_META[criterion].label,
+            answer: ({ yes: "Ja", no: "Nee", unknown: "Onbekend", not_assessed: "Niet beoordeeld" } as Record<VrioAnswer, string>)[answers[criterion]],
+            motivation: resource.assessments.find((assessment) => assessment.criterion === criterion)?.motivation ?? "",
+          })),
+        };
+      }),
+    });
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "AI-synthese mislukt" };
+  }
+
+  const supabase = await authed();
+  const { error } = await supabase.schema("app").rpc("update_vrio_synthesis", {
+    p_version_id: parsed.data.versionId,
+    p_synthesis_text: text,
+    p_priorities: null,
+    p_reviewed: false,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  revalidateVrio(tenantId);
+  return { ok: true, data: { text } };
 }
 
 export async function saveVrioSynthesisAction(

@@ -197,3 +197,87 @@ Nederlands, zakelijk, JSON-only.`,
   if (result.length === 0) throw new Error("De AI leverde geen bruikbare voorstellen op");
   return result;
 }
+
+export type VrioSynthesisResource = {
+  title: string;
+  description: string;
+  outcomeLabel: string;
+  outcomeNote: string;
+  actionLabel: string;
+  evidenceLabel: string;
+  hypothetical: boolean;
+  criteria: { label: string; answer: string; motivation: string }[];
+};
+
+/**
+ * Haalt claims van een duurzaam voordeel weg wanneer geen enkel beoordeeld middel
+ * die classificatie heeft. De uitkomst blijft die van de vaste regels.
+ */
+export function restrainVrioSynthesis(text: string, hasSustained: boolean): string {
+  const trimmed = text.trim();
+  if (hasSustained) return trimmed;
+  return trimmed
+    .replace(/potentieel duurzaam concurrentievoordeel/gi, "de vastgelegde voorlopige uitkomst")
+    .replace(/duurzaam concurrentievoordeel/gi, "de vastgelegde voorlopige uitkomst");
+}
+
+/**
+ * Schrijft de strategische synthese uitsluitend uit al beoordeelde middelen.
+ * Bewust zonder tool-calls. De classificatie wordt meegegeven en niet herberekend.
+ */
+export async function composeVrioSynthesis(input: {
+  tenantName: string;
+  resources: VrioSynthesisResource[];
+}): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY ontbreekt");
+  if (input.resources.length === 0) {
+    throw new Error("Beoordeel eerst minstens één middel. De synthese verzint geen middelen of voordelen.");
+  }
+
+  const block = input.resources
+    .map((resource, index) => {
+      const criteria = resource.criteria
+        .map((criterion) => `- ${criterion.label}: ${criterion.answer}${criterion.motivation ? ` — ${criterion.motivation}` : ""}`)
+        .join("\n");
+      return [
+        `${index + 1}. ${resource.title}`,
+        resource.description ? resource.description : "",
+        `Classificatie (vast): ${resource.outcomeLabel}. ${resource.outcomeNote}`,
+        `Aandachtspunt: ${resource.actionLabel}`,
+        `Bewijs: ${resource.evidenceLabel}${resource.hypothetical ? " · dit blijft een hypothese" : ""}`,
+        criteria,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
+
+  const openai = new OpenAI({ apiKey });
+  const completion = await openai.chat.completions.create({
+    model: resolveModel(),
+    temperature: 0.2,
+    max_tokens: 1400,
+    messages: [
+      {
+        role: "system",
+        content: [
+          `Je schrijft de VRIO-synthese voor ${input.tenantName}, in het Nederlands, voor de adviseur.`,
+          "Gebruik alleen de middelen hieronder. Verzin geen nieuwe middelen, feiten, cijfers of concurrentievoordelen.",
+          "De classificatie is al bepaald. Hernoem die niet en maak een pariteit of een tijdelijk voordeel niet duurzaam.",
+          "Onbekend blijft onbekend. Een hypothese blijft een hypothese.",
+          "Geen investeringsbesluit, geen percentage en geen algemene VRIO-score.",
+          "Twee tot vier alinea's: wat dit geheel betekent, waar onderscheid of pariteit zit, en welk bewijs nog ontbreekt.",
+        ].join("\n"),
+      },
+      { role: "user", content: block },
+    ],
+  });
+
+  const text = restrainVrioSynthesis(
+    completion.choices[0]?.message?.content ?? "",
+    input.resources.some((resource) => resource.outcomeLabel === "Potentieel duurzaam concurrentievoordeel"),
+  );
+  if (text.length < 20) throw new Error("De AI-synthese was te kort om te bewaren.");
+  return text.slice(0, 12000);
+}

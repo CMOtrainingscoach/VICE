@@ -45,6 +45,7 @@ import {
   createVrioRevisionAction,
   deleteVrioResourceAction,
   loadVrioWorkbenchAction,
+  generateVrioSynthesisAction,
   prepareVrioWithAiAction,
   saveVrioResourceAction,
   saveVrioSynthesisAction,
@@ -94,6 +95,7 @@ export function VrioWorkspace({
   const strengths = useMemo(() => candidateStrengths(wb.inputs), [wb.inputs]);
 
   const selected = wb.resources.filter((r) => r.selected);
+  const assessedCount = selected.filter((r) => r.assessments.some((a) => a.answer !== "not_assessed")).length;
   const reviewed = selected.filter((r) => r.review_status === "reviewed" && !r.needs_revision);
   const swotStale = Boolean(
     wb.upstream.latest_swot_approved && wb.upstream.latest_swot_approved.id !== version.swot_version_id,
@@ -121,7 +123,7 @@ export function VrioWorkspace({
           setError(r.error ?? "Actie mislukt");
           return false;
         }
-        await reload(label === "synthesis" || label === "revision");
+        await reload(label === "synthesis" || label === "synthesis-ai" || label === "revision");
         return true;
       } finally {
         setBusy(null);
@@ -714,7 +716,7 @@ export function VrioWorkspace({
           })}
         </ul>
         <p className="mt-3 text-xs text-vice-text-muted">
-          Dit zijn voorstellen, geen investeringsbeslissingen.
+          Dit zijn voorstellen, geen investeringsbeslissingen. De synthese gebruikt alleen middelen die al een antwoord hebben.
         </p>
         <textarea
           className={cn(textareaClass, "mt-4 min-h-[110px]")}
@@ -725,6 +727,25 @@ export function VrioWorkspace({
         />
         {!readOnly && (
           <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="gap-2 border-vice-gold/40"
+              disabled={busy !== null || assessedCount === 0}
+              onClick={() =>
+                void (async () => {
+                  const ok = await run("synthesis-ai", () =>
+                    generateVrioSynthesisAction(tenantId, { versionId: version.id }),
+                  );
+                  if (ok) setNotice("AI-synthese staat als concept. Markeer ze als beoordeeld; daarna licht verdergaan op.");
+                })()
+              }
+            >
+              {busy === "synthesis-ai" ?
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              : <Sparkles className="size-4" aria-hidden />}
+              Maak AI-synthese
+            </Button>
             <Button
               type="button"
               variant="secondary"
