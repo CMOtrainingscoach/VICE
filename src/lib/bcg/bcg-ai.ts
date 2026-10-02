@@ -53,7 +53,7 @@ export async function prepareBcgWithAi(input: {
   if (!apiKey) throw new Error("OPENAI_API_KEY ontbreekt");
   const targets = input.onlyItemId ? input.items.filter((item) => item.id === input.onlyItemId) : input.items;
   if (targets.length === 0) {
-    throw new Error("Selecteer eerst aanbod. De voorbereiding verzint geen portfolio-items.");
+    throw new Error("Er is nog geen aanbod. De voorbereiding verzint geen portfolio-items.");
   }
   if (input.catalog.length === 0) {
     throw new Error("Er zijn nog geen bronnen. Ontbrekende marktcijfers worden een vraag, geen verzonnen getal.");

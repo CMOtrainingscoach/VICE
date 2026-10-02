@@ -14,6 +14,8 @@ import { formatZodIssue } from "@/lib/pestel/zod-form";
 import { VALUE_CHAIN_ROUTE } from "@/lib/value-chain/constants";
 import { VRIO_ROUTE } from "@/lib/vrio/constants";
 import {
+  bcgAddItemSchema,
+  bcgDeleteItemSchema,
   bcgItemSchema,
   bcgOverlapSchema,
   bcgPrepareSchema,
@@ -291,12 +293,44 @@ export async function adoptBcgOfferingsAction(tenantId: string, input: unknown):
   return { ok: true, data: { count: Number(data ?? 0) } };
 }
 
+export async function addBcgItemAction(tenantId: string, input: unknown): Promise<ActionResult<{ itemId: string }>> {
+  const parsed = bcgAddItemSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: formatZodIssue(parsed.error) };
+  const supabase = await authed();
+  const { data, error } = await supabase.schema("app").rpc("add_bcg_item", {
+    p_version_id: parsed.data.versionId,
+    p_title: parsed.data.title,
+    p_kind: parsed.data.kind,
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidateBcg(tenantId);
+  return { ok: true, data: { itemId: String(data) } };
+}
+
+export async function deleteBcgItemAction(tenantId: string, input: unknown): Promise<ActionResult> {
+  const parsed = bcgDeleteItemSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: formatZodIssue(parsed.error) };
+  const supabase = await authed();
+  const { error } = await supabase.schema("app").rpc("delete_bcg_item", { p_item_id: parsed.data.itemId });
+  if (error) return { ok: false, error: error.message };
+  revalidateBcg(tenantId);
+  return { ok: true };
+}
+
 export async function prepareBcgAction(tenantId: string, input: unknown): Promise<ActionResult> {
   const parsed = bcgPrepareSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: formatZodIssue(parsed.error) };
+  if (!parsed.data.itemId) {
+    const supabase = await authed();
+    const adopted = await supabase.schema("app").rpc("adopt_bcg_offerings", { p_version_id: parsed.data.versionId });
+    if (adopted.error && !/5C/i.test(adopted.error.message)) return { ok: false, error: adopted.error.message };
+  }
   const ctx = await loadForEdit(tenantId, parsed.data.versionId);
   if (ctx.error || !ctx.wb) return { ok: false, error: ctx.error ?? "Geen data" };
-  const selected = ctx.wb.items.filter((item) => item.selected && (!parsed.data.itemId || item.id === parsed.data.itemId));
+  const selected = ctx.wb.items.filter((item) => !parsed.data.itemId || item.id === parsed.data.itemId);
+  if (selected.length === 0) {
+    return { ok: false, error: "Er is nog geen aanbod. Voeg een portfolio-item toe of rond de 5C af. De AI verzint geen aanbod." };
+  }
   try {
     const prepared = await prepareBcgWithAi({
       tenantName: ctx.wb.inputs.tenant.name,
@@ -306,10 +340,7 @@ export async function prepareBcgAction(tenantId: string, input: unknown): Promis
         id: item.id,
         title: item.title,
         market: item.market_definition,
-        locked:
-          item.manual_lock ||
-          item.figures_confirmed ||
-          Boolean(item.growth_percent || item.size_previous || item.size_current || item.own_share || item.leader_share || item.own_amount || item.leader_amount || item.market_definition || item.leader_name),
+        locked: item.manual_lock || item.figures_confirmed,
       })),
     });
     const supabase = await authed();

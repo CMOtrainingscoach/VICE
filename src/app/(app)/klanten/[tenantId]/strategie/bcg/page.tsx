@@ -35,7 +35,7 @@ export default async function BcgPage({
           {!loaded.ok ? loaded.error : "Workbench gaf geen data terug."}
         </p>
         <p className="mt-3 text-xs text-vice-text-muted">
-          Controleer of migratie 20260330132400_bcg_analysis.sql op Supabase is toegepast (na 323).
+          Controleer of migraties 20260330132400, 20260330132500 en 20260330132600 op Supabase zijn toegepast (na 323).
         </p>
       </div>
     );

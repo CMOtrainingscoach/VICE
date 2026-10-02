@@ -653,34 +653,37 @@ begin
       from app.bcg_versions s where s.tenant_id = p_tenant_id
     ), '[]'::jsonb),
     'items', coalesce((
-      select jsonb_agg(jsonb_build_object(
-        'id', i.id, 'title', i.title, 'description', i.description, 'kind', i.kind, 'origin', i.origin,
-        'five_c_item_id', i.five_c_item_id, 'parent_item_id', i.parent_item_id,
-        'overlap_key', i.overlap_key, 'overlap_mode', i.overlap_mode,
-        'selected', i.selected, 'exclusion_reason', i.exclusion_reason,
-        'market_definition', i.market_definition, 'geography', i.geography, 'segment', i.segment,
-        'period_label', i.period_label, 'period_kind', i.period_kind, 'measure_basis', i.measure_basis,
-        'currency', i.currency, 'unit_label', i.unit_label, 'scope_confirmed', i.scope_confirmed,
-        'growth_method', i.growth_method, 'growth_percent', app._bcg_txt(i.growth_percent),
-        'size_previous', app._bcg_txt(i.size_previous), 'size_current', app._bcg_txt(i.size_current),
-        'size_scale', i.size_scale, 'growth_evidence', i.growth_evidence,
-        'share_method', i.share_method, 'own_share', app._bcg_txt(i.own_share),
-        'leader_share', app._bcg_txt(i.leader_share), 'own_amount', app._bcg_txt(i.own_amount),
-        'leader_amount', app._bcg_txt(i.leader_amount), 'amount_scale', i.amount_scale,
-        'client_is_leader', i.client_is_leader, 'leader_name', i.leader_name, 'share_evidence', i.share_evidence,
-        'figures_conflict', i.figures_conflict, 'conflict_accepted', i.conflict_accepted,
-        'figures_confirmed', i.figures_confirmed, 'manual_lock', i.manual_lock,
-        'advisor_note', i.advisor_note, 'open_question', i.open_question, 'question_status', i.question_status,
-        'gap_reason', i.gap_reason, 'review_status', i.review_status, 'needs_revision', i.needs_revision,
-        'revision_note', i.revision_note, 'reviewed_at', i.reviewed_at,
-        'ai_state', i.ai_state, 'ai_payload', i.ai_payload, 'ai_generated_at', i.ai_generated_at,
-        'sort_order', i.sort_order, 'updated_at', i.updated_at,
-        'refs', coalesce((
-          select jsonb_agg(jsonb_build_object(
-            'ref_type', r.ref_type, 'ref_id', r.ref_id, 'label', r.label, 'excerpt', r.excerpt, 'slot', r.slot
-          ) order by r.created_at)
-          from app.bcg_item_refs r where r.item_id = i.id
-        ), '[]'::jsonb)
+      select jsonb_agg((
+        jsonb_build_object(
+          'id', i.id, 'title', i.title, 'description', i.description, 'kind', i.kind, 'origin', i.origin,
+          'five_c_item_id', i.five_c_item_id, 'parent_item_id', i.parent_item_id,
+          'overlap_key', i.overlap_key, 'overlap_mode', i.overlap_mode,
+          'selected', i.selected, 'exclusion_reason', i.exclusion_reason,
+          'market_definition', i.market_definition, 'geography', i.geography, 'segment', i.segment,
+          'period_label', i.period_label, 'period_kind', i.period_kind, 'measure_basis', i.measure_basis,
+          'currency', i.currency, 'unit_label', i.unit_label, 'scope_confirmed', i.scope_confirmed,
+          'growth_method', i.growth_method, 'growth_percent', app._bcg_txt(i.growth_percent),
+          'size_previous', app._bcg_txt(i.size_previous), 'size_current', app._bcg_txt(i.size_current),
+          'size_scale', i.size_scale, 'growth_evidence', i.growth_evidence,
+          'share_method', i.share_method, 'own_share', app._bcg_txt(i.own_share),
+          'leader_share', app._bcg_txt(i.leader_share), 'own_amount', app._bcg_txt(i.own_amount),
+          'leader_amount', app._bcg_txt(i.leader_amount), 'amount_scale', i.amount_scale,
+          'client_is_leader', i.client_is_leader, 'leader_name', i.leader_name, 'share_evidence', i.share_evidence
+        ) || jsonb_build_object(
+          'figures_conflict', i.figures_conflict, 'conflict_accepted', i.conflict_accepted,
+          'figures_confirmed', i.figures_confirmed, 'manual_lock', i.manual_lock,
+          'advisor_note', i.advisor_note, 'open_question', i.open_question, 'question_status', i.question_status,
+          'gap_reason', i.gap_reason, 'review_status', i.review_status, 'needs_revision', i.needs_revision,
+          'revision_note', i.revision_note, 'reviewed_at', i.reviewed_at,
+          'ai_state', i.ai_state, 'ai_payload', i.ai_payload, 'ai_generated_at', i.ai_generated_at,
+          'sort_order', i.sort_order, 'updated_at', i.updated_at,
+          'refs', coalesce((
+            select jsonb_agg(jsonb_build_object(
+              'ref_type', r.ref_type, 'ref_id', r.ref_id, 'label', r.label, 'excerpt', r.excerpt, 'slot', r.slot
+            ) order by r.created_at)
+            from app.bcg_item_refs r where r.item_id = i.id
+          ), '[]'::jsonb)
+        )
       ) order by i.sort_order, i.created_at)
       from app.bcg_items i
       where i.version_id = v_version.id and i.deleted_at is null
@@ -844,7 +847,7 @@ begin
     raise exception 'De grens voor relatief marktaandeel moet groter zijn dan nul';
   end if;
   if coalesce(p_confirm, false) and v_growth is null then
-    raise exception 'Leg een groeigrens vast. 10% is geen verplichte standaard.';
+    raise exception 'Leg een groeigrens vast. 10%% is geen verplichte standaard.';
   end if;
   if coalesce(p_confirm, false) and length(btrim(coalesce(p_note, ''))) < 8 then
     raise exception 'Motiveer waarom deze groeigrens bij deze markt past';

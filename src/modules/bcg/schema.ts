@@ -16,6 +16,16 @@ const blank = z.literal("");
 
 export const bcgVersionSchema = z.object({ versionId: uuid });
 
+export const bcgAddItemSchema = z.object({
+  versionId: uuid,
+  title: zodString(300, 2),
+  kind: z.enum(BCG_KINDS),
+});
+
+export const bcgDeleteItemSchema = z.object({
+  itemId: uuid,
+});
+
 export const bcgScopeSchema = z.object({
   versionId: uuid,
   scopeLabel: zodString(200),

@@ -27,10 +27,11 @@ import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
 import { BCG_FRAMEWORK_INDEX, VRIO_ROUTE } from "@/lib/vrio/constants";
 import { VALUE_CHAIN_ROUTE } from "@/lib/value-chain/constants";
 import {
+  addBcgItemAction,
   addBcgScopeAction,
-  adoptBcgOfferingsAction,
   approveBcgAction,
   createBcgRevisionAction,
+  deleteBcgItemAction,
   generateBcgSynthesisAction,
   loadBcgWorkbenchAction,
   prepareBcgAction,
@@ -43,7 +44,6 @@ import {
   setBcgOverlapAction,
   setBcgQualitativeAction,
   setBcgReviewAction,
-  setBcgSelectionAction,
   splitBcgItemAction,
   unpublishBcgAction,
 } from "@/modules/bcg/actions";
@@ -104,6 +104,39 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
     }
   }
 
+  async function fillWithAi() {
+    const ok = await run("ai", () => prepareBcgAction(tenantId, { versionId: version.id }));
+    if (!ok) return;
+    await reload();
+    setNotice("De matrix is ingevuld vanuit bestaande bronnen. Cijfers zonder bron zijn leeg gelaten. Bewerkingen blijven staan.");
+    setView("matrix");
+  }
+
+  async function addItem() {
+    setBusy("add");
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await addBcgItemAction(tenantId, { versionId: version.id, title: newTitle, kind: newKind });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setNewTitle("");
+      await reload();
+      if (result.data) setOpenId(result.data.itemId);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeItem(itemId: string) {
+    if (!window.confirm("Dit aanbod uit de matrix halen?")) return false;
+    const ok = await run("delete", () => deleteBcgItemAction(tenantId, { itemId }));
+    if (ok) await reload();
+    return ok;
+  }
+
   async function saveScope(partial: Partial<BcgWorkbench["version"]> = {}) {
     const next = { ...version, ...partial };
     if (Object.keys(partial).length > 0) patchVersion(partial);
@@ -151,7 +184,9 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
           <Chip tone="gold">{BCG_STATUS_LABELS[version.status]}</Chip>
         </div>
         <p className="mt-2 text-sm text-vice-text-muted">
-          {view === "select" ? "Vergelijk je aanbod op marktgroei en relatief marktaandeel." : "Alleen onderbouwde cijfers krijgen een plek. Een kwadrant is geen bedrijfsbesluit."}
+          {view === "select"
+            ? "AI vult de matrix vanuit het dossier. Jij voegt een aanbod toe, verwijdert het, of bewerkt wat al ingevuld is."
+            : "Alleen onderbouwde cijfers krijgen een plek. Een kwadrant is geen bedrijfsbesluit."}
         </p>
         <p className="mt-1 text-xs text-vice-text-muted">Versie {version.version_number}{version.ai_generated_at ? ` · AI-voorbereiding ${formatDate(version.ai_generated_at)}` : ""}</p>
       </header>
@@ -193,7 +228,52 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
 
       {view === "select" ? (
         <section className="rounded-xl border border-vice-border bg-vice-surface p-5">
-          <div className="grid gap-3 md:grid-cols-2">
+          <h2 className="text-sm font-medium">Vul de matrix met AI</h2>
+          <p className="mt-2 text-sm text-vice-text-muted">
+            AI neemt het aanbod uit de 5C en vult markt, groei en relatief aandeel alleen waar het dossier een bron heeft. Lege velden blijven leeg. Een latere AI-ronde overschrijft geen bewerking.
+          </p>
+          <Button type="button" className={`mt-4 ${goldButtonClass}`} disabled={readOnly || busy !== null} onClick={() => void fillWithAi()}>
+            {busy === "ai" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Vul de BCG-matrix met AI
+          </Button>
+
+          <h2 className="mt-8 text-sm font-medium">Ingevuld aanbod</h2>
+          {wb.items.length === 0 ? (
+            <p className="mt-2 text-sm text-vice-text-muted">Nog leeg. Start de AI, of voeg zelf een aanbod toe.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-vice-border">
+              {wb.items.map((item) => {
+                const reading = readings.get(item.id);
+                const label = reading ? availabilityLabel(reading, item.selected) : "Nog aanvullen";
+                return (
+                  <li key={item.id} className="flex flex-wrap items-center gap-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium">{item.title}</span>
+                      <span className="text-xs text-vice-text-muted">{BCG_KIND_LABELS[item.kind]}{item.market_definition ? ` · ${item.market_definition}` : ""}</span>
+                    </div>
+                    <Chip tone={label === "Gegevens beschikbaar" ? "green" : "amber"}>{label}</Chip>
+                    <Button type="button" variant="secondary" className="h-8 text-xs" onClick={() => setOpenId(item.id)}>Bewerken</Button>
+                    <Button type="button" variant="ghost" className="h-8 text-xs" disabled={readOnly || busy !== null} onClick={() => void removeItem(item.id)}>Verwijderen</Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <div className="mt-4 flex flex-wrap items-end gap-2">
+            <Label className="text-xs">Aanbod toevoegen
+              <Input className="mt-1" value={newTitle} disabled={readOnly} onChange={(e) => setNewTitle(e.target.value)} placeholder="Naam van product, dienst of eenheid" />
+            </Label>
+            <select className={fieldClass} value={newKind} disabled={readOnly} onChange={(e) => setNewKind(e.target.value as BcgItemKind)}>
+              {Object.entries(BCG_KIND_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+            <Button type="button" variant="secondary" disabled={readOnly || busy !== null || newTitle.trim().length < 2} onClick={() => void addItem()}>
+              <Plus className="size-4" /> Toevoegen
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-vice-text-muted">Een nieuw aanbod blijft open voor de volgende AI-ronde, tot je het zelf bewerkt.</p>
+
+          <h2 className="mt-8 text-sm font-medium">Afbakening bijstellen</h2>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
             <Label className="text-xs">Markt
               <Input className="mt-1" value={version.market_label} disabled={readOnly} onChange={(e) => patchVersion({ market_label: e.target.value })} onBlur={() => void saveScope()} />
             </Label>
@@ -216,56 +296,6 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
               </select>
             </Label>
           </div>
-          <h2 className="mt-6 text-sm font-medium">Selecteer je aanbod</h2>
-          <ul className="mt-3 divide-y divide-vice-border">
-            {wb.items.map((item) => {
-              const reading = readings.get(item.id);
-              const label = reading ? availabilityLabel(reading, item.selected) : "Nog aanvullen";
-              return (
-                <li key={item.id} className="flex flex-wrap items-center gap-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={item.selected}
-                    disabled={readOnly || busy !== null}
-                    onChange={(e) => {
-                      const selectedNow = e.target.checked;
-                      if (!selectedNow) {
-                        const reason = window.prompt("Waarom telt dit aanbod niet mee?") ?? "";
-                        void run("select", () => setBcgSelectionAction(tenantId, { itemId: item.id, selected: false, reason })).then((ok) => { if (ok) void reload(); });
-                        return;
-                      }
-                      void run("select", () => setBcgSelectionAction(tenantId, { itemId: item.id, selected: true, reason: "" })).then((ok) => { if (ok) void reload(); });
-                    }}
-                  />
-                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpenId(item.id)}>
-                    <span className="block text-sm font-medium">{item.title}</span>
-                    <span className="text-xs text-vice-text-muted">{BCG_KIND_LABELS[item.kind]}{item.market_definition ? ` · ${item.market_definition}` : ""}</span>
-                  </button>
-                  <Chip tone={label === "Gegevens beschikbaar" ? "green" : "amber"}>{label}</Chip>
-                </li>
-              );
-            })}
-          </ul>
-          <div className="mt-4 flex flex-wrap items-end gap-2">
-            <Label className="text-xs">Handmatig toevoegen
-              <Input className="mt-1" value={newTitle} disabled={readOnly} onChange={(e) => setNewTitle(e.target.value)} />
-            </Label>
-            <select className={fieldClass} value={newKind} disabled={readOnly} onChange={(e) => setNewKind(e.target.value as BcgItemKind)}>
-              {Object.entries(BCG_KIND_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-            <Button type="button" variant="secondary" disabled={readOnly || busy !== null} onClick={() => void run("add", () => saveBcgItemAction(tenantId, emptyItem(version.id, newTitle, newKind))).then(async (ok) => { if (ok) { setNewTitle(""); await reload(); } })}>
-              <Plus className="size-4" /> Aanbod toevoegen
-            </Button>
-            <Button type="button" variant="secondary" disabled={readOnly || busy !== null} onClick={() => void run("adopt", () => adoptBcgOfferingsAction(tenantId, { versionId: version.id })).then(async (ok) => { if (ok) await reload(); })}>
-              Aanbod uit 5C
-            </Button>
-          </div>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-vice-text-muted">Bestaande bronnen worden hergebruikt. Ontbrekende cijfers blijven open.</p>
-            <Button type="button" className={goldButtonClass} disabled={readOnly || busy !== null || selected.length === 0} onClick={() => void run("ai", () => prepareBcgAction(tenantId, { versionId: version.id })).then(async (ok) => { if (ok) { await reload(); setNotice("De voorbereiding staat als concept. Cijfers zonder bron zijn weggelaten."); setView("matrix"); } })}>
-              {busy === "ai" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Bereid de BCG-matrix voor met AI
-            </Button>
-          </div>
           <div className="mt-4 flex gap-2">
             <Input value={scopeName} disabled={readOnly} onChange={(e) => setScopeName(e.target.value)} placeholder="Nieuwe portfolioanalyse" />
             <Button type="button" variant="secondary" disabled={readOnly || busy !== null} onClick={() => void addBcgScopeAction(tenantId, { label: scopeName }).then(async (result) => { if (result.ok && result.data) { setScopeName(""); await reload(result.data.versionId); } else setError(result.ok ? "Geen versie" : result.error); })}>Bewaar aparte scope</Button>
@@ -274,7 +304,12 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
       ) : (
         <section>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <Button type="button" variant="secondary" onClick={() => setAssumptions((open) => !open)}>Aannames bekijken</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={() => setAssumptions((open) => !open)}>Aannames bekijken</Button>
+              <Button type="button" variant="secondary" disabled={readOnly || busy !== null} onClick={() => void fillWithAi()}>
+                {busy === "ai" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Werk bij met AI
+              </Button>
+            </div>
             <label className="flex items-center gap-2 text-xs text-vice-text-muted">
               <input type="checkbox" checked={spread} onChange={(e) => setSpread(e.target.checked)} />
               Labels spreiden
@@ -316,7 +351,10 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
                     <p className="text-sm font-medium">{item.title}</p>
                     <p className="text-xs text-vice-text-muted">{readings.get(item.id)?.reasons[0]}</p>
                   </div>
-                  <Button type="button" variant="secondary" className="h-8 text-xs" onClick={() => setOpenId(item.id)}>Aanvullen</Button>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="secondary" className="h-8 text-xs" onClick={() => setOpenId(item.id)}>Bewerken</Button>
+                    <Button type="button" variant="ghost" className="h-8 text-xs" disabled={readOnly || busy !== null} onClick={() => void removeItem(item.id)}>Verwijderen</Button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -385,9 +423,9 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
             const ok = await run("review", () => setBcgReviewAction(tenantId, { itemId: openItem.id, reviewed: true, gap: draft.gapReason }));
             if (ok) { await reload(); setOpenId(null); }
           }}
-          onExclude={async (reason) => {
-            const ok = await run("exclude", () => setBcgSelectionAction(tenantId, { itemId: openItem.id, selected: false, reason }));
-            if (ok) { await reload(); setOpenId(null); }
+          onDelete={async () => {
+            const ok = await removeItem(openItem.id);
+            if (ok) setOpenId(null);
           }}
           onSplit={async (titles) => {
             const ok = await run("split", () => splitBcgItemAction(tenantId, { itemId: openItem.id, titles: titles.filter((title) => title.trim().length >= 2) }));
@@ -422,53 +460,6 @@ function canApprove(wb: BcgWorkbench, overlapIds: Set<string>): boolean {
     const reading = readingFor(item, version);
     return reading.placeable || item.gap_reason.trim().length >= 10;
   });
-}
-
-function emptyItem(versionId: string, title: string, kind: BcgItemKind) {
-  return draftPayload(versionId, null, {
-    ...blankDraft(),
-    title,
-    kind,
-  });
-}
-
-function blankDraft(): ItemDraft {
-  return {
-    title: "",
-    description: "",
-    kind: "service",
-    marketDefinition: "",
-    geography: "",
-    segment: "",
-    periodLabel: "",
-    periodKind: "",
-    measureBasis: "",
-    currency: "",
-    unitLabel: "",
-    scopeConfirmed: false,
-    growthMethod: "none",
-    growthPercent: "",
-    sizePrevious: "",
-    sizeCurrent: "",
-    sizeScale: "units",
-    growthEvidence: "",
-    shareMethod: "none",
-    ownShare: "",
-    leaderShare: "",
-    ownAmount: "",
-    leaderAmount: "",
-    amountScale: "units",
-    clientIsLeader: false,
-    leaderName: "",
-    shareEvidence: "",
-    figuresConflict: "",
-    conflictAccepted: false,
-    advisorNote: "",
-    openQuestion: "",
-    questionStatus: "open",
-    gapReason: "",
-    refs: [],
-  };
 }
 
 function draftPayload(versionId: string, item: BcgItem | null, draft: ItemDraft) {

@@ -109,7 +109,7 @@ export function BcgItemPanel({
   onClose,
   onSave,
   onReview,
-  onExclude,
+  onDelete,
   onSplit,
   onOverlap,
   onResolveAi,
@@ -123,13 +123,12 @@ export function BcgItemPanel({
   onClose: () => void;
   onSave: (draft: ItemDraft) => Promise<void>;
   onReview: (draft: ItemDraft) => Promise<void>;
-  onExclude: (reason: string) => Promise<void>;
+  onDelete: () => Promise<void>;
   onSplit: (titles: string[]) => Promise<void>;
   onOverlap: (mode: BcgOverlapMode) => Promise<void>;
   onResolveAi: (accept: boolean) => Promise<void>;
 }) {
   const [form, setForm] = useState<ItemDraft>(() => draftFrom(item));
-  const [excludeReason, setExcludeReason] = useState("");
   const [parts, setParts] = useState(["", ""]);
   const [sourceKey, setSourceKey] = useState("");
   const patch = (partial: Partial<ItemDraft>) => setForm((current) => ({ ...current, ...partial }));
@@ -185,11 +184,17 @@ export function BcgItemPanel({
 
         {proposal && (
           <div className="mb-4 rounded-lg border border-vice-gold/40 bg-vice-gold/10 p-3 text-sm">
-            <p className="font-medium">Voorstel uit bestaande bronnen</p>
+            <p className="font-medium">{item.manual_lock || item.figures_confirmed ? "AI-voorstel, je bewerking blijft staan" : "Voorstel uit bestaande bronnen"}</p>
             <p className="mt-1 text-vice-text-muted">{proposal.open_question || proposal.market_definition || "Cijfers die niet in de bronnen staan, zijn weggelaten."}</p>
             <div className="mt-2 flex gap-2">
-              <Button type="button" disabled={busy || readOnly} className={goldButtonClass} onClick={() => void onResolveAi(true)}>Voorstel aanvaarden</Button>
-              <Button type="button" variant="secondary" disabled={busy || readOnly} onClick={() => void onResolveAi(false)}>Afwijzen</Button>
+              {item.manual_lock || item.figures_confirmed ? (
+                <Button type="button" variant="secondary" disabled={busy || readOnly} onClick={() => void onResolveAi(false)}>Voorstel sluiten</Button>
+              ) : (
+                <>
+                  <Button type="button" disabled={busy || readOnly} className={goldButtonClass} onClick={() => void onResolveAi(true)}>Voorstel aanvaarden</Button>
+                  <Button type="button" variant="secondary" disabled={busy || readOnly} onClick={() => void onResolveAi(false)}>Afwijzen</Button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -374,10 +379,7 @@ export function BcgItemPanel({
               <option value="excluded">Niet meetellen</option>
             </select>
           </Label>
-          <Label className="block text-xs">Uitsluiten
-            <Input className="mt-1" value={excludeReason} disabled={readOnly} onChange={(e) => setExcludeReason(e.target.value)} placeholder="Reden" />
-          </Label>
-          <Button type="button" variant="secondary" disabled={readOnly || busy} onClick={() => void onExclude(excludeReason)}>Gemotiveerd uitsluiten</Button>
+          <Button type="button" variant="secondary" disabled={readOnly || busy} onClick={() => void onDelete()}>Verwijderen</Button>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
