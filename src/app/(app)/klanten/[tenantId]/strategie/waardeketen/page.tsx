@@ -41,12 +41,16 @@ export default async function ValueChainPage({
     );
   }
 
+  const { data: bcgData, error: bcgError } = await supabase.schema("app").rpc("get_bcg_context", { p_tenant_id: tenantId });
+  const bcg = !bcgError && bcgData && typeof bcgData === "object" ? (bcgData as { approved: boolean; qualitative?: boolean; items?: { title: string; quadrant: string | null; placeable: boolean }[] }) : null;
+
   return (
     <ValueChainWorkspace
       key={loaded.data.version.id}
       tenantId={tenantId}
       tenantName={(tenantData as Pick<TenantRow, "name">).name}
       initial={loaded.data}
+      bcg={bcg}
     />
   );
 }

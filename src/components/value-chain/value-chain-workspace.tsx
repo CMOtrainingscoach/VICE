@@ -103,10 +103,12 @@ export function ValueChainWorkspace({
   tenantId,
   tenantName,
   initial,
+  bcg,
 }: {
   tenantId: string;
   tenantName: string;
   initial: VcWorkbench;
+  bcg?: { approved: boolean; qualitative?: boolean; items?: { title: string; quadrant: string | null; placeable: boolean }[] } | null;
 }) {
   const router = useRouter();
   const [wb, setWb] = useState(initial);
@@ -270,7 +272,15 @@ export function ValueChainWorkspace({
             </span>
           );
         })}
-        <Chip>BCG nog niet beschikbaar</Chip>
+        {bcg?.approved ? (
+          <Link href={`/klanten/${tenantId}/strategie/${BCG_ROUTE}`} className="inline-flex items-center rounded-full border border-vice-border px-3 py-1 text-xs">
+            BCG {bcg.qualitative ? "kwalitatief" : `v${bcg.items?.filter((item) => item.placeable).length ?? 0} geplaatst`}
+          </Link>
+        ) : (
+          <Link href={`/klanten/${tenantId}/strategie/${BCG_ROUTE}`} className="inline-flex items-center rounded-full border border-vice-border px-3 py-1 text-xs">
+            BCG nog niet goedgekeurd
+          </Link>
+        )}
       </div>
 
       {wb.chains.length > 1 && (

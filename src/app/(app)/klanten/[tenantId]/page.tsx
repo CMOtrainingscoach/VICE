@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { TenantForm } from "@/components/clients/tenant-form";
 import { TenantAdminPanel } from "@/components/clients/tenant-admin-panel";
+import { BcgPublishedView } from "@/components/bcg/bcg-published";
 import { EmptyState } from "@/components/ui/empty-state";
+import type { BcgPublished } from "@/lib/bcg/types";
 import { getUserAppContext } from "@/lib/auth/context";
 import { createClient } from "@/lib/supabase/server";
 import { TENANT_STATUS_LABELS, type TenantRow } from "@/lib/types/tenant";
@@ -28,6 +30,13 @@ export default async function TenantDetailPage({
 
   const tenant = data as TenantRow;
   const isAdmin = ctx.isPlatformAdmin;
+  let publishedBcg: BcgPublished | null = null;
+  if (!isAdmin) {
+    const published = await supabase.schema("app").rpc("get_bcg_published", { p_tenant_id: tenantId });
+    if (!published.error && published.data && typeof published.data === "object" && (published.data as BcgPublished).published) {
+      publishedBcg = published.data as BcgPublished;
+    }
+  }
 
   return (
     <div className="p-8">
@@ -87,10 +96,13 @@ export default async function TenantDetailPage({
           </div>
         </>
       ) : (
-        <EmptyState
-          title="Strategisch dashboard"
-          description="Na afronding van de audit en vrijgave door Hardwig zie je hier je goedgekeurde strategie. Nog niet beschikbaar in fase 1."
-        />
+        <>
+          {publishedBcg ? <BcgPublishedView data={publishedBcg} /> : null}
+          <EmptyState
+            title="Strategisch dashboard"
+            description="Na afronding van de audit en vrijgave door Hardwig zie je hier je goedgekeurde strategie. Een gepubliceerde BCG-matrix verschijnt hierboven."
+          />
+        </>
       )}
     </div>
   );
