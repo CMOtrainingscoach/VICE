@@ -39,6 +39,7 @@ import {
   exportStpTextAction,
   loadStpWorkbenchAction,
   mergeStpSegmentsAction,
+  composeStpSentenceAction,
   proposeStpIcpAction,
   proposeStpPositionAction,
   proposeStpSegmentsAction,
@@ -262,6 +263,13 @@ export function StpWorkspace({
               setSave("unsaved");
             }}
             onSave={() => void run("Positionering bewaren", () => saveStpPositionAction(tenantId, positionInput(wb)))}
+            onComposeSentence={() => void run("Positioneringszin maken op basis van deze pagina en de eerdere analyses", async () => {
+              const saved = await saveStpPositionAction(tenantId, positionInput(wb));
+              if (!saved.ok) return saved;
+              const fresh = await loadStpWorkbenchAction(tenantId, version.id);
+              if (!fresh.ok || !fresh.data) return { ok: false, error: fresh.ok ? "Herladen mislukt" : fresh.error };
+              return composeStpSentenceAction(tenantId, { versionId: version.id, expectedUpdatedAt: fresh.data.version.updated_at });
+            })}
             onPropose={() => void run("Positionering voorstellen", async () => {
               const saved = await saveStpPositionAction(tenantId, positionInput(wb));
               if (!saved.ok) return saved;
@@ -695,6 +703,7 @@ function PositionStep({
   locked,
   onChange,
   onSave,
+  onComposeSentence,
   onPropose,
   onApply,
   onConfirm,
@@ -705,6 +714,7 @@ function PositionStep({
   locked: boolean;
   onChange: (patch: Partial<StpWorkbench["version"]>) => void;
   onSave: () => void;
+  onComposeSentence: () => void;
   onPropose: () => void;
   onApply: () => void;
   onConfirm: () => void;
@@ -733,6 +743,15 @@ function PositionStep({
       <Field label="Positioneringszin">
         <textarea className={fieldClass} rows={2} disabled={locked} value={version.position_sentence} onChange={(event) => onChange({ position_sentence: event.target.value })} onBlur={onSave} />
       </Field>
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={locked}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onComposeSentence}
+      >
+        Maak de zin met AI
+      </Button>
       <Field label="Status van de claim">
         <select className={fieldClass} disabled={locked} value={version.claim_status} onChange={(event) => onChange({ claim_status: event.target.value as StpClaim })} onBlur={onSave}>
           {STP_CLAIMS.map((claim) => <option key={claim} value={claim}>{STP_CLAIM_LABELS[claim]}</option>)}

@@ -168,6 +168,61 @@ export async function proposeStpPosition(input: {
   };
 }
 
+export async function proposeStpSentence(input: {
+  tenantName: string;
+  offering: string;
+  geography: string;
+  segmentName: string;
+  need: string;
+  audience: string;
+  problem: string;
+  promise: string;
+  distinction: string;
+  evidence: string;
+  sources: StpSource[];
+}): Promise<string> {
+  const page = [
+    input.audience,
+    input.problem,
+    input.promise,
+    input.distinction,
+    input.evidence,
+    input.offering,
+    input.geography,
+    input.segmentName,
+    input.need,
+  ].map((part) => part.trim()).filter(Boolean);
+  if (page.length === 0 && input.sources.length === 0) {
+    throw new Error("Er is nog te weinig om een zin van te maken. Vul eerst voor wie, het probleem of de belofte in.");
+  }
+  const { text } = corpusOf(input.sources);
+  const corpus = `${text}\n${page.join("\n")}`;
+  const parsed = await ask(
+    [
+      RULES,
+      "Schrijf één positioneringszin in gewone taal, maximaal twee zinnen.",
+      "Gebruik alleen de onderdelen op de pagina en de meegegeven bronnen.",
+      "Neem geen feit, cijfer of claim op dat daar niet staat. Laat ontbrekende delen weg.",
+      "Geen aanhalingstekens en geen woorden als uniek, innovatief of totaaloplossing.",
+      "JSON: {\"position_sentence\":\"\"}. Laat de zin leeg als er niets bruikbaars is.",
+    ].join("\n"),
+    [
+      `Klant: ${input.tenantName}`,
+      `Aanbod: ${input.offering || "onbekend"}`,
+      `Geografie: ${input.geography || "onbekend"}`,
+      `Doelgroep: ${input.segmentName || "onbekend"}`,
+      `Behoefte: ${input.need || "onbekend"}`,
+      `Voor wie: ${input.audience || "leeg"}`,
+      `Probleem: ${input.problem || "leeg"}`,
+      `Belofte: ${input.promise || "leeg"}`,
+      `Onderscheid: ${input.distinction || "leeg"}`,
+      `Bewijs: ${input.evidence || "leeg"}`,
+      `Bronnen:\n${input.sources.map((source) => `[${source.key}] ${source.text}`).join("\n\n") || "geen"}`,
+    ].join("\n"),
+  );
+  return stripUngroundedAmounts(str(parsed.position_sentence, 400), corpus).replace(/\s+/g, " ").trim();
+}
+
 export async function proposeStpIcp(input: {
   tenantName: string;
   offering: string;

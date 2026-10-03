@@ -6,7 +6,7 @@ import { formatZodIssue } from "@/lib/pestel/zod-form";
 import { createClient } from "@/lib/supabase/server";
 import { buildStpCatalog } from "@/lib/stp/catalog";
 import { STP_ROUTE } from "@/lib/stp/constants";
-import { proposeStpIcp, proposeStpPosition, proposeStpSegments, proposeStpTarget } from "@/lib/stp/stp-ai";
+import { proposeStpIcp, proposeStpPosition, proposeStpSegments, proposeStpSentence, proposeStpTarget } from "@/lib/stp/stp-ai";
 import type { StpCriterion, StpPublished, StpScore, StpSegment, StpWorkbench } from "@/lib/stp/types";
 import { VALUE_CHAIN_ROUTE } from "@/lib/value-chain/constants";
 import {
@@ -297,6 +297,57 @@ export async function proposeStpTargetAction(tenantId: string, input: unknown): 
 }
 export async function proposeStpPositionAction(tenantId: string, input: unknown): Promise<ActionResult> {
   return generate(tenantId, input, "position");
+}
+
+export async function composeStpSentenceAction(tenantId: string, input: unknown): Promise<ActionResult> {
+  const parsed = stpAiSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: formatZodIssue(parsed.error) };
+  const loaded = await loadStpWorkbenchAction(tenantId, parsed.data.versionId);
+  if (!loaded.ok || !loaded.data) return { ok: false, error: loaded.ok ? "Geen data" : loaded.error };
+  const wb = loaded.data;
+  if (wb.version.updated_at !== parsed.data.expectedUpdatedAt) {
+    return { ok: false, error: "De analyse is gewijzigd tijdens het voorbereiden. Maak de zin opnieuw." };
+  }
+  const active = wb.segments.filter((segment) => !segment.archived_at);
+  const primary = active.find((segment) => segment.disposition === "primary");
+  try {
+    const sentence = await proposeStpSentence({
+      tenantName: wb.inputs.tenant.name,
+      offering: wb.version.offering,
+      geography: wb.version.geography,
+      segmentName: primary?.name ?? "",
+      need: primary?.need ?? "",
+      audience: wb.version.audience,
+      problem: wb.version.problem,
+      promise: wb.version.promise,
+      distinction: wb.version.distinction,
+      evidence: wb.version.evidence_text,
+      sources: buildStpCatalog(wb.inputs),
+    });
+    if (sentence.length < 12) {
+      return { ok: false, error: "De beschikbare gegevens dragen nog geen positioneringszin. Het veld blijft zoals het was." };
+    }
+    const again = await loadStpWorkbenchAction(tenantId, parsed.data.versionId);
+    if (!again.ok || !again.data) return { ok: false, error: again.ok ? "Herladen mislukt" : again.error };
+    if (again.data.version.updated_at !== wb.version.updated_at) {
+      return { ok: false, error: "De pagina is intussen gewijzigd. De zin is niet geplaatst. Maak hem opnieuw." };
+    }
+    const current = again.data.version;
+    return call(tenantId, "save_stp_position", {
+      p_version_id: current.id,
+      p_payload: {
+        audience: current.audience,
+        problem: current.problem,
+        promise: current.promise,
+        distinction: current.distinction,
+        evidence_text: current.evidence_text,
+        position_sentence: sentence,
+        claim_status: current.claim_status,
+      },
+    });
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "De zin kon niet gemaakt worden. Je tekst blijft staan." };
+  }
 }
 export async function proposeStpIcpAction(tenantId: string, input: unknown): Promise<ActionResult> {
   return generate(tenantId, input, "icp");
