@@ -35,7 +35,7 @@ export default async function PersonasPage({
           {!loaded.ok ? loaded.error : "Workbench gaf geen data terug."}
         </p>
         <p className="mt-3 text-xs text-vice-text-muted">
-          Pas migratie 20260330132900 toe in de Supabase SQL-editor, na 20260330132800. Eerdere migraties niet opnieuw draaien.
+          Pas migratie 20260330133000 toe in de Supabase SQL-editor, na 20260330132900. Eerdere migraties niet opnieuw draaien.
         </p>
       </div>
     );

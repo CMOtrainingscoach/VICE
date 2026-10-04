@@ -12,6 +12,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { STP_ROUTE } from "@/lib/stp/constants";
 import {
+  deriveJourneySchema,
   journeyApplySchema,
   journeyEnsureSchema,
   journeyProposeSchema,
@@ -54,6 +55,7 @@ function mapWorkbench(raw: Record<string, unknown>): PersonaWorkbench {
     icp: raw.icp as PersonaWorkbench["icp"],
     personas: asArray<Persona>(raw.personas).map((persona) => ({
       ...persona,
+      audience_rank: persona.audience_rank === "primary" ? "primary" : "secondary",
       decision_roles: asArray(persona.decision_roles),
       portraits: asArray<PersonaPortrait>(persona.portraits),
       refs: asArray<PersonaRef>(persona.refs),
@@ -146,6 +148,7 @@ export async function savePersonaAction(tenantId: string, input: unknown): Promi
       hypothesis: d.hypothesis,
       evidence_level: d.evidenceLevel,
       active: d.active,
+      audience_rank: d.audienceRank,
     },
   });
   if (error) return { ok: false, error: error.message };
@@ -240,9 +243,9 @@ export async function archivePhaseAction(tenantId: string, input: unknown): Prom
 }
 
 export async function deriveDesiredJourneyAction(tenantId: string, input: unknown): Promise<ActionResult> {
-  const parsed = personaVersionSchema.safeParse(input);
+  const parsed = deriveJourneySchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: formatZodIssue(parsed.error) };
-  return call(tenantId, "derive_desired_journey", { p_version_id: parsed.data.versionId });
+  return call(tenantId, "derive_desired_journey", { p_version_id: parsed.data.versionId, p_persona_id: parsed.data.personaId });
 }
 
 export async function proposeJourneyAction(tenantId: string, input: unknown): Promise<ActionResult> {
@@ -383,14 +386,14 @@ export async function exportPersonaTextAction(tenantId: string, input: unknown):
     `ICP: ${wb.icp.name || "nog niet gekoppeld"} · versie ${wb.icp.version_number ?? "-"}`,
     "",
     ...wb.personas.filter((persona) => !persona.archived_at).flatMap((persona) => [
-      persona.role_title,
+      `${persona.audience_rank === "primary" ? "Primair" : "Secundair"}: ${persona.role_title}`,
       persona.summary,
       persona.hypothesis ? "Hypothese" : "Onderbouwd",
       "Portret: AI-visualisatie, fictief.",
       "",
     ]),
     ...wb.journeys.filter((journey) => !journey.archived_at).flatMap((journey) => [
-      journey.kind === "desired" ? "Gewenste reis" : "Huidige reis",
+      `${journey.kind === "desired" ? "Gewenste reis" : "Huidige reis"} · ${wb.personas.find((persona) => persona.id === journey.primary_persona_id)?.role_title || "zonder persona"}`,
       ...journey.phases.filter((phase) => !phase.archived_at).map((phase) => `- ${phase.name}: ${phase.goal || "doel nog leeg"}${phase.improvement ? ` · kans: ${phase.improvement}` : ""}`),
       "",
     ]),

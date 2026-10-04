@@ -42,6 +42,7 @@ export type Persona = {
   hypothesis: boolean;
   evidence_level: EvidenceLevel;
   active: boolean;
+  audience_rank: "primary" | "secondary";
   manual_lock: boolean;
   origin: "ai" | "manual";
   ai_state: "none" | "proposed" | "accepted" | "rejected";
@@ -147,6 +148,6 @@ export type PersonaPublished = {
   published_at?: string | null;
   open_questions?: string;
   accepted_uncertainty?: string;
-  personas?: { role_title: string; summary: string; storage_path: string; url?: string }[];
-  journeys?: { kind: "current" | "desired"; title: string; phases: { name: string; goal: string; barriers: string; improvement: string }[] }[];
+  personas?: { id?: string; role_title: string; summary: string; audience_rank?: "primary" | "secondary"; storage_path: string; url?: string }[];
+  journeys?: { kind: "current" | "desired"; title: string; primary_persona_id?: string | null; role_title?: string; phases: { name: string; goal: string; barriers: string; improvement: string }[] }[];
 };

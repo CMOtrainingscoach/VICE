@@ -188,7 +188,7 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
             }}
             onPropose={(journeyId, kind, roleTitle) => void run("Klantreis voorstellen", () => proposeJourneyAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at, journeyId, kind, roleTitle }))}
             onApply={(journeyId, replace) => void run(replace ? "Fasen vervangen" : "Fasen toevoegen", () => applyJourneyProposalAction(tenantId, { journeyId, replace }))}
-            onDerive={() => void run("Gewenste reis maken vanuit de huidige", () => deriveDesiredJourneyAction(tenantId, { versionId: version.id }))}
+            onDerive={(personaId) => void run("Gewenste reis maken vanuit de huidige", () => deriveDesiredJourneyAction(tenantId, { versionId: version.id, personaId }))}
             onMove={(phaseId, direction) => void run("Fase verplaatsen", () => movePhaseAction(tenantId, { phaseId, direction }))}
             onArchive={(phaseId, restore) => void run(restore ? "Fase herstellen" : "Fase verwijderen", () => archivePhaseAction(tenantId, { phaseId, restore }))}
             onDuplicate={(item) => {
@@ -307,6 +307,7 @@ function personaPayload(versionId: string, persona: Persona) {
     hypothesis: persona.hypothesis,
     evidenceLevel: persona.evidence_level,
     active: persona.active,
+    audienceRank: persona.audience_rank,
   };
 }
 
@@ -315,7 +316,7 @@ function blankPayload(versionId: string) {
     id: "", role_title: "Nieuwe rol", display_name: "", summary: "", decision_roles: [], relevance: "", goals: "", outcomes: "",
     responsibilities: "", success_criteria: "", pains: "", barriers: "", risks: "", consequences: "", triggers: "", decision_criteria: "",
     objections: "", info_needed: "", other_roles: "", touchpoints: "", questions: "", arguments: "", proof_needed: "", channels: "",
-    assumptions: "", open_question: "", conflict_note: "", hypothesis: true, evidence_level: "hypothesis", active: true, manual_lock: true,
+    assumptions: "", open_question: "", conflict_note: "", hypothesis: true, evidence_level: "hypothesis", active: true, audience_rank: "secondary", manual_lock: true,
     origin: "manual", ai_state: "none", ai_payload: {}, overlap_note: "", illustration_prompt: "", selected_portrait_id: null,
     archived_at: null, sort_order: 0, portraits: [], refs: [],
   });
@@ -468,7 +469,7 @@ function PersonaStepView(props: {
           <li key={item.id}>
             <button type="button" className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${item.id === persona?.id ? "border-vice-gold bg-vice-surface" : "border-vice-border"}`} onClick={() => props.onSelect(item.id)}>
               <span className="block font-medium">{item.role_title}</span>
-              <span className="text-vice-text-muted">{item.ai_state === "proposed" ? "Voorstel" : item.active ? "Actief" : "Inactief"}</span>
+              <span className="text-vice-text-muted">{item.ai_state === "proposed" ? "Voorstel" : item.audience_rank === "primary" ? "Primair" : item.active ? "Secundair" : "Inactief"}</span>
             </button>
           </li>
         ))}
@@ -483,6 +484,11 @@ function PersonaStepView(props: {
             </div>
           ) : null}
           <Portrait key={persona.id} persona={persona} locked={props.locked} onPortrait={(prompt) => props.onPortrait(persona.id, prompt)} onSelect={props.onSelectPortrait} onCancel={props.onCancelPortrait} />
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" className={persona.audience_rank === "primary" ? goldButtonClass : ""} variant={persona.audience_rank === "primary" ? "primary" : "secondary"} disabled={props.locked || persona.ai_state === "proposed"} onClick={() => props.onSave({ ...persona, audience_rank: "primary", active: true })}>Primair</Button>
+            <Button type="button" variant={persona.audience_rank === "secondary" ? "primary" : "secondary"} disabled={props.locked || persona.ai_state === "proposed" || persona.audience_rank === "primary"} onClick={() => props.onSave({ ...persona, audience_rank: "secondary", active: true })}>Secundair</Button>
+          </div>
+          <p className="text-xs text-vice-text-muted">Eén persona is primair. De anderen zijn secundair en krijgen een eigen klantreis.</p>
           <label className="block text-xs text-vice-text-muted">Functierol
             <input className={`${fieldClass} mt-1`} disabled={props.locked} value={persona.role_title} onChange={(event) => props.onChange(persona.id, { role_title: event.target.value })} onBlur={(event) => props.onSave({ ...persona, role_title: event.target.value })} />
           </label>
@@ -547,7 +553,7 @@ function JourneyStep(props: {
   onKind: (kind: "current" | "desired", primaryId: string | null) => void;
   onPropose: (journeyId: string, kind: "current" | "desired", roleTitle: string) => void;
   onApply: (journeyId: string, replace: boolean) => void;
-  onDerive: () => void;
+  onDerive: (personaId: string) => void;
   onMove: (phaseId: string, direction: -1 | 1) => void;
   onArchive: (phaseId: string, restore: boolean) => void;
   onDuplicate: (phase: JourneyPhase) => void;
@@ -556,21 +562,28 @@ function JourneyStep(props: {
   onBack: () => void;
 }) {
   const [kind, setKind] = useState<"current" | "desired">("current");
-  const journey = props.wb.journeys.find((item) => item.kind === kind && !item.archived_at);
-  const primary = props.people.find((persona) => persona.id === journey?.primary_persona_id) ?? props.people[0];
+  const [personaId, setPersonaId] = useState(props.people.find((persona) => persona.audience_rank === "primary")?.id ?? props.people[0]?.id ?? "");
+  const selected = props.people.find((persona) => persona.id === personaId) ?? props.people.find((persona) => persona.audience_rank === "primary") ?? props.people[0];
+  const journey = props.wb.journeys.find((item) => item.kind === kind && !item.archived_at && item.primary_persona_id === selected?.id);
   const phases = (journey?.phases ?? []).filter((item) => !item.archived_at);
   const archived = (journey?.phases ?? []).filter((item) => item.archived_at);
   const proposal = Array.isArray(journey?.ai_proposal?.phases) ? journey.ai_proposal.phases : [];
   return (
     <section className="space-y-5">
-      <p className="max-w-prose text-sm text-vice-text-muted">Huidige reis: wat we weten of veronderstellen. Gewenste reis: hoe we het willen verbeteren. Die is nog niet gerealiseerd.</p>
-      <div className="flex flex-wrap gap-2">
-        {(["current", "desired"] as const).map((item) => (
-          <button key={item} type="button" className={`rounded-full px-3 py-1 text-sm ${kind === item && journey ? "bg-vice-text text-vice-bg" : "bg-vice-surface-muted"}`} onClick={() => { setKind(item); props.onKind(item, primary?.id ?? null); }}>{item === "current" ? "Huidige reis" : "Gewenste reis"}</button>
+      <p className="max-w-prose text-sm text-vice-text-muted">Elke persona heeft een eigen reis. Huidige reis: wat we weten of veronderstellen. Gewenste reis: hoe we het willen verbeteren. Die is nog niet gerealiseerd.</p>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Persona voor deze klantreis">
+        {props.people.map((persona) => (
+          <button key={persona.id} type="button" className={`rounded-full px-3 py-1 text-sm ${selected?.id === persona.id ? "bg-vice-text text-vice-bg" : "bg-vice-surface-muted"}`} onClick={() => setPersonaId(persona.id)}>
+            {persona.audience_rank === "primary" ? "Primair · " : "Secundair · "}{persona.role_title}
+          </button>
         ))}
       </div>
-      {!journey ? <p className="text-sm text-vice-text-muted">Klik op de reis die je wilt openen. Die wordt dan aangemaakt en blijft bewerkbaar.</p> : null}
-      {primary ? <p className="text-sm">Hoofdpersona: {primary.role_title}</p> : <p className="text-sm">Bevestig eerst een persona.</p>}
+      <div className="flex flex-wrap gap-2">
+        {(["current", "desired"] as const).map((item) => (
+          <button key={item} type="button" className={`rounded-full px-3 py-1 text-sm ${kind === item && journey ? "bg-vice-text text-vice-bg" : "bg-vice-surface-muted"}`} onClick={() => { setKind(item); props.onKind(item, selected?.id ?? null); }}>{item === "current" ? "Huidige reis" : "Gewenste reis"}</button>
+        ))}
+      </div>
+      {!selected ? <p className="text-sm">Bevestig eerst een persona.</p> : !journey ? <p className="text-sm text-vice-text-muted">Open de {kind === "desired" ? "gewenste" : "huidige"} reis van {selected.role_title}. Die blijft van deze persona.</p> : <p className="text-sm">Klantreis van {selected.audience_rank === "primary" ? "de primaire" : "de secundaire"} persona {selected.role_title}.</p>}
       <div className="flex gap-3 overflow-x-auto pb-2 md:flex-row flex-col">
         {phases.map((item, index) => (
           <article key={item.id} className="min-w-52 rounded-xl border border-vice-border bg-vice-surface p-4">
@@ -603,9 +616,9 @@ function JourneyStep(props: {
       {archived.length > 0 ? <button type="button" className="text-xs underline" onClick={() => props.onArchive(archived[0].id, true)}>Herstel laatst verwijderde fase</button> : null}
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
-        <Button type="button" variant="secondary" disabled={props.locked || !journey || !primary} onClick={() => journey && props.onPropose(journey.id, kind, primary?.role_title ?? "")}>Stel klantreis voor met AI</Button>
+        <Button type="button" variant="secondary" disabled={props.locked || !journey || !selected} onClick={() => journey && selected && props.onPropose(journey.id, kind, selected.role_title)}>Stel klantreis voor met AI</Button>
         <Button type="button" variant="secondary" disabled={props.locked || !journey} onClick={() => journey && props.onStarter(journey.id)}>Bouw met vijf fasen</Button>
-        {kind === "current" ? <Button type="button" variant="secondary" disabled={props.locked} onClick={props.onDerive}>Maak gewenste reis</Button> : null}
+        {kind === "current" ? <Button type="button" variant="secondary" disabled={props.locked || !selected} onClick={() => selected && props.onDerive(selected.id)}>Maak gewenste reis</Button> : null}
         <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={props.onConfirm}>Bevestig klantreis</Button>
       </div>
     </section>

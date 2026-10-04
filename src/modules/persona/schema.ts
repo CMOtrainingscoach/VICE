@@ -40,6 +40,7 @@ export const personaSaveSchema = z.object({
   hypothesis: z.boolean(),
   evidenceLevel: z.enum(EVIDENCE_LEVELS),
   active: z.boolean(),
+  audienceRank: z.enum(["primary", "secondary"]),
 });
 
 export const personaIdSchema = z.object({ personaId: uuid });
@@ -85,6 +86,7 @@ export const journeyProposeSchema = journeyProposalSchema.extend({
   roleTitle: zodString(200),
 });
 export const journeyApplySchema = z.object({ journeyId: uuid, replace: z.boolean() });
+export const deriveJourneySchema = personaVersionSchema.extend({ personaId: uuid });
 export const notesSchema = z.object({
   versionId: uuid,
   uncertainty: zodString(1000),

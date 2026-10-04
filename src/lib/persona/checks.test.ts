@@ -15,7 +15,7 @@ function wb(extra: Partial<PersonaWorkbench> = {}): PersonaWorkbench {
       goals: "Een heldere koers voor het bedrijf", outcomes: "", responsibilities: "", success_criteria: "",
       pains: "", barriers: "", risks: "", consequences: "", triggers: "", decision_criteria: "", objections: "",
       info_needed: "", other_roles: "", touchpoints: "", questions: "", arguments: "", proof_needed: "", channels: "",
-      assumptions: "", open_question: "", conflict_note: "", hypothesis: true, evidence_level: "hypothesis", active: true,
+      assumptions: "", open_question: "", conflict_note: "", hypothesis: true, evidence_level: "hypothesis", active: true, audience_rank: "primary",
       manual_lock: false, origin: "manual", ai_state: "none", ai_payload: {}, overlap_note: "", illustration_prompt: "",
       selected_portrait_id: null, archived_at: null, sort_order: 0, portraits: [], refs: [],
     }],

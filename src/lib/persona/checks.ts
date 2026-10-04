@@ -25,10 +25,21 @@ export function personaChecks(wb: PersonaWorkbench): PersonaCheck[] {
   checks.push(openConflict
     ? { id: "conflict", label: "Tegenstrijdigheid", level: "block", detail: "Benoem de onzekerheid of los de tegenstrijdigheid op." }
     : { id: "conflict", label: "Tegenstrijdigheid", level: "ready", detail: "Geen open tegenstrijdigheid." });
-  const usable = journeys.some((journey) => journey.primary_persona_id && journey.phases.some((phase) => !phase.archived_at && phase.goal.trim().length >= 8));
-  checks.push(usable
-    ? { id: "journey", label: "Klantreis", level: "ready", detail: "Minstens één fase heeft een klantdoel en een persona." }
-    : { id: "journey", label: "Klantreis", level: "block", detail: "Koppel een persona en geef een fase een klantdoel." });
+  const primaries = active.filter((persona) => persona.audience_rank === "primary");
+  checks.push(primaries.length === 1
+    ? { id: "primary", label: "Primaire persona", level: "ready", detail: primaries[0]?.role_title || "Gekozen" }
+    : { id: "primary", label: "Primaire persona", level: "block", detail: "Kies één primaire persona. De anderen zijn secundair." });
+  const primary = primaries[0];
+  const primaryJourney = primary
+    ? journeys.some((journey) => journey.primary_persona_id === primary.id && journey.phases.some((phase) => !phase.archived_at && phase.goal.trim().length >= 8))
+    : false;
+  checks.push(primaryJourney
+    ? { id: "journey", label: "Klantreis van de primaire persona", level: "ready", detail: "Minstens één fase heeft een klantdoel." }
+    : { id: "journey", label: "Klantreis van de primaire persona", level: "block", detail: "Geef de primaire persona een klantreis met een klantdoel." });
+  const missingSecondary = active.filter((persona) => persona.audience_rank !== "primary" && !journeys.some((journey) => journey.primary_persona_id === persona.id && journey.phases.some((phase) => !phase.archived_at)));
+  if (missingSecondary.length > 0) {
+    checks.push({ id: "secondary-journey", label: "Secundaire klantreizen", level: "attention", detail: `${missingSecondary.map((persona) => persona.role_title).join(", ")} ${missingSecondary.length === 1 ? "heeft" : "hebben"} nog geen eigen klantreis.` });
+  }
   const missingPortrait = active.filter((persona) => !persona.portraits.some((portrait) => portrait.id === persona.selected_portrait_id && portrait.status === "ready"));
   checks.push(missingPortrait.length === 0
     ? { id: "portrait", label: "Portretten", level: "ready", detail: "Elke actieve persona heeft een gekozen visualisatie." }
