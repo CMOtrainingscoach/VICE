@@ -151,7 +151,12 @@ export function StpWorkspace({
           <Link href={`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`} className="text-vice-text-muted hover:text-vice-gold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vice-gold">
             ← Waardeketen
           </Link>
-          <p className="text-xs text-vice-text-muted" aria-live="polite">{SAVE_LABEL[save]}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" asChild variant="secondary">
+              <Link href={`/klanten/${tenantId}/strategie/${PERSONA_ROUTE}`}>Naar persona’s →</Link>
+            </Button>
+            <p className="text-xs text-vice-text-muted" aria-live="polite">{SAVE_LABEL[save]}</p>
+          </div>
         </div>
         <p className="mt-4 text-xs font-medium uppercase tracking-wide text-vice-gold">
           {STP_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · STP · {tenantName} · versie {version.version_number} · {STP_STATUS_LABELS[version.status]}
@@ -922,8 +927,11 @@ function IcpStep({
         {locked && !version.published_at ? <Button type="button" className={goldButtonClass} onClick={onPublish}>Publiceer naar klantdashboard</Button> : null}
         {locked && version.published_at ? <Button type="button" variant="secondary" onClick={onUnpublish}>Trek publicatie in</Button> : null}
         {locked ? <Button type="button" variant="secondary" onClick={onRevision}>Nieuwe conceptversie</Button> : null}
+        <Button type="button" asChild variant="secondary">
+          <Link href={`/klanten/${tenantId}/strategie/${PERSONA_ROUTE}`}>Naar persona’s →</Link>
+        </Button>
       </div>
-      {locked ? <p className="text-sm text-vice-text-muted print:hidden">De klantreis en buyer persona’s gebruiken dit ICP met versie {version.version_number}. <Link href={`/klanten/${tenantId}/strategie/${PERSONA_ROUTE}`} className="text-vice-gold">Naar persona’s</Link></p> : null}
+      <p className="text-sm text-vice-text-muted print:hidden">Persona’s en de klantreis gebruiken dit ICP{locked ? ` met versie ${version.version_number}` : ""}. Een concept-ICP mag al, goedkeuren van persona’s wacht tot dit ICP goedgekeurd is.</p>
     </section>
   );
 }
