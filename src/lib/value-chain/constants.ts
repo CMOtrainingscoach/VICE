@@ -5,6 +5,9 @@ export const VALUE_CHAIN_LABEL = "Waardeketen";
 export const STP_FRAMEWORK_INDEX = 8;
 export const STP_ROUTE = "stp" as const;
 
+export const PERSONA_FRAMEWORK_INDEX = 9;
+export const PERSONA_ROUTE = "personas" as const;
+
 export const VC_BUSINESS_TYPES = ["service", "production", "trade", "mixed"] as const;
 export type VcBusinessType = (typeof VC_BUSINESS_TYPES)[number];
 

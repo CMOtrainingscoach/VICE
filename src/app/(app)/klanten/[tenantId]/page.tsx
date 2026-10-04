@@ -3,12 +3,15 @@ import { notFound, redirect } from "next/navigation";
 import { TenantForm } from "@/components/clients/tenant-form";
 import { TenantAdminPanel } from "@/components/clients/tenant-admin-panel";
 import { BcgPublishedView } from "@/components/bcg/bcg-published";
+import { PersonaPublishedView } from "@/components/persona/persona-published";
 import { StpPublishedView } from "@/components/stp/stp-published";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { BcgPublished } from "@/lib/bcg/types";
+import type { PersonaPublished } from "@/lib/persona/types";
 import type { StpPublished } from "@/lib/stp/types";
 import { getUserAppContext } from "@/lib/auth/context";
 import { createClient } from "@/lib/supabase/server";
+import { loadPersonaPublishedAction } from "@/modules/persona/actions";
 import { TENANT_STATUS_LABELS, type TenantRow } from "@/lib/types/tenant";
 
 export default async function TenantDetailPage({
@@ -34,6 +37,7 @@ export default async function TenantDetailPage({
   const isAdmin = ctx.isPlatformAdmin;
   let publishedBcg: BcgPublished | null = null;
   let publishedStp: StpPublished | null = null;
+  let publishedPersonas: PersonaPublished | null = null;
   if (!isAdmin) {
     const published = await supabase.schema("app").rpc("get_bcg_published", { p_tenant_id: tenantId });
     if (!published.error && published.data && typeof published.data === "object" && (published.data as BcgPublished).published) {
@@ -43,6 +47,8 @@ export default async function TenantDetailPage({
     if (!stp.error && stp.data && typeof stp.data === "object" && (stp.data as StpPublished).published) {
       publishedStp = stp.data as StpPublished;
     }
+    const personas = await loadPersonaPublishedAction(tenantId);
+    if (personas?.published) publishedPersonas = personas;
   }
 
   return (
@@ -106,9 +112,10 @@ export default async function TenantDetailPage({
         <>
           {publishedBcg ? <BcgPublishedView data={publishedBcg} /> : null}
           {publishedStp ? <StpPublishedView data={publishedStp} /> : null}
+          {publishedPersonas ? <PersonaPublishedView data={publishedPersonas} /> : null}
           <EmptyState
             title="Strategisch dashboard"
-            description="Na afronding van de audit en vrijgave door Hardwig zie je hier je goedgekeurde strategie. Een gepubliceerde BCG-matrix en een gepubliceerd ICP verschijnen hierboven."
+            description="Na afronding van de audit en vrijgave door Hardwig zie je hier je goedgekeurde strategie. Een gepubliceerde BCG-matrix, een ICP en de persona’s met hun klantreis verschijnen hierboven."
           />
         </>
       )}

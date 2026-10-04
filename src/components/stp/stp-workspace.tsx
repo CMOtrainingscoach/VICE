@@ -27,7 +27,7 @@ import {
   type StpStep,
 } from "@/lib/stp/constants";
 import type { StpCriterion, StpRef, StpSegment, StpWorkbench } from "@/lib/stp/types";
-import { VALUE_CHAIN_ROUTE } from "@/lib/value-chain/constants";
+import { PERSONA_ROUTE, VALUE_CHAIN_ROUTE } from "@/lib/value-chain/constants";
 import {
   applyStpProposalAction,
   approveStpAction,
@@ -290,6 +290,7 @@ export function StpWorkspace({
 
         {visibleStep === "icp" ? (
           <IcpStep
+            tenantId={tenantId}
             tenantName={tenantName}
             wb={wb}
             segments={segments}
@@ -783,6 +784,7 @@ function PositionStep({
 }
 
 function IcpStep({
+  tenantId,
   tenantName,
   wb,
   segments,
@@ -803,6 +805,7 @@ function IcpStep({
   onPrint,
   onBack,
 }: {
+  tenantId: string;
   tenantName: string;
   wb: StpWorkbench;
   segments: StpSegment[];
@@ -920,7 +923,7 @@ function IcpStep({
         {locked && version.published_at ? <Button type="button" variant="secondary" onClick={onUnpublish}>Trek publicatie in</Button> : null}
         {locked ? <Button type="button" variant="secondary" onClick={onRevision}>Nieuwe conceptversie</Button> : null}
       </div>
-      {locked ? <p className="text-sm text-vice-text-muted print:hidden">De klantreis en buyer persona’s gebruiken dit ICP met versie {version.version_number}. Die module volgt later.</p> : null}
+      {locked ? <p className="text-sm text-vice-text-muted print:hidden">De klantreis en buyer persona’s gebruiken dit ICP met versie {version.version_number}. <Link href={`/klanten/${tenantId}/strategie/${PERSONA_ROUTE}`} className="text-vice-gold">Naar persona’s</Link></p> : null}
     </section>
   );
 }

@@ -39,6 +39,8 @@ export type AuditFrameworkProgress = {
   valueChainStarted: boolean;
   stpApproved: boolean;
   stpStarted: boolean;
+  personaApproved: boolean;
+  personaStarted: boolean;
 };
 
 export async function getAuditFrameworkProgressAction(
@@ -67,6 +69,8 @@ export async function getAuditFrameworkProgressAction(
     value_chain_started?: boolean;
     stp_approved?: boolean;
     stp_started?: boolean;
+    persona_approved?: boolean;
+    persona_started?: boolean;
   };
 
   return {
@@ -82,6 +86,8 @@ export async function getAuditFrameworkProgressAction(
       valueChainStarted: Boolean(raw?.value_chain_started),
       stpApproved: Boolean(raw?.stp_approved),
       stpStarted: Boolean(raw?.stp_started),
+      personaApproved: Boolean(raw?.persona_approved),
+      personaStarted: Boolean(raw?.persona_started),
     },
   };
 }
