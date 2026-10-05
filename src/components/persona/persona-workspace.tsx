@@ -112,6 +112,19 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
     }
   }
 
+  async function reopenForEdit() {
+    await run(version.published_at ? "Publicatie intrekken en bewerken" : "Bewerken hervatten", async () => {
+      const opened = await unpublishPersonaAction(tenantId, { versionId: version.id });
+      if (!opened.ok) return opened;
+      const next = await loadPersonaWorkbenchAction(tenantId, version.id);
+      if (!next.ok || !next.data) return { ok: false, error: next.ok ? "Herladen mislukt." : next.error };
+      if (next.data.version.status === "approved") {
+        return { ok: false, error: "De velden blijven dicht. Pas migratie 20260330133100 toe in de Supabase SQL-editor, na 20260330133000." };
+      }
+      return { ok: true };
+    });
+  }
+
   async function go(next: PersonaStep) {
     if (locked) {
       setWb((prev) => ({ ...prev, version: { ...prev.version, current_step: next } }));
@@ -139,6 +152,13 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
           ))}
         </ol>
       </header>
+      {locked ? (
+        <div className="mt-6 rounded-lg border border-vice-border bg-vice-surface p-4">
+          <p className="text-sm font-medium">De velden zijn grijs omdat deze versie goedgekeurd is.</p>
+          <p className="mt-1 text-sm text-vice-text-muted">{version.published_at ? "Trek de publicatie in. Daarna kun je de persona’s en de klantreis weer aanpassen. De klant ziet ze niet meer tot je opnieuw publiceert." : "De publicatie staat al uit. Hervat bewerken om de velden weer te openen. Daarna keur je opnieuw goed."}</p>
+          <Button type="button" className={`mt-3 ${goldButtonClass}`} onClick={() => void reopenForEdit()}>{version.published_at ? "Trek publicatie in en bewerk" : "Hervat bewerken"}</Button>
+        </div>
+      ) : null}
       {version.needs_review ? <p className="mt-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">{version.review_note || "Opnieuw bekijken."} De vorige publicatie blijft staan.</p> : null}
       {version.version_number > 1 && !locked ? <p className="mt-4 text-sm text-vice-text-muted">Er loopt een herziening. De klant ziet de vorige publicatie tot je deze publiceert.</p> : null}
       {error ? <p className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-800 dark:text-red-200" role="alert">{error}</p> : null}
@@ -221,7 +241,7 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
             onSaveNotes={() => void run("Notities bewaren", () => savePersonaNotesAction(tenantId, { versionId: version.id, uncertainty: version.accepted_uncertainty, questions: version.open_questions }))}
             onApprove={() => void run("Goedkeuren", () => approvePersonaAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at }))}
             onPublish={() => void run("Publiceren", () => publishPersonaAction(tenantId, { versionId: version.id }))}
-            onUnpublish={() => void run("Publicatie intrekken", () => unpublishPersonaAction(tenantId, { versionId: version.id }))}
+            onUnpublish={() => void reopenForEdit()}
             onRevision={() => void run("Nieuwe conceptversie", async () => {
               const created = await createPersonaRevisionAction(tenantId, { versionId: version.id });
               if (!created.ok || !created.data) return { ok: false, error: created.ok ? "Geen nieuwe versie" : created.error };
@@ -713,7 +733,8 @@ function Finish(props: {
         <Button type="button" variant="secondary" onClick={props.onPrint}>Exporteer via print</Button>
         {!props.locked ? <Button type="button" className={goldButtonClass} disabled={blocked} onClick={props.onApprove}>Goedkeuren</Button> : null}
         {props.locked && !props.wb.version.published_at ? <Button type="button" className={goldButtonClass} disabled={publishBlocked(props.wb)} onClick={props.onPublish}>Publiceer naar klantdashboard</Button> : null}
-        {props.locked && props.wb.version.published_at ? <Button type="button" variant="secondary" onClick={props.onUnpublish}>Trek publicatie in</Button> : null}
+        {props.locked && props.wb.version.published_at ? <Button type="button" variant="secondary" onClick={props.onUnpublish}>Trek publicatie in en bewerk</Button> : null}
+        {props.locked && !props.wb.version.published_at ? <Button type="button" variant="secondary" onClick={props.onUnpublish}>Hervat bewerken</Button> : null}
         {props.locked ? <Button type="button" variant="secondary" onClick={props.onRevision}>Nieuwe conceptversie</Button> : null}
       </div>
     </section>
