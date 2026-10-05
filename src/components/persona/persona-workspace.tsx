@@ -21,6 +21,7 @@ import { activePersonas, approvalBlocked, personaChecks, publishBlocked } from "
 import { isUploadedPortrait, PERSONA_PHOTO_MAX_BYTES } from "@/lib/persona/photo";
 import type { JourneyPhase, Persona, PersonaWorkbench } from "@/lib/persona/types";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
+import { BRAND_ROUTE } from "@/lib/value-chain/constants";
 import {
   applyJourneyProposalAction,
   approvePersonaAction,
@@ -207,6 +208,7 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
         ) : null}
         {step === "journey" ? (
           <JourneyStep
+            tenantId={tenantId}
             wb={wb}
             people={activePersonas(wb)}
             locked={locked}
@@ -239,6 +241,7 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
         ) : null}
         {step === "finish" ? (
           <Finish
+            tenantId={tenantId}
             wb={wb}
             checks={checks}
             locked={locked}
@@ -667,6 +670,7 @@ function PersonaStepView(props: {
 }
 
 function JourneyStep(props: {
+  tenantId: string;
   wb: PersonaWorkbench;
   people: Persona[];
   locked: boolean;
@@ -735,18 +739,20 @@ function JourneyStep(props: {
         </div>
       ) : null}
       {archived.length > 0 ? <button type="button" className="text-xs underline" onClick={() => props.onArchive(archived[0].id, true)}>Herstel laatst verwijderde fase</button> : null}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
         <Button type="button" variant="secondary" disabled={props.locked || !journey || !selected} onClick={() => journey && selected && props.onPropose(journey.id, kind, selected.role_title)}>Stel klantreis voor met AI</Button>
         <Button type="button" variant="secondary" disabled={props.locked || !journey} onClick={() => journey && props.onStarter(journey.id)}>Bouw met vijf fasen</Button>
         {kind === "current" ? <Button type="button" variant="secondary" disabled={props.locked || !selected} onClick={() => selected && props.onDerive(selected.id)}>Maak gewenste reis</Button> : null}
         <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={props.onConfirm}>Bevestig klantreis</Button>
+        <BrandContinue tenantId={props.tenantId} ready={props.wb.version.personas_confirmed && props.wb.version.journeys_confirmed} />
       </div>
     </section>
   );
 }
 
 function Finish(props: {
+  tenantId: string;
   wb: PersonaWorkbench;
   checks: ReturnType<typeof personaChecks>;
   locked: boolean;
@@ -778,7 +784,7 @@ function Finish(props: {
       <label className="block text-xs text-vice-text-muted">Aanvaarde onzekerheid
         <textarea className={`${fieldClass} mt-1`} rows={2} disabled={props.locked} value={props.wb.version.accepted_uncertainty} onChange={(event) => props.onNotes(event.target.value, props.wb.version.open_questions)} onBlur={props.onSaveNotes} />
       </label>
-      <div className="flex flex-wrap gap-2 print:hidden">
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
         <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
         <Button type="button" variant="secondary" onClick={props.onExport}>Kopieer als tekst</Button>
         <Button type="button" variant="secondary" onClick={props.onPrint}>Exporteer via print</Button>
@@ -787,9 +793,21 @@ function Finish(props: {
         {props.locked && props.wb.version.published_at ? <Button type="button" variant="secondary" onClick={props.onUnpublish}>Trek publicatie in en bewerk</Button> : null}
         {props.locked && !props.wb.version.published_at ? <Button type="button" variant="secondary" onClick={props.onUnpublish}>Hervat bewerken</Button> : null}
         {props.locked ? <Button type="button" variant="secondary" onClick={props.onRevision}>Nieuwe conceptversie</Button> : null}
+        <BrandContinue tenantId={props.tenantId} ready={props.wb.version.personas_confirmed && props.wb.version.journeys_confirmed} />
       </div>
     </section>
   );
+}
+
+function BrandContinue({ tenantId, ready }: { tenantId: string; ready: boolean }) {
+  if (ready) {
+    return (
+      <Button type="button" asChild className={`ml-auto ${goldButtonClass}`}>
+        <Link href={`/klanten/${tenantId}/strategie/${BRAND_ROUTE}`}>Naar brand audit →</Link>
+      </Button>
+    );
+  }
+  return <Button type="button" className="ml-auto" variant="secondary" disabled title="Bevestig eerst de persona’s en de klantreis.">Naar brand audit →</Button>;
 }
 
 function CreateDialog({ locked, onClose, onSave }: { locked: boolean; onClose: () => void; onSave: (draft: { roleTitle: string; decisionRoles: DecisionRole[]; goals: string; pains: string }) => void }) {
