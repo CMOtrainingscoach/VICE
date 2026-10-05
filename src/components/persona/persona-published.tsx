@@ -1,13 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { isUploadedPortrait } from "@/lib/persona/photo";
 import type { PersonaPublished } from "@/lib/persona/types";
 
 function publishedText(data: PersonaPublished): string {
   return [
     "Gepubliceerde persona's en klantreis",
     `Versie ${data.version_number ?? ""}`,
-    ...(data.personas ?? []).flatMap((persona) => [persona.role_title, persona.summary, "Portret: AI-visualisatie, fictief.", ""]),
+    ...(data.personas ?? []).flatMap((persona) => [
+      persona.role_title,
+      persona.summary,
+      isUploadedPortrait(persona.provider) ? "Foto: eigen upload." : persona.storage_path ? "Portret: AI-visualisatie, fictief." : "",
+      "",
+    ]),
     ...(data.journeys ?? []).flatMap((journey) => [
       `${journey.kind === "desired" ? "Gewenste reis" : "Huidige reis"}${journey.role_title ? ` · ${journey.role_title}` : ""}`,
       ...journey.phases.map((phase) => `- ${phase.name}: ${phase.goal}${phase.improvement ? ` · kans: ${phase.improvement}` : ""}`),
@@ -31,15 +37,17 @@ export function PersonaPublishedView({ data }: { data: PersonaPublished }) {
               <>
                 {/* Privé signed URL; niet via de image-optimizer sturen. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={persona.url} alt={`AI-visualisatie van de rol ${persona.role_title}. Fictief portret ter illustratie.`} className="h-16 w-16 rounded-lg object-cover" />
+                <img src={persona.url} alt={isUploadedPortrait(persona.provider) ? `Eigen foto bij de rol ${persona.role_title}.` : `AI-visualisatie van de rol ${persona.role_title}. Fictief portret ter illustratie.`} className="h-16 w-16 rounded-lg object-cover" />
               </>
             ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-vice-surface-muted text-xs text-vice-text-muted">AI</div>
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-vice-surface-muted text-xs text-vice-text-muted" aria-hidden>{persona.role_title.slice(0, 1)}</div>
             )}
             <div>
               <h2 className="text-base font-medium text-vice-text">{persona.audience_rank === "primary" ? "Primair · " : "Secundair · "}{persona.role_title}</h2>
               <p className="mt-1 text-sm text-vice-text-muted">{persona.summary}</p>
-              <p className="mt-1 text-xs text-vice-text-muted">AI-visualisatie. Fictief portret ter illustratie van deze rol.</p>
+              {persona.url ? (
+                <p className="mt-1 text-xs text-vice-text-muted">{isUploadedPortrait(persona.provider) ? "Eigen foto." : "AI-visualisatie. Fictief portret ter illustratie van deze rol."}</p>
+              ) : null}
             </div>
           </li>
         ))}

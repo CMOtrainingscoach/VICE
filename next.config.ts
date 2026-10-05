@@ -11,6 +11,11 @@ function appOrigin(): string {
 const appUrl = appOrigin();
 
 const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "5mb",
+    },
+  },
   async headers() {
     return [
       {

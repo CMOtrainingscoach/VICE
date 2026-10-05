@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
 import { PERSONA_ROUTE } from "@/lib/persona/constants";
 import { proposeJourney, proposePersonas } from "@/lib/persona/persona-ai";
+import { isUploadedPortrait, PERSONA_PHOTO_MAX_BYTES, sniffPersonaPhoto } from "@/lib/persona/photo";
 import { portraitDailyLimit, renderPortrait } from "@/lib/persona/portrait";
 import type { Journey, JourneyPhase, Persona, PersonaPortrait, PersonaPublished, PersonaRef, PersonaWorkbench } from "@/lib/persona/types";
 import { formatZodIssue } from "@/lib/pestel/zod-form";
@@ -57,7 +58,10 @@ function mapWorkbench(raw: Record<string, unknown>): PersonaWorkbench {
       ...persona,
       audience_rank: persona.audience_rank === "primary" ? "primary" : "secondary",
       decision_roles: asArray(persona.decision_roles),
-      portraits: asArray<PersonaPortrait>(persona.portraits),
+      portraits: asArray<PersonaPortrait>(persona.portraits).map((portrait) => ({
+        ...portrait,
+        provider: isUploadedPortrait(portrait.provider) ? "upload" : "openai",
+      })),
       refs: asArray<PersonaRef>(persona.refs),
       ai_payload: persona.ai_payload && typeof persona.ai_payload === "object" ? persona.ai_payload : {},
     })),
@@ -373,6 +377,49 @@ export async function selectPersonaPortraitAction(tenantId: string, input: unkno
   return call(tenantId, "select_persona_portrait", { p_portrait_id: parsed.data.portraitId });
 }
 
+const PHOTO_MIGRATION = "Pas migratie 20260330133200 toe in de Supabase SQL-editor, na 20260330133100.";
+
+export async function uploadPersonaPhotoAction(tenantId: string, formData: FormData): Promise<ActionResult> {
+  const personaId = formData.get("personaId");
+  const file = formData.get("file");
+  const parsed = personaIdSchema.safeParse({ personaId });
+  if (!parsed.success) return { ok: false, error: "Kies eerst een persona." };
+  if (!(file instanceof File)) return { ok: false, error: "Kies een foto." };
+  if (file.size <= 0) return { ok: false, error: "Het bestand is leeg." };
+  if (file.size > PERSONA_PHOTO_MAX_BYTES) return { ok: false, error: "De foto is groter dan 4 MB." };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const sniffed = sniffPersonaPhoto(bytes);
+  if (!sniffed) return { ok: false, error: "Gebruik een JPEG-, PNG- of WebP-bestand." };
+
+  const tenant = personaIdSchema.safeParse({ personaId: tenantId });
+  if (!tenant.success) return { ok: false, error: "Klant niet gevonden." };
+  const supabase = await authed();
+  const path = `${tenant.data.personaId.toLowerCase()}/${parsed.data.personaId.toLowerCase()}/${crypto.randomUUID()}.${sniffed.ext}`;
+  const admin = createAdminClient();
+  const uploaded = await admin.storage.from("persona-portraits").upload(path, bytes, { contentType: sniffed.mime, upsert: false });
+  if (uploaded.error) {
+    const mime = /mime|content.type|not allowed/i.test(uploaded.error.message);
+    return { ok: false, error: mime ? PHOTO_MIGRATION : uploaded.error.message };
+  }
+  const registered = await supabase.schema("app").rpc("register_persona_photo", {
+    p_persona_id: parsed.data.personaId,
+    p_path: path,
+  });
+  if (registered.error) {
+    await admin.storage.from("persona-portraits").remove([path]);
+    const missing = /register_persona_photo|schema cache/i.test(registered.error.message);
+    return { ok: false, error: missing ? PHOTO_MIGRATION : registered.error.message };
+  }
+  revalidatePersona(tenantId);
+  return { ok: true };
+}
+
+function portraitLine(persona: Persona): string {
+  const selected = persona.portraits.find((portrait) => portrait.id === persona.selected_portrait_id && portrait.status === "ready" && portrait.storage_path);
+  if (!selected) return "Portret: nog geen.";
+  return isUploadedPortrait(selected.provider) ? "Foto: eigen upload." : "Portret: AI-visualisatie, fictief.";
+}
+
 export async function exportPersonaTextAction(tenantId: string, input: unknown): Promise<ActionResult<{ text: string }>> {
   const parsed = personaVersionSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: formatZodIssue(parsed.error) };
@@ -389,7 +436,7 @@ export async function exportPersonaTextAction(tenantId: string, input: unknown):
       `${persona.audience_rank === "primary" ? "Primair" : "Secundair"}: ${persona.role_title}`,
       persona.summary,
       persona.hypothesis ? "Hypothese" : "Onderbouwd",
-      "Portret: AI-visualisatie, fictief.",
+      portraitLine(persona),
       "",
     ]),
     ...wb.journeys.filter((journey) => !journey.archived_at).flatMap((journey) => [

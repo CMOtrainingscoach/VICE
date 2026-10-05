@@ -4,6 +4,7 @@ export type PersonaPortrait = {
   id: string;
   status: "queued" | "running" | "ready" | "failed";
   storage_path: string;
+  provider?: "openai" | "upload" | string;
   error_message: string;
   created_at: string;
   url?: string;
@@ -148,6 +149,6 @@ export type PersonaPublished = {
   published_at?: string | null;
   open_questions?: string;
   accepted_uncertainty?: string;
-  personas?: { id?: string; role_title: string; summary: string; audience_rank?: "primary" | "secondary"; storage_path: string; url?: string }[];
+  personas?: { id?: string; role_title: string; summary: string; audience_rank?: "primary" | "secondary"; storage_path: string; provider?: string; url?: string }[];
   journeys?: { kind: "current" | "desired"; title: string; primary_persona_id?: string | null; role_title?: string; phases: { name: string; goal: string; barriers: string; improvement: string }[] }[];
 };

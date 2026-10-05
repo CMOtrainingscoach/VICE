@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Chip, fieldClass, goldButtonClass } from "@/components/stp/stp-ui";
 import {
@@ -18,6 +18,7 @@ import {
   type PersonaStep,
 } from "@/lib/persona/constants";
 import { activePersonas, approvalBlocked, personaChecks, publishBlocked } from "@/lib/persona/checks";
+import { isUploadedPortrait, PERSONA_PHOTO_MAX_BYTES } from "@/lib/persona/photo";
 import type { JourneyPhase, Persona, PersonaWorkbench } from "@/lib/persona/types";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
 import {
@@ -45,6 +46,7 @@ import {
   setPersonaStepAction,
   startPersonaPortraitAction,
   unpublishPersonaAction,
+  uploadPersonaPhotoAction,
 } from "@/modules/persona/actions";
 
 type SaveState = "saving" | "saved" | "unsaved" | "error";
@@ -191,6 +193,12 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
             onResolve={(personaId, accept) => void run(accept ? "Voorstel overnemen" : "Voorstel afwijzen", () => resolvePersonaProposalAction(tenantId, { personaId, accept }))}
             onArchive={(personaId) => void run("Persona archiveren", () => archivePersonaAction(tenantId, { personaId }))}
             onPortrait={(personaId, prompt) => void run("Portret in de wachtrij zetten", () => startPersonaPortraitAction(tenantId, { personaId, prompt }))}
+            onUpload={(personaId, file) => {
+              const body = new FormData();
+              body.set("personaId", personaId);
+              body.set("file", file);
+              void run("Foto uploaden", () => uploadPersonaPhotoAction(tenantId, body));
+            }}
             onSelectPortrait={(portraitId) => void run("Portret kiezen", () => selectPersonaPortraitAction(tenantId, { portraitId }))}
             onCancelPortrait={(portraitId) => void run("Portret annuleren", () => failPersonaPortraitAction(tenantId, { portraitId }))}
             onConfirm={() => void run("Persona’s bevestigen", () => confirmPersonasAction(tenantId, { versionId: version.id }))}
@@ -393,12 +401,20 @@ function Basis({ tenantId, wb, locked, onGenerate, onManual }: { tenantId: strin
   );
 }
 
-function Portrait({ persona, locked, onPortrait, onSelect, onCancel }: { persona: Persona; locked: boolean; onPortrait: (prompt: string) => void; onSelect: (id: string) => void; onCancel: (id: string) => void }) {
+function Portrait({ persona, locked, onPortrait, onUpload, onSelect, onCancel }: { persona: Persona; locked: boolean; onPortrait: (prompt: string) => void; onUpload: (file: File) => void; onSelect: (id: string) => void; onCancel: (id: string) => void }) {
   const current = persona.portraits.find((portrait) => portrait.id === persona.selected_portrait_id && portrait.status === "ready");
   const pending = persona.portraits.find((portrait) => portrait.status === "queued" || portrait.status === "running");
   const failed = persona.portraits.find((portrait) => portrait.status === "failed");
+  const ready = persona.portraits.filter((portrait) => portrait.status === "ready");
+  const uploaded = isUploadedPortrait(current?.provider);
+  const hasImage = Boolean(current?.storage_path);
   const [prompt, setPrompt] = useState(persona.illustration_prompt);
   const [open, setOpen] = useState(false);
+  const [fileError, setFileError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  const alt = uploaded
+    ? `Eigen foto bij de rol ${persona.role_title}.`
+    : `AI-visualisatie van de rol ${persona.role_title}. Fictief portret ter illustratie.`;
   return (
     <div className="space-y-3">
       <div className="flex items-start gap-4">
@@ -406,39 +422,73 @@ function Portrait({ persona, locked, onPortrait, onSelect, onCancel }: { persona
           <button type="button" onClick={() => setOpen(true)} className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vice-gold">
             {/* Privé signed URL; niet via de image-optimizer sturen. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={current.url} alt={`AI-visualisatie van de rol ${persona.role_title}. Fictief portret ter illustratie.`} className="h-28 w-28 rounded-xl object-cover" />
+            <img src={current.url} alt={alt} className="h-28 w-28 rounded-xl object-cover" />
           </button>
         ) : (
           <div className="flex h-28 w-28 items-center justify-center rounded-xl bg-vice-surface-muted text-lg font-medium text-vice-text-muted" aria-hidden>{initials(persona.role_title)}</div>
         )}
         <div className="space-y-2 text-sm">
-          <Chip tone="gold">AI-visualisatie</Chip>
-          <p className="text-vice-text-muted">Fictief portret ter illustratie van deze rol. Geen feit over de doelgroep.</p>
+          <Chip tone={uploaded ? "neutral" : hasImage ? "gold" : "neutral"}>{uploaded ? "Eigen foto" : hasImage ? "AI-visualisatie" : "Nog geen foto"}</Chip>
+          <p className="text-vice-text-muted">{uploaded ? "Foto die je zelf bij deze rol hebt gezet." : hasImage ? "Fictief portret ter illustratie van deze rol. Geen feit over de doelgroep." : "Upload een eigen foto, of laat een illustratie genereren."}</p>
           {pending ? <p>{PORTRAIT_STATUS_LABELS[pending.status]}. Je kunt verder werken.</p> : null}
           {failed ? <p className="text-red-700 dark:text-red-300">{failed.error_message || "Mislukt."} <button type="button" className="underline" onClick={() => onPortrait(prompt)}>Opnieuw</button></p> : null}
           {pending ? <button type="button" className="underline" onClick={() => onCancel(pending.id)}>Annuleer en probeer opnieuw</button> : null}
         </div>
       </div>
-      <label className="block text-xs text-vice-text-muted">Visuele omschrijving, alleen voor de illustratie
+      <div className="flex flex-wrap gap-2">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+          className="sr-only"
+          disabled={locked}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            if (file.size > PERSONA_PHOTO_MAX_BYTES) {
+              setFileError("De foto is groter dan 4 MB.");
+              return;
+            }
+            setFileError("");
+            onUpload(file);
+          }}
+        />
+        <Button type="button" variant="secondary" disabled={locked} onClick={() => fileRef.current?.click()}>Upload een foto</Button>
+        <Button type="button" variant="secondary" disabled={locked || Boolean(pending)} onClick={() => onPortrait(prompt)}>{current ? "Genereer een ander portret" : "Genereer een portret"}</Button>
+      </div>
+      <p className="text-xs text-vice-text-muted">JPEG, PNG of WebP, tot 4 MB. Een geüploade foto vervangt de huidige keuze. Eerdere varianten blijven beschikbaar.</p>
+      {fileError ? <p className="text-sm text-red-700 dark:text-red-300" role="alert">{fileError}</p> : null}
+      <label className="block text-xs text-vice-text-muted">Visuele omschrijving, alleen voor een gegenereerd portret
         <textarea className={`${fieldClass} mt-1`} rows={2} disabled={locked} value={prompt} onChange={(event) => setPrompt(event.target.value)} />
       </label>
-      <Button type="button" variant="secondary" disabled={locked || Boolean(pending)} onClick={() => onPortrait(prompt)}>{current ? "Genereer een ander portret" : "Genereer een portret"}</Button>
-      {persona.portraits.filter((portrait) => portrait.status === "ready" && portrait.id !== current?.id).length > 0 ? (
-        <ul className="flex flex-wrap gap-2">
-          {persona.portraits.filter((portrait) => portrait.status === "ready").map((portrait) => (
-            <li key={portrait.id}>
-              <button type="button" className="text-xs underline" disabled={locked || portrait.id === current?.id} onClick={() => onSelect(portrait.id)}>
-                {portrait.id === current?.id ? "In gebruik" : "Gebruik deze variant"}
-              </button>
-            </li>
-          ))}
+      {ready.length > 1 ? (
+        <ul className="flex flex-wrap gap-3">
+          {ready.map((portrait) => {
+            const inUse = portrait.id === current?.id;
+            const label = inUse ? "In gebruik" : isUploadedPortrait(portrait.provider) ? "Eigen foto" : "AI-visualisatie";
+            return (
+              <li key={portrait.id}>
+                <button type="button" className="block text-left text-xs disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vice-gold" disabled={locked || inUse} onClick={() => onSelect(portrait.id)} aria-label={inUse ? `${label}, huidige foto` : `Gebruik deze ${label.toLowerCase()}`}>
+                  {portrait.url ? (
+                    <>
+                      {/* Privé signed URL; niet via de image-optimizer sturen. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={portrait.url} alt="" className={`h-16 w-16 rounded-lg object-cover ${inUse ? "ring-2 ring-vice-gold" : ""}`} />
+                    </>
+                  ) : null}
+                  <span className="mt-1 block underline">{label}</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       {open && current?.url ? (
-        <dialog open className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 rounded-xl bg-vice-surface p-4 shadow-lg" aria-label="Vergrote visualisatie" onClose={() => setOpen(false)}>
+        <dialog open className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 rounded-xl bg-vice-surface p-4 shadow-lg" aria-label={uploaded ? "Vergrote foto" : "Vergrote visualisatie"} onClose={() => setOpen(false)}>
           {/* Privé signed URL; niet via de image-optimizer sturen. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={current.url} alt={`AI-visualisatie van de rol ${persona.role_title}. Fictief portret ter illustratie.`} className="max-h-[70vh] rounded-lg" />
+          <img src={current.url} alt={alt} className="max-h-[70vh] rounded-lg" />
           <Button type="button" className="mt-3" variant="ghost" onClick={() => setOpen(false)}>Sluit</Button>
         </dialog>
       ) : null}
@@ -475,6 +525,7 @@ function PersonaStepView(props: {
   onResolve: (id: string, accept: boolean) => void;
   onArchive: (id: string) => void;
   onPortrait: (id: string, prompt: string) => void;
+  onUpload: (id: string, file: File) => void;
   onSelectPortrait: (id: string) => void;
   onCancelPortrait: (id: string) => void;
   onConfirm: () => void;
@@ -552,7 +603,7 @@ function PersonaStepView(props: {
               )}
             </div>
           )}
-          <Portrait key={persona.id} persona={persona} locked={props.locked} onPortrait={(prompt) => props.onPortrait(persona.id, prompt)} onSelect={props.onSelectPortrait} onCancel={props.onCancelPortrait} />
+          <Portrait key={persona.id} persona={persona} locked={props.locked} onPortrait={(prompt) => props.onPortrait(persona.id, prompt)} onUpload={(file) => props.onUpload(persona.id, file)} onSelect={props.onSelectPortrait} onCancel={props.onCancelPortrait} />
           <label className="block text-xs text-vice-text-muted">Functierol
             <input className={`${fieldClass} mt-1`} disabled={props.locked} value={persona.role_title} onChange={(event) => props.onChange(persona.id, { role_title: event.target.value })} onBlur={(event) => props.onSave({ ...persona, role_title: event.target.value })} />
           </label>
