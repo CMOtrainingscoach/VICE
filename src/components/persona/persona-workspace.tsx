@@ -402,7 +402,7 @@ function Portrait({ persona, locked, onPortrait, onSelect, onCancel }: { persona
       <label className="block text-xs text-vice-text-muted">Visuele omschrijving, alleen voor de illustratie
         <textarea className={`${fieldClass} mt-1`} rows={2} disabled={locked} value={prompt} onChange={(event) => setPrompt(event.target.value)} />
       </label>
-      <Button type="button" variant="secondary" disabled={locked || Boolean(pending)} onClick={() => onPortrait(prompt)}>{current ? "Nieuw portret" : "Laat AI een fictieve visualisatie kiezen"}</Button>
+      <Button type="button" variant="secondary" disabled={locked || Boolean(pending)} onClick={() => onPortrait(prompt)}>{current ? "Genereer een ander portret" : "Genereer een portret"}</Button>
       {persona.portraits.filter((portrait) => portrait.status === "ready" && portrait.id !== current?.id).length > 0 ? (
         <ul className="flex flex-wrap gap-2">
           {persona.portraits.filter((portrait) => portrait.status === "ready").map((portrait) => (
@@ -462,33 +462,77 @@ function PersonaStepView(props: {
 }) {
   const persona = props.selected;
   const shared = persona ? props.people.filter((item) => item.id !== persona.id && item.decision_roles.some((role) => persona.decision_roles.includes(role))) : [];
+  const otherActive = props.people.filter((item) => item.id !== persona?.id && item.active && item.ai_state !== "proposed");
+  function statusLabel(item: Persona): string {
+    if (item.ai_state === "proposed") return "Voorstel";
+    if (!item.active) return "Niet in de set";
+    return item.audience_rank === "primary" ? "Primair" : "Secundair";
+  }
   return (
-    <section className="grid gap-6 lg:grid-cols-[16rem_1fr]">
-      <ul className="space-y-2">
-        {props.people.map((item) => (
-          <li key={item.id}>
-            <button type="button" className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${item.id === persona?.id ? "border-vice-gold bg-vice-surface" : "border-vice-border"}`} onClick={() => props.onSelect(item.id)}>
-              <span className="block font-medium">{item.role_title}</span>
-              <span className="text-vice-text-muted">{item.ai_state === "proposed" ? "Voorstel" : item.audience_rank === "primary" ? "Primair" : item.active ? "Secundair" : "Inactief"}</span>
-            </button>
-          </li>
-        ))}
-        <li><Button type="button" variant="secondary" disabled={props.locked} onClick={props.onCreate}>+ Persona</Button></li>
-      </ul>
+    <section className="space-y-4">
+      <p className="max-w-prose text-sm text-vice-text-muted">Kies links een persona en pas de tekst aan. Zet rollen in de set of eruit, maak er één primair, of archiveer een rol die je niet gebruikt.</p>
+      <div className="grid gap-6 lg:grid-cols-[16rem_1fr]">
+      <div className="space-y-2">
+        <Button type="button" className={`w-full ${goldButtonClass}`} disabled={props.locked} onClick={props.onCreate}>Nieuwe persona</Button>
+        <ul className="space-y-2">
+          {props.people.map((item) => (
+            <li key={item.id} className={`rounded-xl border px-3 py-2 ${item.id === persona?.id ? "border-vice-gold bg-vice-surface" : "border-vice-border bg-vice-surface"}`}>
+              <button type="button" className="w-full text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vice-gold" onClick={() => props.onSelect(item.id)}>
+                <span className="block font-medium">{item.role_title}</span>
+                <span className="text-vice-text-muted">{statusLabel(item)}</span>
+              </button>
+              {item.ai_state !== "proposed" && !item.active ? (
+                <button type="button" className="mt-2 text-sm font-medium text-vice-gold underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vice-gold disabled:opacity-50" disabled={props.locked} onClick={() => { props.onSelect(item.id); props.onSave({ ...item, active: true }); }}>Maak actief</button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </div>
       {persona ? (
         <article className="space-y-4 rounded-xl border border-vice-border bg-vice-surface p-5">
+          <header className="space-y-1">
+            <h2 className="text-lg font-medium">Bewerk {persona.role_title}</h2>
+            <p className="text-sm text-vice-text-muted">De velden hieronder zijn vrij te wijzigen. Een veld wordt bewaard als je het verlaat.</p>
+          </header>
           {persona.ai_state === "proposed" ? (
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={() => props.onResolve(persona.id, true)}>Accepteer</Button>
-              <Button type="button" variant="ghost" disabled={props.locked} onClick={() => props.onResolve(persona.id, false)}>Wijs af</Button>
+            <div className="rounded-lg border border-vice-border bg-vice-surface-muted p-4">
+              <p className="text-sm font-medium">Dit is nog een voorstel.</p>
+              <p className="mt-1 text-sm text-vice-text-muted">Accepteer het om het in de set te zetten, of wijs het af.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={() => props.onResolve(persona.id, true)}>Accepteer in de set</Button>
+                <Button type="button" variant="secondary" disabled={props.locked} onClick={() => props.onResolve(persona.id, false)}>Wijs af</Button>
+              </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="rounded-lg border border-vice-border p-4">
+              <p className="text-sm font-medium">{statusLabel(persona)}</p>
+              {!persona.active ? (
+                <>
+                  <p className="mt-1 text-sm text-vice-text-muted">Deze rol telt nog niet mee. De tekst kun je wel al aanpassen.</p>
+                  <Button type="button" className={`mt-3 ${goldButtonClass}`} disabled={props.locked} onClick={() => props.onSave({ ...persona, active: true })}>Maak actief</Button>
+                </>
+              ) : persona.audience_rank === "primary" ? (
+                <>
+                  <p className="mt-1 text-sm text-vice-text-muted">Dit is de hoofdpersona. {otherActive.length > 0 ? "Maak een andere rol primair als je deze secundair wilt." : "Voeg een andere actieve persona toe als je deze niet langer primair wilt."}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {otherActive.map((item) => (
+                      <Button key={item.id} type="button" variant="secondary" disabled={props.locked} onClick={() => props.onSave({ ...item, active: true, audience_rank: "primary" })}>Maak {item.role_title} primair</Button>
+                    ))}
+                    <Button type="button" variant="secondary" disabled={props.locked} onClick={() => props.onSave({ ...persona, active: false, audience_rank: "secondary" })}>Zet buiten de set</Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="mt-1 text-sm text-vice-text-muted">Deze rol telt mee, naast de primaire persona. Ze krijgt een eigen klantreis.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={() => props.onSave({ ...persona, active: true, audience_rank: "primary" })}>Maak primair</Button>
+                    <Button type="button" variant="secondary" disabled={props.locked} onClick={() => props.onSave({ ...persona, active: false, audience_rank: "secondary" })}>Zet buiten de set</Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <Portrait key={persona.id} persona={persona} locked={props.locked} onPortrait={(prompt) => props.onPortrait(persona.id, prompt)} onSelect={props.onSelectPortrait} onCancel={props.onCancelPortrait} />
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" className={persona.audience_rank === "primary" ? goldButtonClass : ""} variant={persona.audience_rank === "primary" ? "primary" : "secondary"} disabled={props.locked || persona.ai_state === "proposed"} onClick={() => props.onSave({ ...persona, audience_rank: "primary", active: true })}>Primair</Button>
-            <Button type="button" variant={persona.audience_rank === "secondary" ? "primary" : "secondary"} disabled={props.locked || persona.ai_state === "proposed" || persona.audience_rank === "primary"} onClick={() => props.onSave({ ...persona, audience_rank: "secondary", active: true })}>Secundair</Button>
-          </div>
-          <p className="text-xs text-vice-text-muted">Eén persona is primair. De anderen zijn secundair en krijgen een eigen klantreis.</p>
           <label className="block text-xs text-vice-text-muted">Functierol
             <input className={`${fieldClass} mt-1`} disabled={props.locked} value={persona.role_title} onChange={(event) => props.onChange(persona.id, { role_title: event.target.value })} onBlur={(event) => props.onSave({ ...persona, role_title: event.target.value })} />
           </label>
@@ -531,16 +575,22 @@ function PersonaStepView(props: {
                 </select>
               </label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={props.locked} checked={persona.hypothesis} onChange={(event) => { props.onChange(persona.id, { hypothesis: event.target.checked }); props.onSave({ ...persona, hypothesis: event.target.checked }); }} />Hypothese</label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={props.locked} checked={persona.active} onChange={(event) => { props.onChange(persona.id, { active: event.target.checked }); props.onSave({ ...persona, active: event.target.checked }); }} />Actief in deze set</label>
             </div>
           </details>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2 border-t border-vice-border pt-4">
             <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
-            <Button type="button" variant="danger" disabled={props.locked} onClick={() => props.onArchive(persona.id)}>Archiveer</Button>
+            <Button type="button" variant="secondary" disabled={props.locked} onClick={() => props.onArchive(persona.id)}>Archiveer deze persona</Button>
             <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={props.onConfirm}>Bevestig persona’s</Button>
           </div>
+          <p className="text-xs text-vice-text-muted">Bevestigen zet de set vast en opent de klantreis. Archiveren haalt de rol en haar klantreis weg. Je kunt daarna nog terug.</p>
         </article>
-      ) : <p className="text-sm">Nog geen persona. Genereer een voorstel of maak er een.</p>}
+      ) : (
+        <div className="rounded-xl border border-vice-border bg-vice-surface p-5">
+          <p className="text-sm">Nog geen persona.</p>
+          <Button type="button" className={`mt-3 ${goldButtonClass}`} disabled={props.locked} onClick={props.onCreate}>Nieuwe persona</Button>
+        </div>
+      )}
+      </div>
     </section>
   );
 }
