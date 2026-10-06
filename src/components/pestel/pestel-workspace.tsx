@@ -796,16 +796,8 @@ export function PestelWorkspace({
         >
           <p className="font-medium">PESTEL stap 1 is goedgekeurd (versie {version.version_number}).</p>
           <p className="mt-1 text-vice-text-muted">
-            Je ziet de definitieve inzichten en synthese. Ga verder met Porter (stap 2) via de knop
-            onderaan of via Strategie in het menu.
+            Je ziet de definitieve inzichten en synthese. Ga verder met Porter via de knop rechtsonder.
           </p>
-          <Button
-            type="button"
-            asChild
-            className="mt-3 h-8 bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover"
-          >
-            <Link href={`/klanten/${tenantId}/strategie/porter`}>Naar Porter →</Link>
-          </Button>
         </div>
       )}
 

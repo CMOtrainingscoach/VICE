@@ -27,7 +27,7 @@ import {
   type StpStep,
 } from "@/lib/stp/constants";
 import type { StpCriterion, StpRef, StpSegment, StpWorkbench } from "@/lib/stp/types";
-import { PERSONA_ROUTE, VALUE_CHAIN_ROUTE } from "@/lib/value-chain/constants";
+import { PERSONA_ROUTE } from "@/lib/value-chain/constants";
 import {
   applyStpProposalAction,
   approveStpAction,
@@ -147,17 +147,7 @@ export function StpWorkspace({
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10 print:max-w-none print:px-0">
       <header className="print:hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-          <Link href={`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`} className="text-vice-text-muted hover:text-vice-gold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vice-gold">
-            ← Waardeketen
-          </Link>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" asChild variant="secondary">
-              <Link href={`/klanten/${tenantId}/strategie/${PERSONA_ROUTE}`}>Naar persona’s →</Link>
-            </Button>
-            <p className="text-xs text-vice-text-muted" aria-live="polite">{SAVE_LABEL[save]}</p>
-          </div>
-        </div>
+        <p className="text-right text-xs text-vice-text-muted" aria-live="polite">{SAVE_LABEL[save]}</p>
         <p className="mt-4 text-xs font-medium uppercase tracking-wide text-vice-gold">
           {STP_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · STP · {tenantName} · versie {version.version_number} · {STP_STATUS_LABELS[version.status]}
         </p>
@@ -255,7 +245,6 @@ export function StpWorkspace({
             }))}
             onCompare={() => void run("Segmenten vergelijken", () => proposeStpTargetAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at }))}
             onConfirm={() => void run("Doelgroep bevestigen", () => confirmStpTargetAction(tenantId, { versionId: version.id, motivation: version.target_motivation }))}
-            onBack={() => void go("segments")}
           />
         ) : null}
 
@@ -289,7 +278,6 @@ export function StpWorkspace({
               return confirmStpPositionAction(tenantId, { versionId: version.id });
             })}
             onNext={() => void go("icp")}
-            onBack={() => void go("target")}
           />
         ) : null}
 
@@ -335,7 +323,6 @@ export function StpWorkspace({
               setNotice(version.status === "approved" ? "Tekst gekopieerd." : "Concepttekst gekopieerd. Het label Concept-ICP staat erbij.");
             }}
             onPrint={() => window.print()}
-            onBack={() => void go("position")}
           />
         ) : null}
       </div>
@@ -507,7 +494,7 @@ function Intake({
       <p className="text-sm text-vice-text">Beschikbaar: {present.length ? present.join(", ") : "nog geen goedgekeurde analyse"}.</p>
       {missing.length ? <p className="text-sm text-vice-text-muted">Ontbreekt: {missing.join(", ")}. Concepten mogen verder, conclusies blijven dan onzeker.</p> : null}
       <p className="text-sm text-vice-text-muted">Klantinzichten: {wb.inputs.five_c_items.length} uit de 5C, {wb.inputs.meetings.length} meetings. Capaciteiten: {wb.inputs.vrio_resources.length}.</p>
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap justify-end gap-3">
         {thin ? (
           <Button type="button" asChild className={goldButtonClass}>
             <Link href={`/klanten/${tenantId}/meetings/nieuw`}>Voeg klantinformatie toe</Link>
@@ -565,8 +552,8 @@ function SegmentsStep({
           );
         })}
       </ul>
-      <div className="flex flex-wrap gap-3 pt-2">
-        <Button type="button" variant="ghost" disabled={locked} onClick={onPropose}>Stel segmenten voor</Button>
+      <div className="flex flex-wrap justify-end gap-3 pt-2">
+        <Button type="button" variant="secondary" disabled={locked} onClick={onPropose}>Stel segmenten voor</Button>
         <Button type="button" variant="secondary" disabled={locked} onClick={onAdd}>+ Segment</Button>
         {confirmed ? (
           <Button type="button" className={goldButtonClass} onClick={onCompare}>Vergelijk doelgroepen</Button>
@@ -587,7 +574,6 @@ function TargetStep({
   onScore,
   onCompare,
   onConfirm,
-  onBack,
 }: {
   wb: StpWorkbench;
   segments: StpSegment[];
@@ -597,7 +583,6 @@ function TargetStep({
   onScore: (segmentId: string, dimension: StpDimension, rating: StpRating, note: string) => void;
   onCompare: () => void;
   onConfirm: () => void;
-  onBack: () => void;
 }) {
   const version = wb.version;
   return (
@@ -646,8 +631,7 @@ function TargetStep({
       <Field label="Waarom deze doelgroep eerst?">
         <textarea className={fieldClass} rows={3} value={version.target_motivation} disabled={locked} onChange={(event) => onMotivation(event.target.value)} />
       </Field>
-      <div className="flex flex-wrap gap-3">
-        <Button type="button" variant="ghost" onClick={onBack}>Terug</Button>
+      <div className="flex flex-wrap justify-end gap-3">
         <Button type="button" className={goldButtonClass} disabled={locked} onClick={onConfirm}>Bevestig doelgroep</Button>
       </div>
     </section>
@@ -714,7 +698,6 @@ function PositionStep({
   onApply,
   onConfirm,
   onNext,
-  onBack,
 }: {
   wb: StpWorkbench;
   locked: boolean;
@@ -725,7 +708,6 @@ function PositionStep({
   onApply: () => void;
   onConfirm: () => void;
   onNext: () => void;
-  onBack: () => void;
 }) {
   const version = wb.version;
   const proposal = version.ai_proposal;
@@ -775,8 +757,7 @@ function PositionStep({
         <summary className="cursor-pointer">Positioneringskaart</summary>
         <p className="mt-2">Die kaart verschijnt pas wanneer de assen en de posities onderbouwd zijn. Ze is niet nodig om het ICP af te ronden.</p>
       </details>
-      <div className="flex flex-wrap gap-3">
-        <Button type="button" variant="ghost" onClick={onBack}>Terug</Button>
+      <div className="flex flex-wrap justify-end gap-3">
         <Button type="button" variant="secondary" disabled={locked} onClick={onPropose}>Stel positionering voor</Button>
         {version.position_confirmed ? (
           <Button type="button" className={goldButtonClass} onClick={onNext}>Maak mijn ICP</Button>
@@ -808,7 +789,6 @@ function IcpStep({
   onRevision,
   onExport,
   onPrint,
-  onBack,
 }: {
   tenantId: string;
   tenantName: string;
@@ -829,7 +809,6 @@ function IcpStep({
   onRevision: () => void;
   onExport: () => void;
   onPrint: () => void;
-  onBack: () => void;
 }) {
   const version = wb.version;
   const primary = segments.find((segment) => segment.disposition === "primary");
@@ -918,16 +897,15 @@ function IcpStep({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-3 print:hidden">
-        <Button type="button" variant="ghost" onClick={onBack}>Terug</Button>
+      <div className="flex flex-wrap items-center justify-end gap-3 print:hidden">
         <Button type="button" variant="secondary" disabled={locked} onClick={onPropose}>Stel het ICP samen</Button>
         <Button type="button" variant="secondary" onClick={onExport}>Kopieer als tekst</Button>
         <Button type="button" variant="secondary" onClick={onPrint}>Exporteer via print</Button>
         {!locked ? <Button type="button" className={goldButtonClass} disabled={blocked} onClick={onAsk}>ICP goedkeuren</Button> : null}
-        {locked && !version.published_at ? <Button type="button" className={goldButtonClass} onClick={onPublish}>Publiceer naar klantdashboard</Button> : null}
+        {locked && !version.published_at ? <Button type="button" variant="secondary" onClick={onPublish}>Publiceer naar klantdashboard</Button> : null}
         {locked && version.published_at ? <Button type="button" variant="secondary" onClick={onUnpublish}>Trek publicatie in</Button> : null}
         {locked ? <Button type="button" variant="secondary" onClick={onRevision}>Nieuwe conceptversie</Button> : null}
-        <Button type="button" asChild variant="secondary">
+        <Button type="button" asChild className={goldButtonClass}>
           <Link href={`/klanten/${tenantId}/strategie/${PERSONA_ROUTE}`}>Naar persona’s →</Link>
         </Button>
       </div>

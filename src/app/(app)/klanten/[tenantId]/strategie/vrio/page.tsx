@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { VrioWorkspace } from "@/components/vrio/vrio-workspace";
 import { getUserAppContext } from "@/lib/auth/context";
-import { SWOT_ROUTE } from "@/lib/swot/constants";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
 import { loadVrioWorkbenchAction } from "@/modules/vrio/actions";
@@ -35,12 +33,7 @@ export default async function VrioPage({
     const message = !loaded.ok ? loaded.error : "Workbench gaf geen data terug.";
     return (
       <div className="mx-auto max-w-3xl px-6 py-10 md:px-10">
-        <p className="text-sm text-vice-text-muted">
-          <Link href={`/klanten/${tenantId}/strategie/${SWOT_ROUTE}`} className="hover:text-vice-gold">
-            ← SWOT
-          </Link>
-        </p>
-        <h1 className="mt-2 text-xl font-semibold">VRIO kon niet laden</h1>
+        <h1 className="text-xl font-semibold">VRIO kon niet laden</h1>
         <p className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
           {message}
         </p>

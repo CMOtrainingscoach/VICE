@@ -17,7 +17,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
-import { MARKETING_5C_ROUTE } from "@/lib/marketing-5c/constants";
 import {
   SWOT_FRAMEWORK_INDEX,
   SWOT_QUADRANT_META,
@@ -248,10 +247,7 @@ export function SwotWorkspace({
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <header className="mb-8">
-        <Button type="button" asChild variant="secondary" className="h-8 text-xs">
-          <Link href={`/klanten/${tenantId}/strategie/${MARKETING_5C_ROUTE}`}>← Vorige</Link>
-        </Button>
-        <p className="mt-4 text-sm text-vice-text-muted">
+        <p className="text-sm text-vice-text-muted">
           Klanten / {tenantName} · Interne werkruimte
         </p>
         <p className="mt-1 text-xs font-medium uppercase tracking-wide text-vice-gold">

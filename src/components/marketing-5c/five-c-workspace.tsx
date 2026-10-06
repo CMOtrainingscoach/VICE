@@ -262,17 +262,7 @@ export function FiveCWorkspace({
   return (
     <div className="relative mx-auto max-w-6xl px-6 py-8 md:px-10">
       <header className="mb-6">
-        <p className="text-sm text-vice-text-muted">
-          <Link href={`/klanten/${tenantId}/strategie/porter`} className="hover:text-vice-gold">
-            ← Porter
-          </Link>
-          {" · "}
-          <Link href={`/klanten/${tenantId}/strategie/pestel`} className="hover:text-vice-gold">
-            PESTEL
-          </Link>
-          {" · "}
-          Klanten / {tenantName} / Strategie
-        </p>
+        <p className="text-sm text-vice-text-muted">Klanten / {tenantName} / Strategie</p>
         <p className="mt-1 text-xs font-medium uppercase tracking-wide text-vice-gold">
           Stap {MARKETING_5C_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · {MARKETING_5C_LABEL}
         </p>

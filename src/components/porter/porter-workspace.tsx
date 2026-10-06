@@ -426,13 +426,7 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
   return (
     <div className="relative mx-auto max-w-5xl px-6 py-8 md:px-10">
       <header className="mb-8">
-        <p className="text-sm text-vice-text-muted">
-          <Link href={`/klanten/${tenantId}/strategie/pestel`} className="hover:text-vice-gold">
-            ← PESTEL
-          </Link>
-          {" · "}
-          Klanten / {tenantName} / Strategie
-        </p>
+        <p className="text-sm text-vice-text-muted">Klanten / {tenantName} / Strategie</p>
         <p className="mt-1 text-xs font-medium uppercase tracking-wide text-vice-gold">
           Stap {PORTER_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · Porter
         </p>

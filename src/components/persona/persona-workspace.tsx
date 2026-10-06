@@ -139,10 +139,7 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10 print:max-w-none print:px-0">
       <header className="print:hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-          <Link href={`/klanten/${tenantId}/strategie/${STP_ROUTE}`} className="text-vice-text-muted hover:text-vice-gold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vice-gold">← Terug naar STP</Link>
-          <p className="text-xs text-vice-text-muted" aria-live="polite">{save === "saving" ? "Opslaan…" : save === "error" || save === "unsaved" ? "Niet opgeslagen" : "Opgeslagen"}</p>
-        </div>
+        <p className="text-right text-xs text-vice-text-muted" aria-live="polite">{save === "saving" ? "Opslaan…" : save === "error" || save === "unsaved" ? "Niet opgeslagen" : "Opgeslagen"}</p>
         <p className="mt-4 text-xs font-medium uppercase tracking-wide text-vice-gold">{PERSONA_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · Persona&apos;s · {tenantName} · versie {version.version_number}</p>
         <h1 className="mt-2 text-2xl font-semibold text-vice-text md:text-3xl">{step === "basis" ? "Wie beslist er bij je ideale klant?" : step === "journey" ? "Hoe komt deze klant van behoefte naar samenwerking?" : step === "finish" ? "Klaar om je klant beter te begeleiden" : "Persona’s"}</h1>
         <ol className="mt-6 flex flex-wrap gap-2" aria-label="Stappen">
@@ -203,7 +200,6 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
             onSelectPortrait={(portraitId) => void run("Portret kiezen", () => selectPersonaPortraitAction(tenantId, { portraitId }))}
             onCancelPortrait={(portraitId) => void run("Portret annuleren", () => failPersonaPortraitAction(tenantId, { portraitId }))}
             onConfirm={() => void run("Persona’s bevestigen", () => confirmPersonasAction(tenantId, { versionId: version.id }))}
-            onBack={() => void go("basis")}
           />
         ) : null}
         {step === "journey" ? (
@@ -236,7 +232,6 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
               });
             }}
             onConfirm={() => void run("Klantreis bevestigen", () => confirmJourneysAction(tenantId, { versionId: version.id }))}
-            onBack={() => void go("personas")}
           />
         ) : null}
         {step === "finish" ? (
@@ -268,7 +263,6 @@ export function PersonaWorkspace({ tenantId, tenantName, initial }: { tenantId: 
               setNotice(version.status === "approved" ? "Tekst gekopieerd." : "Concepttekst gekopieerd.");
             }}
             onPrint={() => window.print()}
-            onBack={() => void go("journey")}
           />
         ) : null}
       </div>
@@ -532,7 +526,6 @@ function PersonaStepView(props: {
   onSelectPortrait: (id: string) => void;
   onCancelPortrait: (id: string) => void;
   onConfirm: () => void;
-  onBack: () => void;
 }) {
   const persona = props.selected;
   const shared = persona ? props.people.filter((item) => item.id !== persona.id && item.decision_roles.some((role) => persona.decision_roles.includes(role))) : [];
@@ -651,8 +644,7 @@ function PersonaStepView(props: {
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={props.locked} checked={persona.hypothesis} onChange={(event) => { props.onChange(persona.id, { hypothesis: event.target.checked }); props.onSave({ ...persona, hypothesis: event.target.checked }); }} />Hypothese</label>
             </div>
           </details>
-          <div className="flex flex-wrap items-center gap-2 border-t border-vice-border pt-4">
-            <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-vice-border pt-4">
             <Button type="button" variant="secondary" disabled={props.locked} onClick={() => props.onArchive(persona.id)}>Archiveer deze persona</Button>
             <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={props.onConfirm}>Bevestig persona’s</Button>
           </div>
@@ -684,7 +676,6 @@ function JourneyStep(props: {
   onDuplicate: (phase: JourneyPhase) => void;
   onStarter: (journeyId: string) => void;
   onConfirm: () => void;
-  onBack: () => void;
 }) {
   const [kind, setKind] = useState<"current" | "desired">("current");
   const [personaId, setPersonaId] = useState(props.people.find((persona) => persona.audience_rank === "primary")?.id ?? props.people[0]?.id ?? "");
@@ -739,8 +730,7 @@ function JourneyStep(props: {
         </div>
       ) : null}
       {archived.length > 0 ? <button type="button" className="text-xs underline" onClick={() => props.onArchive(archived[0].id, true)}>Herstel laatst verwijderde fase</button> : null}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Button type="button" variant="secondary" disabled={props.locked || !journey || !selected} onClick={() => journey && selected && props.onPropose(journey.id, kind, selected.role_title)}>Stel klantreis voor met AI</Button>
         <Button type="button" variant="secondary" disabled={props.locked || !journey} onClick={() => journey && props.onStarter(journey.id)}>Bouw met vijf fasen</Button>
         {kind === "current" ? <Button type="button" variant="secondary" disabled={props.locked || !selected} onClick={() => selected && props.onDerive(selected.id)}>Maak gewenste reis</Button> : null}
@@ -764,7 +754,6 @@ function Finish(props: {
   onRevision: () => void;
   onExport: () => void;
   onPrint: () => void;
-  onBack: () => void;
 }) {
   const blocked = approvalBlocked(props.checks);
   const labels = { ready: "Gereed", attention: "Aandachtspunt", block: "Blokkeert" } as const;
@@ -784,8 +773,7 @@ function Finish(props: {
       <label className="block text-xs text-vice-text-muted">Aanvaarde onzekerheid
         <textarea className={`${fieldClass} mt-1`} rows={2} disabled={props.locked} value={props.wb.version.accepted_uncertainty} onChange={(event) => props.onNotes(event.target.value, props.wb.version.open_questions)} onBlur={props.onSaveNotes} />
       </label>
-      <div className="flex flex-wrap items-center gap-2 print:hidden">
-        <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
+      <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
         <Button type="button" variant="secondary" onClick={props.onExport}>Kopieer als tekst</Button>
         <Button type="button" variant="secondary" onClick={props.onPrint}>Exporteer via print</Button>
         {!props.locked ? <Button type="button" className={goldButtonClass} disabled={blocked} onClick={props.onApprove}>Goedkeuren</Button> : null}

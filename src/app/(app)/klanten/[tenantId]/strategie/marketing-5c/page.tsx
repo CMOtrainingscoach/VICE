@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { FiveCWorkspace } from "@/components/marketing-5c/five-c-workspace";
 import { getUserAppContext } from "@/lib/auth/context";
@@ -34,12 +33,7 @@ export default async function Marketing5CPage({
     const message = !loaded.ok ? loaded.error : "Workbench gaf geen data terug.";
     return (
       <div className="mx-auto max-w-3xl px-6 py-10 md:px-10">
-        <p className="text-sm text-vice-text-muted">
-          <Link href={`/klanten/${tenantId}/strategie/porter`} className="hover:text-vice-gold">
-            ← Porter
-          </Link>
-        </p>
-        <h1 className="mt-2 text-xl font-semibold">5C-analyse kon niet laden</h1>
+        <h1 className="text-xl font-semibold">5C-analyse kon niet laden</h1>
         <p className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
           {message}
         </p>

@@ -22,7 +22,7 @@ import { availabilityLabel, formatPercent, formatMultiple, matrixPosition, unres
 import { readingFor } from "@/lib/bcg/reading";
 import type { BcgItem, BcgWorkbench } from "@/lib/bcg/types";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
-import { BCG_FRAMEWORK_INDEX, VRIO_ROUTE } from "@/lib/vrio/constants";
+import { BCG_FRAMEWORK_INDEX } from "@/lib/vrio/constants";
 import { VALUE_CHAIN_ROUTE } from "@/lib/value-chain/constants";
 import {
   addBcgItemAction,
@@ -182,10 +182,6 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <header className="mb-6">
         <p className="text-sm text-vice-text-muted">Klanten / {tenantName} / Strategie · {BCG_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT}</p>
-        <div className="mt-2 flex flex-wrap gap-4 text-sm">
-          <Link href={`/klanten/${tenantId}/strategie/${VRIO_ROUTE}`} className="text-vice-text-muted hover:text-vice-gold">← VRIO</Link>
-          <Link href={`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`} className="text-vice-text-muted hover:text-vice-gold" title="De BCG mag open blijven. Niets hoeft bevestigd te zijn.">Verder naar de waardeketen</Link>
-        </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold text-vice-text md:text-3xl">Je portfolio in perspectief.</h1>
           <Chip tone="gold">{BCG_STATUS_LABELS[version.status]}</Chip>
@@ -374,10 +370,11 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
                   <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void run("publish", () => publishBcgAction(tenantId, { versionId: version.id, publishFigures })).then(async (ok) => { if (ok) { await reload(); setNotice("De gepubliceerde matrix staat op het klantdashboard."); } })}>Publiceren</Button>
                   {version.published_at && <Button type="button" variant="ghost" disabled={busy !== null} onClick={() => void run("unpublish", () => unpublishBcgAction(tenantId, { versionId: version.id })).then(async (ok) => { if (ok) await reload(); })}>Intrekken</Button>}
                   <Button type="button" variant="ghost" disabled={busy !== null} onClick={() => void createBcgRevisionAction(tenantId, { versionId: version.id }).then(async (result) => { if (result.ok && result.data) await reload(result.data.versionId); else setError(result.ok ? "Geen versie" : result.error); })}>Nieuwe versie</Button>
+                  <Button type="button" asChild className={goldButtonClass}><Link href={`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`}>Naar waardeketen →</Link></Button>
                 </>
               ) : (
-                <Button type="button" variant="secondary" disabled={busy !== null || !canApprove(wb, overlapIds)} onClick={() => void run("approve", () => approveBcgAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at })).then((ok) => { if (ok) router.push(`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`); })}>
-                  Goedkeuren
+                <Button type="button" className={goldButtonClass} disabled={busy !== null || !canApprove(wb, overlapIds)} onClick={() => void run("approve", () => approveBcgAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at })).then((ok) => { if (ok) router.push(`/klanten/${tenantId}/strategie/${VALUE_CHAIN_ROUTE}`); })}>
+                  Goedkeuren en verder →
                 </Button>
               )}
             </div>

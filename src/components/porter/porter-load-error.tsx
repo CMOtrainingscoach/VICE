@@ -31,10 +31,7 @@ export function PorterLoadError({
           uit (en deploy daarna de nieuwste Vercel-build).
         </p>
       )}
-      <div className="mt-6 flex flex-wrap gap-3">
-        <Button type="button" variant="secondary" asChild>
-          <Link href={`/klanten/${tenantId}/strategie/pestel`}>Terug naar PESTEL</Link>
-        </Button>
+      <div className="mt-6 flex justify-end">
         <Button type="button" asChild className="bg-vice-gold text-[#1a1814] hover:bg-vice-gold-hover">
           <Link href={`/klanten/${tenantId}/strategie/porter`}>Opnieuw proberen</Link>
         </Button>

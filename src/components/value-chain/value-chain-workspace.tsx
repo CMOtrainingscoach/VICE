@@ -10,7 +10,6 @@ import { ValueChainActivityPanel, type ActivityPatch } from "@/components/value-
 import { ValueChainFinancePanel } from "@/components/value-chain/value-chain-finance-panel";
 import { Chip, formatDate, goldButtonClass, textareaClass } from "@/components/value-chain/value-chain-ui";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
-import { BCG_ROUTE } from "@/lib/vrio/constants";
 import {
   VC_BUSINESS_LABELS,
   VC_BUSINESS_TYPES,
@@ -244,14 +243,9 @@ export function ValueChainWorkspace({
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <header className="mb-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-vice-text-muted">
-            Klanten / {tenantName} / Strategie · {VALUE_CHAIN_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · Waardeketen
-          </p>
-          <Button type="button" asChild variant="secondary" className="h-8 text-xs">
-            <Link href={`/klanten/${tenantId}/strategie/${BCG_ROUTE}`}>Terug naar BCG</Link>
-          </Button>
-        </div>
+        <p className="text-sm text-vice-text-muted">
+          Klanten / {tenantName} / Strategie · {VALUE_CHAIN_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · Waardeketen
+        </p>
         <h1 className="mt-3 text-2xl font-semibold text-vice-text md:text-3xl">Waar ontstaat de waarde?</h1>
         <p className="mt-2 text-sm text-vice-text-muted">
           We structureren wat al in het dossier staat. Ontbrekende kosten of marges blijven leeg.
@@ -272,15 +266,9 @@ export function ValueChainWorkspace({
             </span>
           );
         })}
-        {bcg?.approved ? (
-          <Link href={`/klanten/${tenantId}/strategie/${BCG_ROUTE}`} className="inline-flex items-center rounded-full border border-vice-border px-3 py-1 text-xs">
-            BCG {bcg.qualitative ? "kwalitatief" : `v${bcg.items?.filter((item) => item.placeable).length ?? 0} geplaatst`}
-          </Link>
-        ) : (
-          <Link href={`/klanten/${tenantId}/strategie/${BCG_ROUTE}`} className="inline-flex items-center rounded-full border border-vice-border px-3 py-1 text-xs">
-            BCG nog open
-          </Link>
-        )}
+        <span className="inline-flex items-center rounded-full border border-vice-border px-3 py-1 text-xs">
+          {bcg?.approved ? `BCG ${bcg.qualitative ? "kwalitatief" : `${bcg.items?.filter((item) => item.placeable).length ?? 0} geplaatst`}` : "BCG nog open"}
+        </span>
       </div>
 
       {wb.chains.length > 1 && (

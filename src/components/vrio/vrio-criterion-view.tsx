@@ -391,15 +391,7 @@ export function VrioCriterionView({
       </section>
 
       {!readOnly && (
-        <footer className="mt-6 flex flex-wrap items-center justify-between gap-3">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={busy !== null || index === 0}
-            onClick={() => void save(false, VRIO_CRITERIA[index - 1] ?? null)}
-          >
-            Vorige criterium
-          </Button>
+        <footer className="mt-6 flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void save(false, "stay")}>
               Opslaan als concept

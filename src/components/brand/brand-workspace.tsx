@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,6 @@ import {
   MATERIAL_TYPES,
   PAGE_ROLE_LABELS,
   PAGE_ROLES,
-  PERSONA_ROUTE,
   PRIORITY_KIND_LABELS,
   PRIORITY_KINDS,
   type BrandDimensionKey,
@@ -166,10 +164,7 @@ export function BrandWorkspace({
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10 print:max-w-none">
       <header className="print:hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-          <Link href={`/klanten/${tenantId}/strategie/${PERSONA_ROUTE}`} className="text-vice-text-muted hover:text-vice-gold">← Terug naar persona’s</Link>
-          <p className="text-xs text-vice-text-muted">{save === "saving" ? "Opslaan…" : save === "error" || save === "unsaved" ? "Niet opgeslagen" : "Opgeslagen"}</p>
-        </div>
+        <p className="text-right text-xs text-vice-text-muted">{save === "saving" ? "Opslaan…" : save === "error" || save === "unsaved" ? "Niet opgeslagen" : "Opgeslagen"}</p>
         <p className="mt-4 text-xs font-medium uppercase tracking-wide text-vice-gold">{BRAND_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · Brand audit · {tenantName} · versie {version.version_number}</p>
         <h1 className="mt-2 text-2xl font-semibold text-vice-text md:text-3xl">{BRAND_STEP_QUESTIONS[step]}</h1>
         <ol className="mt-6 flex flex-wrap gap-2" aria-label="Stappen">
@@ -236,7 +231,6 @@ export function BrandWorkspace({
             onSavePage={(page) => void run("Pagina bewaren", () => saveBrandPageAction(tenantId, pagePayload(version.id, page)))}
             onFinding={(finding) => void run("Bevinding bewaren", () => saveBrandFindingAction(tenantId, findingPayload(version.id, finding)))}
             onArchiveFinding={(id) => void run("Bevinding verwijderen", () => archiveBrandFindingAction(tenantId, { id }))}
-            onBack={() => void go("sources")}
             onRescan={() => void run("Documenten, site en snapshot worden gelezen", () => runBrandAuditAction(tenantId, { versionId: version.id }))}
             onNext={() => void go("image")}
           />
@@ -249,7 +243,6 @@ export function BrandWorkspace({
             onSelect={setDimensionId}
             onSave={(dimension) => void run("Beoordeling bewaren", () => saveBrandDimensionAction(tenantId, dimensionPayload(dimension)))}
             onPropose={() => void run("Lege velden voorstellen", () => proposeBrandAssessmentAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at }))}
-            onBack={() => void go("website")}
             onNext={() => void run("Beoordeling bevestigen", () => confirmBrandImageAction(tenantId, { versionId: version.id }))}
           />
         ) : null}
@@ -277,7 +270,6 @@ export function BrandWorkspace({
               return { ok: true };
             })}
             onPrint={() => window.print()}
-            onBack={() => void go("image")}
             onReopen={() => void reopen()}
           />
         ) : null}
@@ -290,7 +282,6 @@ export function BrandWorkspace({
             onRefresh={() => void openOverview()}
             onFinalize={() => void finalizeOverview()}
             onPublish={() => void run("Publiceren", () => publishBrandAction(tenantId, { versionId: version.id }))}
-            onBack={() => void go("conclusion")}
             onReopen={() => void reopen()}
           />
         ) : null}
@@ -506,8 +497,7 @@ function SourcesStep(props: {
         </div>
         <p className="mt-3 text-xs text-vice-text-muted">Share of search en share of voice: niet beschikbaar. Er is geen bron met teller én noemer. Een handvol zoekresultaten is geen marktaandeel.</p>
       </div>
-      <footer className="flex flex-wrap items-center justify-between gap-3">
-        <span />
+      <footer className="flex flex-wrap items-center justify-end gap-3">
         <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={props.onStart}>{props.wb.pages.some((page) => page.status === "ready") || props.wb.findings.length > 0 ? "Scan opnieuw" : "Start brand audit"}</Button>
       </footer>
     </section>
@@ -527,7 +517,6 @@ function WebsiteStep(props: {
   onSavePage: (page: BrandPage) => void;
   onFinding: (finding: Partial<BrandFinding> & Pick<BrandFinding, "lens" | "observation">) => void;
   onArchiveFinding: (id: string) => void;
-  onBack: () => void;
   onRescan: () => void;
   onNext: () => void;
 }) {
@@ -594,12 +583,9 @@ function WebsiteStep(props: {
           <FindingCard key={`${finding.id}:${finding.observation}:${finding.meaning}:${finding.proposal}`} finding={finding} locked={props.locked} onSave={props.onFinding} onArchive={props.onArchiveFinding} />
         ))}
       </ul>
-      <footer className="flex flex-wrap items-center justify-between gap-3">
-        <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" disabled={props.locked} onClick={props.onRescan}>Scan opnieuw</Button>
-          <Button type="button" className={goldButtonClass} onClick={props.onNext}>Bekijk merkbeeld</Button>
-        </div>
+      <footer className="flex flex-wrap items-center justify-end gap-2">
+        <Button type="button" variant="secondary" disabled={props.locked} onClick={props.onRescan}>Scan opnieuw</Button>
+        <Button type="button" className={goldButtonClass} onClick={props.onNext}>Bekijk merkbeeld</Button>
       </footer>
     </section>
   );
@@ -698,7 +684,6 @@ function ImageStep(props: {
   onSelect: (id: string) => void;
   onSave: (dimension: BrandDimension) => void;
   onPropose: () => void;
-  onBack: () => void;
   onNext: () => void;
 }) {
   const selected = props.wb.dimensions.find((item) => item.id === props.dimensionId) ?? props.wb.dimensions[0];
@@ -727,12 +712,9 @@ function ImageStep(props: {
         </ul>
       )}
       {selected ? <DimensionEditor key={selected.id} dimension={selected} locked={props.locked} onSave={props.onSave} /> : null}
-      <footer className="flex flex-wrap items-center justify-between gap-3">
-        <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" disabled={props.locked} onClick={props.onPropose}>Stel lege velden voor</Button>
-          <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={props.onNext}>Breng je beoordeling in</Button>
-        </div>
+      <footer className="flex flex-wrap items-center justify-end gap-2">
+        <Button type="button" variant="secondary" disabled={props.locked} onClick={props.onPropose}>Stel lege velden voor</Button>
+        <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={props.onNext}>Breng je beoordeling in</Button>
       </footer>
     </section>
   );
@@ -789,7 +771,6 @@ function ConclusionStep(props: {
   onOverview: () => void;
   onExport: () => void;
   onPrint: () => void;
-  onBack: () => void;
   onReopen: () => void;
 }) {
   const version = props.wb.version;
@@ -848,7 +829,6 @@ function ConclusionStep(props: {
       </ul>
       <footer className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
           <Button type="button" variant="secondary" onClick={props.onExport}>Kopieer als tekst</Button>
           <Button type="button" variant="secondary" onClick={props.onPrint}>Exporteer via print</Button>
           {props.locked ? <Button type="button" variant="secondary" onClick={props.onReopen}>{version.published_at ? "Trek publicatie in en bewerk" : "Hervat bewerken"}</Button> : null}
@@ -867,7 +847,6 @@ function OverviewStep(props: {
   onRefresh: () => void;
   onFinalize: () => void;
   onPublish: () => void;
-  onBack: () => void;
   onReopen: () => void;
 }) {
   const blocked = approvalBlocked(props.checks);
@@ -887,7 +866,6 @@ function OverviewStep(props: {
       )}
       <footer className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
           {!props.locked ? <Button type="button" variant="secondary" onClick={props.onRefresh}>Werk het bestand bij</Button> : null}
           {props.locked ? <Button type="button" variant="secondary" onClick={props.onReopen}>{props.published ? "Trek publicatie in en bewerk" : "Hervat bewerken"}</Button> : null}
         </div>

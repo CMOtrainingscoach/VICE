@@ -20,7 +20,6 @@ import { Label } from "@/components/ui/label";
 import { VrioCriterionView } from "@/components/vrio/vrio-criterion-view";
 import { Chip, OutcomeBadge, RefChip, formatDate, goldButtonClass, textareaClass } from "@/components/vrio/vrio-ui";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
-import { SWOT_ROUTE } from "@/lib/swot/constants";
 import {
   BCG_ROUTE,
   VRIO_ANSWER_LABELS,
@@ -207,14 +206,9 @@ export function VrioWorkspace({
   function renderHeader(title: string, subtitle: string) {
     return (
       <header className="mb-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-vice-text-muted">
-            Klanten / {tenantName} / Strategie · {VRIO_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · VRIO
-          </p>
-          <Button type="button" asChild variant="secondary" className="h-8 text-xs">
-            <Link href={`/klanten/${tenantId}/strategie/${SWOT_ROUTE}`}>Terug naar SWOT</Link>
-          </Button>
-        </div>
+        <p className="text-sm text-vice-text-muted">
+          Klanten / {tenantName} / Strategie · {VRIO_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · VRIO
+        </p>
         <h1 className="mt-3 text-2xl font-semibold text-vice-text md:text-3xl">{title}</h1>
         <p className="mt-2 text-sm text-vice-text-muted">{subtitle}</p>
         <p className="mt-1 text-xs text-vice-text-muted">
@@ -227,19 +221,18 @@ export function VrioWorkspace({
 
   function renderUpstreamBadges() {
     const items = [
-      { label: "SWOT", v: wb.upstream.swot, route: SWOT_ROUTE },
-      { label: "5C", v: wb.upstream.five_c, route: "marketing-5c" },
-      { label: "Porter", v: wb.upstream.porter, route: "porter" },
-      { label: "PESTEL", v: wb.upstream.pestel, route: "pestel" },
+      { label: "SWOT", v: wb.upstream.swot },
+      { label: "5C", v: wb.upstream.five_c },
+      { label: "Porter", v: wb.upstream.porter },
+      { label: "PESTEL", v: wb.upstream.pestel },
     ];
     return (
       <div className="mb-4 flex flex-wrap gap-2">
         {items.map((i) => (
-          <Link
+          <span
             key={i.label}
-            href={`/klanten/${tenantId}/strategie/${i.route}`}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs hover:border-vice-gold/60",
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs",
               i.v?.status === "approved" ?
                 "border-emerald-500/40 bg-emerald-500/10"
               : "border-amber-500/40 bg-amber-500/10",
@@ -249,7 +242,7 @@ export function VrioWorkspace({
               <CheckCircle2 className="size-3.5 text-emerald-600" aria-hidden />
             : <AlertTriangle className="size-3.5 text-amber-600" aria-hidden />}
             {i.label} {i.v ? `v${i.v.version_number}` : "ontbreekt"}
-          </Link>
+          </span>
         ))}
       </div>
     );
