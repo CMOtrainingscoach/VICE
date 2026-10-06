@@ -22,6 +22,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -777,6 +778,7 @@ export function PestelWorkspace({
         <p className="mt-1 text-xs font-medium uppercase tracking-wide text-vice-gold">
           Stap {PESTEL_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · PESTEL
         </p>
+        <AuditStepNav />
         <h1 className="mt-2 text-2xl font-semibold text-vice-text md:text-3xl">
           Wat beweegt jouw markt?
         </h1>

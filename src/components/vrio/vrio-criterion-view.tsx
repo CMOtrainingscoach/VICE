@@ -2,10 +2,12 @@
 
 import { AlertTriangle, ChevronLeft, Loader2, Plus, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Chip, RefChip, goldButtonClass, textareaClass } from "@/components/vrio/vrio-ui";
 import {
+  VRIO_FRAMEWORK_INDEX,
   VRIO_ANSWER_LABELS,
   VRIO_CRITERIA,
   VRIO_CRITERION_META,
@@ -14,6 +16,7 @@ import {
   type VrioCriterion,
   type VrioEvidenceLevel,
 } from "@/lib/vrio/constants";
+import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
 import { catalogKey, VRIO_CRITERION_SOURCES, type VrioCatalogEntry } from "@/lib/vrio/input-catalog";
 import type { VrioResource, VrioWorkbench } from "@/lib/vrio/types";
 import {
@@ -119,10 +122,14 @@ export function VrioCriterionView({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
+      <p className="text-xs font-medium uppercase tracking-wide text-vice-gold">
+        Stap {VRIO_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · VRIO
+      </p>
+      <AuditStepNav />
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-1 text-sm text-vice-text-muted hover:text-vice-gold"
+        className="mt-4 inline-flex items-center gap-1 text-sm text-vice-text-muted hover:text-vice-gold"
       >
         <ChevronLeft className="size-4" aria-hidden /> Beoordeling
       </button>

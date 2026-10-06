@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Loader2, Plus, Sparkles } from "lucide-rea
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ValueChainActivityPanel, type ActivityPatch } from "@/components/value-chain/value-chain-activity-panel";
@@ -246,6 +247,7 @@ export function ValueChainWorkspace({
         <p className="text-sm text-vice-text-muted">
           Klanten / {tenantName} / Strategie · {VALUE_CHAIN_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · Waardeketen
         </p>
+        <AuditStepNav />
         <h1 className="mt-3 text-2xl font-semibold text-vice-text md:text-3xl">Waar ontstaat de waarde?</h1>
         <p className="mt-2 text-sm text-vice-text-muted">
           We structureren wat al in het dossier staat. Ontbrekende kosten of marges blijven leeg.

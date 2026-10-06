@@ -1,4 +1,4 @@
-import { AuditStepNav } from "@/components/audit/audit-step-nav";
+import { AuditProgressProvider } from "@/components/audit/audit-step-nav";
 import { getAuditFrameworkProgressAction } from "@/modules/porter/actions";
 
 export default async function StrategieLayout({
@@ -12,9 +12,8 @@ export default async function StrategieLayout({
   const progress = await getAuditFrameworkProgressAction(tenantId);
 
   return (
-    <>
-      <AuditStepNav tenantId={tenantId} progress={progress.ok ? progress.data ?? null : null} />
+    <AuditProgressProvider tenantId={tenantId} progress={progress.ok ? progress.data ?? null : null}>
       {children}
-    </>
+    </AuditProgressProvider>
   );
 }

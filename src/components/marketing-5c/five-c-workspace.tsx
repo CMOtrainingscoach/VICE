@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, FileSearch, Loader2, Plus, Sparkles } from
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { FiveCInputPanel } from "@/components/marketing-5c/five-c-input-panel";
 import { FiveCSectionPanel } from "@/components/marketing-5c/five-c-section-panel";
@@ -266,6 +267,7 @@ export function FiveCWorkspace({
         <p className="mt-1 text-xs font-medium uppercase tracking-wide text-vice-gold">
           Stap {MARKETING_5C_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · {MARKETING_5C_LABEL}
         </p>
+        <AuditStepNav />
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold text-vice-text md:text-3xl">
             {hasAnalysis ? "Hoe past alles bij elkaar?" : "Breng het complete speelveld samen."}

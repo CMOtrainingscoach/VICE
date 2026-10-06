@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Chip, Field, fieldClass, goldButtonClass } from "@/components/stp/stp-ui";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
@@ -151,6 +152,7 @@ export function StpWorkspace({
         <p className="mt-4 text-xs font-medium uppercase tracking-wide text-vice-gold">
           {STP_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · STP · {tenantName} · versie {version.version_number} · {STP_STATUS_LABELS[version.status]}
         </p>
+        <AuditStepNav />
         <h1 className="mt-2 text-2xl font-semibold text-vice-text md:text-3xl">
           {STEPS.find((item) => item.id === visibleStep)?.question}
         </h1>

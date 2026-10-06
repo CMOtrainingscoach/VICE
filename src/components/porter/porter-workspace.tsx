@@ -4,6 +4,7 @@ import { CheckCircle2, Loader2, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -430,6 +431,7 @@ export function PorterWorkspace({ tenantId, tenantName, initial }: PorterWorkspa
         <p className="mt-1 text-xs font-medium uppercase tracking-wide text-vice-gold">
           Stap {PORTER_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · Porter
         </p>
+        <AuditStepNav />
         <h1 className="mt-2 text-2xl font-semibold text-vice-text md:text-3xl">
           Hoe sterk is jouw positie in de markt?
         </h1>

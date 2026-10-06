@@ -3,7 +3,7 @@ import type { AuditFrameworkProgress } from "@/modules/porter/actions";
 export type AuditStep = {
   index: number;
   label: string;
-  route: string | null;
+  route: string;
   approved: (progress: AuditFrameworkProgress) => boolean;
 };
 

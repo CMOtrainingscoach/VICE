@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { BcgItemPanel, type ItemDraft } from "@/components/bcg/bcg-item-panel";
 import { BcgMatrix } from "@/components/bcg/bcg-matrix";
 import { Chip, fieldClass, formatDate, goldButtonClass } from "@/components/bcg/bcg-ui";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -182,6 +183,7 @@ export function BcgWorkspace({ tenantId, tenantName, initial }: { tenantId: stri
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <header className="mb-6">
         <p className="text-sm text-vice-text-muted">Klanten / {tenantName} / Strategie · {BCG_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT}</p>
+        <AuditStepNav />
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold text-vice-text md:text-3xl">Je portfolio in perspectief.</h1>
           <Chip tone="gold">{BCG_STATUS_LABELS[version.status]}</Chip>

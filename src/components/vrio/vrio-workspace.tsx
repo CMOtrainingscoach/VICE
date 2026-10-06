@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -209,6 +210,7 @@ export function VrioWorkspace({
         <p className="text-sm text-vice-text-muted">
           Klanten / {tenantName} / Strategie · {VRIO_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · VRIO
         </p>
+        <AuditStepNav />
         <h1 className="mt-3 text-2xl font-semibold text-vice-text md:text-3xl">{title}</h1>
         <p className="mt-2 text-sm text-vice-text-muted">{subtitle}</p>
         <p className="mt-1 text-xs text-vice-text-muted">

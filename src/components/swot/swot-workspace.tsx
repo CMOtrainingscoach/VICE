@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
@@ -253,6 +254,7 @@ export function SwotWorkspace({
         <p className="mt-1 text-xs font-medium uppercase tracking-wide text-vice-gold">
           Stap {SWOT_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · SWOT
         </p>
+        <AuditStepNav />
         <h1 className="mt-2 text-2xl font-semibold text-vice-text md:text-3xl">Waar ligt je voordeel?</h1>
         <p className="mt-2 text-sm text-vice-text-muted">
           Een eerste synthese van je gesprekken en onderzoek (PESTEL, Porter, 5C). Vul handmatig in of laat AI een

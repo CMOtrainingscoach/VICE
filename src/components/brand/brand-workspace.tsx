@@ -2,6 +2,7 @@
 
 import { Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Chip, fieldClass, goldButtonClass } from "@/components/stp/stp-ui";
 import {
@@ -166,6 +167,7 @@ export function BrandWorkspace({
       <header className="print:hidden">
         <p className="text-right text-xs text-vice-text-muted">{save === "saving" ? "Opslaan…" : save === "error" || save === "unsaved" ? "Niet opgeslagen" : "Opgeslagen"}</p>
         <p className="mt-4 text-xs font-medium uppercase tracking-wide text-vice-gold">{BRAND_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · Brand audit · {tenantName} · versie {version.version_number}</p>
+        <AuditStepNav />
         <h1 className="mt-2 text-2xl font-semibold text-vice-text md:text-3xl">{BRAND_STEP_QUESTIONS[step]}</h1>
         <ol className="mt-6 flex flex-wrap gap-2" aria-label="Stappen">
           {BRAND_STEPS.map((item, index) => (

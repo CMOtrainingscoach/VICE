@@ -2,6 +2,7 @@
 
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
+import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +16,7 @@ import {
   VC_EVIDENCE_LABELS,
   VC_EXECUTION,
   VC_EXECUTION_LABELS,
+  VALUE_CHAIN_FRAMEWORK_INDEX,
   VC_TIME_BASIS,
   VC_TIME_BASIS_LABELS,
   type VcBusinessType,
@@ -23,6 +25,7 @@ import {
   type VcExecution,
   type VcTimeBasis,
 } from "@/lib/value-chain/constants";
+import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
 import { catalogKey, type VcCatalogEntry } from "@/lib/value-chain/input-catalog";
 import { formatMinor, timeToCost, toMinor } from "@/lib/value-chain/finance";
 import type { VcActivity, VcAllocation, VcLine } from "@/lib/value-chain/types";
@@ -150,7 +153,11 @@ export function ValueChainActivityPanel({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
-      <button type="button" className="text-sm text-vice-text-muted hover:text-vice-gold" onClick={onBack}>
+      <p className="text-xs font-medium uppercase tracking-wide text-vice-gold">
+        Stap {VALUE_CHAIN_FRAMEWORK_INDEX} van {AUDIT_FRAMEWORK_COUNT} · Waardeketen
+      </p>
+      <AuditStepNav />
+      <button type="button" className="mt-4 text-sm text-vice-text-muted hover:text-vice-gold" onClick={onBack}>
         ← Waardeketen
       </button>
       <div className="mt-3 flex flex-wrap items-center gap-2">
