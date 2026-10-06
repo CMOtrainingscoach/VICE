@@ -8,6 +8,7 @@ import { sanitizeSvg } from "@/lib/brand-profile/svg";
 import { BRAND_PROFILE_MIGRATION, type BrandProfileEmpty, type BrandProfilePublished, type BrandProfileView, type BrandProfileWorkbench, type SourceDocument } from "@/lib/brand-profile/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { ensureStoredAuditContextAction } from "@/modules/audit/context-actions";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -30,9 +31,21 @@ export async function loadBrandProfileAction(tenantId: string): Promise<ActionRe
   const profile = loaded.data;
   if (profile.access === "published") return { ok: true, data: await signProfile(profile) };
   if (profile.version) return { ok: true, data: await signProfile(profile) };
-  const chosen = chooseDocument(profile.documents);
+  let current = profile;
+  if (current.documents.length === 0) {
+    const ensured = await ensureStoredAuditContextAction(tenantId);
+    if (!ensured.ok) return ensured;
+    if (ensured.data) {
+      const refreshed = await readProfile(supabase, tenantId);
+      if (!refreshed.ok || !refreshed.data) return refreshed.ok ? { ok: false, error: "Merkprofiel laden mislukt" } : refreshed;
+      if (refreshed.data.access !== "edit") return { ok: true, data: await signProfile(refreshed.data) };
+      current = refreshed.data;
+      if (current.version) return { ok: true, data: await signProfile(current) };
+    }
+  }
+  const chosen = chooseDocument(current.documents);
   if (!chosen) {
-    return { ok: true, data: { ...profile, mode: profile.documents.length > 1 ? "choose" : "empty" } };
+    return { ok: true, data: { ...current, mode: current.documents.length > 1 ? "choose" : "empty" } };
   }
   const started = await supabase.schema("app").rpc("start_brand_profile", { p_tenant_id: tenantId });
   if (started.error || !started.data) return { ok: false, error: migration(started.error?.message ?? "Merkprofiel starten mislukt") };

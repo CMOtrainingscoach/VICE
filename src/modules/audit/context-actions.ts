@@ -28,6 +28,7 @@ export type AuditContextDocument = {
 };
 
 const CONTEXT_MIGRATION = "Pas migratie 20260330133700 toe in de Supabase SQL-editor, na 20260330133600.";
+const STORE_MIGRATION = "De audit staat opgeslagen, maar een goedgekeurde brand audit kan het contextbestand nog niet aanmaken. Pas migratie 20260330134000 toe in de Supabase SQL-editor, na 20260330133900.";
 
 type Presence = {
   name?: string;
@@ -93,11 +94,94 @@ function remember(target: Map<string, { title: string; text: string }>, title: s
 export async function saveAuditContextAction(tenantId: string, input: unknown): Promise<ActionResult<AuditContextDocument>> {
   const parsed = brandExpectedSchema.pick({ versionId: true }).safeParse(input);
   if (!parsed.success) return { ok: false, error: formatZodIssue(parsed.error) };
+  const built = await buildStoredAuditMarkdown(tenantId, parsed.data.versionId);
+  if (!built.ok || !built.data) return built.ok ? { ok: false, error: "Geen brand audit." } : built;
+  const supabase = await client();
+  const saved = await supabase.schema("app").rpc("save_audit_context", {
+    p_version_id: parsed.data.versionId,
+    p_markdown: built.data.markdown,
+  });
+  if (saved.error) return { ok: false, error: migrationError(saved.error.message) };
+  const stepped = await supabase.schema("app").rpc("set_brand_step", {
+    p_version_id: parsed.data.versionId,
+    p_step: "overview",
+  });
+  if (stepped.error) return { ok: false, error: migrationError(stepped.error.message) };
+  revalidatePath(`/klanten/${tenantId}/strategie/${BRAND_ROUTE}`);
+  const row = saved.data as { status?: string; saved_at?: string | null; finalized_at?: string | null } | null;
+  return {
+    ok: true,
+    data: {
+      markdown: built.data.markdown,
+      status: row?.status === "final" ? "final" : "draft",
+      savedAt: row?.saved_at ?? null,
+      finalizedAt: row?.finalized_at ?? null,
+    },
+  };
+}
+
+export async function ensureStoredAuditContextAction(tenantId: string): Promise<ActionResult<boolean>> {
+  const supabase = await client();
+  const progressResult = await supabase.schema("app").rpc("get_audit_framework_progress", { p_tenant_id: tenantId });
+  if (progressResult.error) return { ok: false, error: progressResult.error.message };
+  const progress = (progressResult.data ?? {}) as {
+    pestel_approved?: boolean;
+    porter_approved?: boolean;
+    five_c_approved?: boolean;
+    swot_approved?: boolean;
+    vrio_approved?: boolean;
+    bcg_approved?: boolean;
+    value_chain_approved?: boolean;
+    value_chain_started?: boolean;
+    stp_approved?: boolean;
+    stp_started?: boolean;
+    persona_approved?: boolean;
+    persona_started?: boolean;
+    brand_approved?: boolean;
+    brand_started?: boolean;
+  };
+  if (!progress.brand_started) return { ok: true, data: false };
+  const presenceResult = await supabase.schema("app").rpc("audit_framework_presence", { p_tenant_id: tenantId });
+  const presence = presenceResult.error ? null : (presenceResult.data ?? {}) as Presence;
+  const brand = await loadBrandWorkbenchAction(tenantId);
+  if (!brand.ok || !brand.data) return { ok: false, error: brand.ok ? "Geen brand audit." : brand.error };
+  if (brand.data.version.status === "not_started" && !hasOtherFramework(presence, progress)) return { ok: true, data: false };
+
+  const built = await buildStoredAuditMarkdown(tenantId, brand.data.version.id);
+  if (!built.ok || !built.data) return built.ok ? { ok: false, error: "De audit kon niet worden gelezen." } : built;
+  if (brand.data.version.status !== "approved") {
+    const saved = await supabase.schema("app").rpc("save_audit_context", {
+      p_version_id: brand.data.version.id,
+      p_markdown: built.data.markdown,
+    });
+    if (saved.error) return { ok: false, error: migrationError(saved.error.message) };
+    return { ok: true, data: true };
+  }
+  const stored = await supabase.schema("app").rpc("store_audit_context_if_missing", {
+    p_version_id: brand.data.version.id,
+    p_markdown: built.data.markdown,
+  });
+  if (!stored.error) return { ok: true, data: true };
+  if (/store_audit_context_if_missing|schema cache|does not exist|Could not find the function/i.test(stored.error.message)) {
+    return { ok: false, error: STORE_MIGRATION };
+  }
+  return { ok: false, error: stored.error.message };
+}
+
+function hasOtherFramework(presence: Presence | null, progress: { pestel_approved?: boolean; porter_approved?: boolean; five_c_approved?: boolean; swot_approved?: boolean; vrio_approved?: boolean; bcg_approved?: boolean; value_chain_started?: boolean; stp_started?: boolean; persona_started?: boolean }): boolean {
+  return Boolean(
+    presence?.pestel || presence?.porter || presence?.five_c || presence?.swot || presence?.vrio || presence?.bcg || presence?.value_chain || presence?.stp || presence?.persona
+    || progress.pestel_approved || progress.porter_approved || progress.five_c_approved || progress.swot_approved || progress.vrio_approved
+    || progress.bcg_approved || progress.value_chain_started || progress.stp_started || progress.persona_started,
+  );
+}
+
+async function buildStoredAuditMarkdown(tenantId: string, versionId: string): Promise<ActionResult<{ markdown: string }>> {
   const supabase = await client();
   const presenceResult = await supabase.schema("app").rpc("audit_framework_presence", { p_tenant_id: tenantId });
   if (presenceResult.error) return { ok: false, error: migrationError(presenceResult.error.message) };
   const presence = (presenceResult.data ?? {}) as Presence;
-  const brand = await loadBrandWorkbenchAction(tenantId, parsed.data.versionId);
+  const brand = await loadBrandWorkbenchAction(tenantId, versionId);
   if (!brand.ok || !brand.data) return { ok: false, error: brand.ok ? "Geen brand audit." : brand.error };
 
   const [pestel, porter, fiveC, swot, vrio, bcg, valueChain, stp, persona] = await Promise.all([
@@ -153,28 +237,7 @@ export async function saveAuditContextAction(tenantId: string, input: unknown): 
     persona,
     brand: brand.data,
   });
-
-  const saved = await supabase.schema("app").rpc("save_audit_context", {
-    p_version_id: parsed.data.versionId,
-    p_markdown: markdown,
-  });
-  if (saved.error) return { ok: false, error: migrationError(saved.error.message) };
-  const stepped = await supabase.schema("app").rpc("set_brand_step", {
-    p_version_id: parsed.data.versionId,
-    p_step: "overview",
-  });
-  if (stepped.error) return { ok: false, error: migrationError(stepped.error.message) };
-  revalidatePath(`/klanten/${tenantId}/strategie/${BRAND_ROUTE}`);
-  const row = saved.data as { status?: string; saved_at?: string | null; finalized_at?: string | null } | null;
-  return {
-    ok: true,
-    data: {
-      markdown,
-      status: row?.status === "final" ? "final" : "draft",
-      savedAt: row?.saved_at ?? null,
-      finalizedAt: row?.finalized_at ?? null,
-    },
-  };
+  return { ok: true, data: { markdown } };
 }
 
 export async function finalizeAuditContextAction(tenantId: string, input: unknown): Promise<ActionResult> {

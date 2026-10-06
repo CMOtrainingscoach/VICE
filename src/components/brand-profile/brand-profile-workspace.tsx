@@ -85,7 +85,7 @@ export function BrandProfileWorkspace({ tenantId, data }: { tenantId: string; da
             ))}
           </div>
         ) : (
-          <p className="mt-6 text-sm text-vice-text-muted">Er is geen auditdocument voor deze klant. Er wordt niets anders opgezocht.</p>
+          <p className="mt-6 text-sm text-vice-text-muted">Er is nog geen contextbestand van deze audit. Er wordt niets buiten VICE opgezocht.</p>
         )}
         <div className="mt-6 flex flex-wrap gap-3">
           <Button type="button" className={goldButtonClass} disabled={busy} onClick={() => run(() => startBrandProfileAction(tenantId))}>Manueel beginnen</Button>
