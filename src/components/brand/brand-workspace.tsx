@@ -41,6 +41,7 @@ import {
   loadBrandWorkbenchAction,
   proposeBrandAssessmentAction,
   publishBrandAction,
+  runBrandAuditAction,
   saveBrandConclusionAction,
   saveBrandDimensionAction,
   saveBrandFindingAction,
@@ -176,10 +177,10 @@ export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: st
             onSource={(source) => void run("Bron bijwerken", () => updateBrandSourceAction(tenantId, sourcePayload(source)))}
             onArchiveSource={(id) => void run("Bron archiveren", () => archiveBrandSourceAction(tenantId, { id }))}
             onSearch={() => void run("Publieke vermeldingen zoeken", () => searchBrandMentionsAction(tenantId, { versionId: version.id }))}
-            onStart={() => void run("Brand audit starten", async () => {
+            onStart={() => void run("Site en visuals worden gelezen", async () => {
               const saved = await saveBrandSetupAction(tenantId, setupPayload(wb));
               if (!saved.ok) return saved;
-              return setBrandStepAction(tenantId, { versionId: version.id, step: "website" });
+              return runBrandAuditAction(tenantId, { versionId: version.id });
             })}
           />
         ) : null}
@@ -198,6 +199,7 @@ export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: st
             onFinding={(finding) => void run("Bevinding bewaren", () => saveBrandFindingAction(tenantId, findingPayload(version.id, finding)))}
             onArchiveFinding={(id) => void run("Bevinding archiveren", () => archiveBrandFindingAction(tenantId, { id }))}
             onBack={() => void go("sources")}
+            onRescan={() => void run("Site en visuals worden gelezen", () => runBrandAuditAction(tenantId, { versionId: version.id }))}
             onNext={() => void go("image")}
           />
         ) : null}
@@ -370,7 +372,7 @@ function SourcesStep(props: {
   ].filter(Boolean);
   return (
     <section className="space-y-6">
-      <p className="max-w-prose text-sm text-vice-text-muted">Onderzoek hoe het merk zich presenteert en waar dat afwijkt van de bedoelde positionering. Een website bewijst niet wat de markt ervan vindt.</p>
+      <p className="max-w-prose text-sm text-vice-text-muted">Start brand audit leest de website en de geüploade beelden en vult de velden in. Jij kunt elk veld daarna wijzigen. Een nieuwe scan laat die wijziging staan. Er is geen screenshot en geen volledige site. PDF en Word worden bewaard, niet gelezen. Een website bewijst niet wat de markt ervan vindt.</p>
       <div className="grid gap-3 md:grid-cols-2">
         {([["keller", "Keller", "Aanbevolen", "Merkopbouw van bekendheid naar binding."], ["aaker", "Aaker", "Alternatief", "Aparte merkwaardedimensies, zonder piramide."]] as const).map(([model, title, badge, copy]) => (
           <button key={model} type="button" disabled={props.locked} className={`rounded-xl border p-4 text-left ${version.model === model ? "border-vice-gold bg-vice-surface" : "border-vice-border bg-vice-surface"}`} onClick={() => {
@@ -454,7 +456,7 @@ function SourcesStep(props: {
       </div>
       <footer className="flex flex-wrap items-center justify-between gap-3">
         <span />
-        <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={props.onStart}>Start brand audit</Button>
+        <Button type="button" className={goldButtonClass} disabled={props.locked} onClick={props.onStart}>{props.wb.pages.some((page) => page.status === "ready") || props.wb.findings.length > 0 ? "Scan opnieuw" : "Start brand audit"}</Button>
       </footer>
     </section>
   );
@@ -474,6 +476,7 @@ function WebsiteStep(props: {
   onFinding: (finding: Partial<BrandFinding> & Pick<BrandFinding, "lens" | "observation">) => void;
   onArchiveFinding: (id: string) => void;
   onBack: () => void;
+  onRescan: () => void;
   onNext: () => void;
 }) {
   const page = props.wb.pages.find((item) => item.id === props.pageId) ?? props.wb.pages[0];
@@ -487,7 +490,7 @@ function WebsiteStep(props: {
   const [phase, setPhase] = useState("");
   return (
     <section className="space-y-5">
-      <p className="max-w-prose text-sm text-vice-text-muted">Alleen de tekst van gekozen pagina’s. Geen screenshot, geen volledige site en geen bewijs van marktperceptie. {props.selectedPages ? `${props.readyPages} van ${props.selectedPages} geselecteerde pagina’s gelezen.` : "Nog geen pagina geselecteerd."}</p>
+      <p className="max-w-prose text-sm text-vice-text-muted">De AI leest de tekst van een beperkt aantal pagina’s en vult de bevindingen. Pas ze aan; een volgende scan overschrijft jouw tekst niet. Geen screenshot, geen volledige site en geen bewijs van marktperceptie. {props.selectedPages ? `${props.readyPages} van ${props.selectedPages} geselecteerde pagina’s gelezen.` : "Nog geen pagina geselecteerd."}</p>
       <div className="flex flex-wrap gap-2" role="tablist">
         {([["visual", "Visueel"], ["text", "Tekst"], ["journey", "Klantreis"]] as const).map(([key, label]) => (
           <button key={key} type="button" role="tab" aria-selected={props.lens === key} className={`rounded-full px-3 py-1 text-sm ${props.lens === key ? "bg-vice-text text-vice-bg" : "bg-vice-surface-muted"}`} onClick={() => props.onLens(key)}>{label}</button>
@@ -535,20 +538,43 @@ function WebsiteStep(props: {
       }} />
       <ul className="space-y-2">
         {findings.map((finding) => (
-          <li key={finding.id} className="rounded-xl border border-vice-border p-3 text-sm">
-            <p>{finding.observation}</p>
-            {finding.meaning ? <p className="mt-1 text-vice-text-muted">Interpretatie: {finding.meaning}</p> : null}
-            {finding.proposal ? <p className="mt-1 text-vice-text-muted">Voorstel: {finding.proposal}</p> : null}
-            {finding.hypothesis ? <Chip tone="amber">Hypothese</Chip> : null}
-            <button type="button" className="mt-2 block text-xs underline" disabled={props.locked} onClick={() => props.onArchiveFinding(finding.id)}>Archiveer</button>
-          </li>
+          <FindingCard key={`${finding.id}:${finding.observation}:${finding.meaning}:${finding.proposal}`} finding={finding} locked={props.locked} onSave={props.onFinding} onArchive={props.onArchiveFinding} />
         ))}
       </ul>
       <footer className="flex flex-wrap items-center justify-between gap-3">
         <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
-        <Button type="button" className={goldButtonClass} onClick={props.onNext}>Bekijk merkbeeld</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" disabled={props.locked} onClick={props.onRescan}>Scan opnieuw</Button>
+          <Button type="button" className={goldButtonClass} onClick={props.onNext}>Bekijk merkbeeld</Button>
+        </div>
       </footer>
     </section>
+  );
+}
+
+function FindingCard(props: {
+  finding: BrandFinding;
+  locked: boolean;
+  onSave: (finding: Partial<BrandFinding> & Pick<BrandFinding, "lens" | "observation">) => void;
+  onArchive: (id: string) => void;
+}) {
+  const finding = props.finding;
+  const [observation, setObservation] = useState(finding.observation);
+  const [meaning, setMeaning] = useState(finding.meaning);
+  const [proposal, setProposal] = useState(finding.proposal);
+  function commit() {
+    if (observation.trim().length < 8) return;
+    if (observation === finding.observation && meaning === finding.meaning && proposal === finding.proposal) return;
+    props.onSave({ ...finding, observation, meaning, proposal });
+  }
+  return (
+    <li className="space-y-2 rounded-xl border border-vice-border p-3 text-sm">
+      <label className="block text-xs">Waarneming<textarea className={`${fieldClass} mt-1`} rows={2} disabled={props.locked} value={observation} onChange={(event) => setObservation(event.target.value)} onBlur={commit} /></label>
+      <label className="block text-xs">Interpretatie<textarea className={`${fieldClass} mt-1`} rows={2} disabled={props.locked} value={meaning} onChange={(event) => setMeaning(event.target.value)} onBlur={commit} /></label>
+      <label className="block text-xs">Voorstel<textarea className={`${fieldClass} mt-1`} rows={2} disabled={props.locked} value={proposal} onChange={(event) => setProposal(event.target.value)} onBlur={commit} /></label>
+      {finding.hypothesis ? <Chip tone="amber">Hypothese</Chip> : null}
+      <button type="button" className="mt-2 block text-xs underline" disabled={props.locked} onClick={() => props.onArchive(finding.id)}>Archiveer</button>
+    </li>
   );
 }
 
@@ -586,7 +612,7 @@ function ImageStep(props: {
   const keller = props.wb.version.model === "keller";
   return (
     <section className="space-y-5">
-      <p className="max-w-prose text-sm text-vice-text-muted">{keller ? "Keller, van bekendheid naar binding. Een hogere laag is niet bewezen omdat een lagere laag positief oogt." : "Aaker, vijf aparte dimensies. Geen Keller-piramide en geen automatische omzetting."}</p>
+      <p className="max-w-prose text-sm text-vice-text-muted">{keller ? "Keller, van bekendheid naar binding. Een hogere laag is niet bewezen omdat een lagere laag positief oogt." : "Aaker, vijf aparte dimensies. Geen Keller-piramide en geen automatische omzetting."} De scan vult deze velden. Wat je zelf wijzigt, blijft bij een nieuwe scan staan.</p>
       {keller ? (
         <ol className="space-y-2" aria-label="Keller-piramide van binding naar bekendheid">
           {KELLER_LEVELS.map((level) => (
@@ -675,6 +701,7 @@ function ConclusionStep(props: {
 }) {
   const blocked = approvalBlocked(props.checks);
   const version = props.wb.version;
+  const dirty = useRef(new Set<string>());
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<BrandPriority["kind"]>("research");
   const [action, setAction] = useState("");
@@ -693,7 +720,7 @@ function ConclusionStep(props: {
         ["accepted_uncertainty", "Aanvaarde onzekerheid"],
       ] as const).map(([key, label]) => (
         <label key={key} className="block text-xs text-vice-text-muted">{label}
-          <textarea className={`${fieldClass} mt-1`} rows={2} disabled={props.locked} value={version[key]} onChange={(event) => props.onChange({ [key]: event.target.value })} onBlur={(event) => props.onSave({ [key]: event.target.value })} />
+          <textarea className={`${fieldClass} mt-1`} rows={2} disabled={props.locked} value={version[key]} onChange={(event) => { dirty.current.add(key); props.onChange({ [key]: event.target.value }); }} onBlur={(event) => { if (!dirty.current.has(key)) return; dirty.current.delete(key); props.onSave({ [key]: event.target.value }); }} />
         </label>
       ))}
       <div className="rounded-xl border border-vice-border p-4">

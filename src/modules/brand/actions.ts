@@ -2,10 +2,11 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { describeUploadedVisual, proposeBrandAssessment } from "@/lib/brand/brand-ai";
-import { BRAND_MIGRATION, BRAND_ROUTE } from "@/lib/brand/constants";
+import { describeUploadedVisual, proposeBrandAssessment, proposeBrandFindings } from "@/lib/brand/brand-ai";
+import { BRAND_MIGRATION, BRAND_ROUTE, type PageRole } from "@/lib/brand/constants";
 import { fetchPublicPageText } from "@/lib/brand/fetch-page";
-import { searchBrandMentions } from "@/lib/brand/mentions";
+import { brandSearchConfigured, searchBrandMentions } from "@/lib/brand/mentions";
+import { samePage, selectScanTargets } from "@/lib/brand/scan-plan";
 import type { BrandDimension, BrandFinding, BrandPage, BrandPriority, BrandPublished, BrandSource, BrandWorkbench } from "@/lib/brand/types";
 import { sniffPersonaPhoto } from "@/lib/persona/photo";
 import { formatZodIssue } from "@/lib/pestel/zod-form";
@@ -312,6 +313,196 @@ export async function confirmBrandImageAction(tenantId: string, input: unknown):
   const parsed = brandVersionSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: formatZodIssue(parsed.error) };
   return call(tenantId, "confirm_brand_image", { p_version_id: parsed.data.versionId });
+}
+
+const SCAN_MIGRATION = "Pas migratie 20260330133400 toe in de Supabase SQL-editor, na 20260330133300.";
+
+function scanError(message: string): string {
+  return /apply_brand_scan|conclusion_locked/i.test(message) ? SCAN_MIGRATION : message;
+}
+
+export async function runBrandAuditAction(tenantId: string, input: unknown): Promise<ActionResult> {
+  const parsed = brandVersionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: formatZodIssue(parsed.error) };
+  const loaded = await loadBrandWorkbenchAction(tenantId, parsed.data.versionId);
+  if (!loaded.ok || !loaded.data) return { ok: false, error: loaded.ok ? "Geen data" : loaded.error };
+  const website = loaded.data.version.website_url.trim();
+  const images = loaded.data.sources.filter((source) => source.mime.startsWith("image/") && source.storage_path);
+  if (website.length < 8 && images.length === 0) {
+    return { ok: false, error: "Er is nog geen website of beeld om te lezen. Zet een website of upload een visual. PDF en Word worden bewaard, niet gelezen." };
+  }
+  const supabase = await authed();
+  try {
+    if (website.length >= 8) await scanWebsite(supabase, loaded.data);
+    await describeMissingVisuals(supabase, loaded.data);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "De site of het beeld kon niet worden gelezen." };
+  }
+  if (brandSearchConfigured()) {
+    await searchBrandMentionsAction(tenantId, { versionId: parsed.data.versionId });
+  }
+  const read = await loadBrandWorkbenchAction(tenantId, parsed.data.versionId);
+  if (!read.ok || !read.data) return { ok: false, error: read.ok ? "Geen data" : read.error };
+  const readable = read.data.pages.some((page) => page.included && page.excerpt.trim().length >= 40)
+    || read.data.sources.some((source) => source.excerpt.trim().length >= 20);
+  const stepped = await supabase.schema("app").rpc("set_brand_step", { p_version_id: parsed.data.versionId, p_step: "website" });
+  if (stepped.error) return { ok: false, error: stepped.error.message };
+  if (!readable) {
+    revalidateBrand(tenantId);
+    return { ok: false, error: "Er is geen leesbare paginatekst of beeldbeschrijving. De velden blijven leeg. Een screenshot, pdf of Word-bestand wordt niet als analyse behandeld." };
+  }
+  try {
+    const findings = await proposeBrandFindings(read.data);
+    const stored = await supabase.schema("app").rpc("apply_brand_scan", {
+      p_version_id: parsed.data.versionId,
+      p_payload: findings,
+    });
+    if (stored.error) {
+      revalidateBrand(tenantId);
+      return { ok: false, error: scanError(stored.error.message) };
+    }
+    const assessed = await loadBrandWorkbenchAction(tenantId, parsed.data.versionId);
+    if (!assessed.ok || !assessed.data) return { ok: false, error: assessed.ok ? "Geen data" : assessed.error };
+    const proposal = await proposeBrandAssessment(assessed.data);
+    const applied = await supabase.schema("app").rpc("apply_brand_ai", {
+      p_version_id: parsed.data.versionId,
+      p_payload: { ...proposal, replace_unlocked: true },
+    });
+    if (applied.error) {
+      revalidateBrand(tenantId);
+      return { ok: false, error: scanError(applied.error.message) };
+    }
+  } catch (err) {
+    revalidateBrand(tenantId);
+    return { ok: false, error: err instanceof Error ? err.message : "De AI kon de velden niet invullen. De gelezen tekst blijft staan." };
+  }
+  revalidateBrand(tenantId);
+  return { ok: true };
+}
+
+async function scanWebsite(supabase: Awaited<ReturnType<typeof authed>>, wb: BrandWorkbench): Promise<void> {
+  const pages = [...wb.pages];
+  const website = wb.version.website_url.trim();
+  const home = pages.find((page) => page.role === "home") ?? pages.find((page) => samePage(page.url, website));
+  const fetched: string[] = [];
+  let origin = home?.url || website;
+  if (!home || home.included) {
+    const result = await fetchPublicPageText(origin);
+    if (result.ok) origin = result.finalUrl;
+    if (!result.ok && home?.excerpt) {
+      fetched.push(origin);
+    } else {
+      await writePage(supabase, wb.version.id, pages, {
+        id: home?.id ?? "",
+        url: result.ok ? result.finalUrl : origin,
+        role: "home",
+        included: true,
+        fetched_at: null,
+        status: result.ok ? "ready" : "failed",
+        error_message: result.ok ? "" : result.error,
+        excerpt: result.ok ? result.excerpt : "",
+      });
+      fetched.push(result.ok ? result.finalUrl : origin);
+    }
+    let targets: ReturnType<typeof selectScanTargets> = [];
+    try {
+      targets = selectScanTargets(origin, result.ok ? result.links : []).slice(0, 6);
+    } catch {
+      targets = [];
+    }
+    for (const target of targets) {
+      if (fetched.some((url) => samePage(url, target.url))) continue;
+      if (fetched.length >= 6) break;
+      const existing = pages.find((page) => samePage(page.url, target.url));
+      if (existing && !existing.included) continue;
+      const page = await fetchPublicPageText(target.url);
+      const finalUrl = page.ok ? page.finalUrl : target.url;
+      const match = pages.find((item) => samePage(item.url, target.url) || samePage(item.url, finalUrl));
+      if (match && !match.included) continue;
+      if (!page.ok && match?.excerpt) {
+        fetched.push(finalUrl);
+        continue;
+      }
+      await writePage(supabase, wb.version.id, pages, {
+        id: match?.id ?? "",
+        url: finalUrl,
+        role: target.role,
+        included: true,
+        fetched_at: null,
+        status: page.ok ? "ready" : "failed",
+        error_message: page.ok ? "" : page.error,
+        excerpt: page.ok ? page.excerpt : "",
+      });
+      fetched.push(finalUrl);
+    }
+  } else {
+    for (const existing of pages.filter((page) => page.included).slice(0, 6)) {
+      const page = await fetchPublicPageText(existing.url);
+      if (!page.ok && existing.excerpt) continue;
+      await writePage(supabase, wb.version.id, pages, {
+        ...existing,
+        url: page.ok ? page.finalUrl : existing.url,
+        status: page.ok ? "ready" : "failed",
+        error_message: page.ok ? "" : page.error,
+        excerpt: page.ok ? page.excerpt : existing.excerpt,
+      });
+    }
+  }
+}
+
+async function writePage(supabase: Awaited<ReturnType<typeof authed>>, versionId: string, pages: BrandPage[], page: BrandPage): Promise<void> {
+  const match = pages.find((item) => (page.id && item.id === page.id) || samePage(item.url, page.url));
+  if (match && !match.included) return;
+  const role = (match && match.role !== "other" ? match.role : page.role) as PageRole;
+  const { data, error } = await supabase.schema("app").rpc("save_brand_page", {
+    p_version_id: versionId,
+    p_payload: {
+      id: match?.id || null,
+      url: page.url,
+      role,
+      included: true,
+      status: page.status,
+      error_message: page.error_message,
+      excerpt: page.excerpt,
+    },
+  });
+  if (error) throw new Error(error.message);
+  const id = typeof data === "string" && data ? data : match?.id ?? page.id;
+  const next = { ...page, id, role, included: true };
+  const index = pages.findIndex((item) => item.id === id || samePage(item.url, page.url));
+  if (index >= 0) pages[index] = { ...pages[index], ...next };
+  else pages.push(next);
+}
+
+async function describeMissingVisuals(supabase: Awaited<ReturnType<typeof authed>>, wb: BrandWorkbench): Promise<void> {
+  const pending = wb.sources.filter((source) => source.mime.startsWith("image/") && source.storage_path && source.excerpt.trim().length < 20).slice(0, 4);
+  if (pending.length === 0) return;
+  const admin = createAdminClient();
+  for (const source of pending) {
+    const file = await admin.storage.from("brand-materials").download(source.storage_path);
+    if (file.error || !file.data) continue;
+    let excerpt = "";
+    try {
+      excerpt = await describeUploadedVisual(new Uint8Array(await file.data.arrayBuffer()), source.mime);
+    } catch {
+      continue;
+    }
+    if (excerpt.trim().length < 20) continue;
+    const updated = await supabase.schema("app").rpc("update_brand_source", {
+      p_source_id: source.id,
+      p_payload: {
+        material_type: source.material_type || "visual",
+        label: source.label,
+        period_label: source.period_label,
+        currency: source.currency,
+        channel: source.channel,
+        audience: source.audience,
+        note: source.note,
+        excerpt,
+      },
+    });
+    if (updated.error) throw new Error(updated.error.message);
+  }
 }
 
 export async function proposeBrandAssessmentAction(tenantId: string, input: unknown): Promise<ActionResult> {

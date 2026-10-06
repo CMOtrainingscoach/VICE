@@ -4,7 +4,7 @@ import { assertPublicWebsiteUrl, isBlockedWebsiteHost, isPrivateIp } from "@/lib
 const MAX_BYTES = 1_000_000;
 const MAX_REDIRECTS = 3;
 
-export type PageFetch = { ok: true; finalUrl: string; excerpt: string } | { ok: false; error: string };
+export type PageFetch = { ok: true; finalUrl: string; excerpt: string; links: string[] } | { ok: false; error: string };
 
 async function assertResolvedPublic(hostname: string): Promise<void> {
   if (isBlockedWebsiteHost(hostname) || isPrivateIp(hostname)) {
@@ -47,9 +47,9 @@ export async function fetchPublicPageText(input: string): Promise<PageFetch> {
       if (type && !type.includes("text/html") && !type.includes("text/plain") && !type.includes("application/xhtml")) {
         return { ok: false, error: "Dit adres is geen leesbare HTML-pagina. Een login, pdf of afbeelding wordt niet als site-analyse behandeld." };
       }
-      const excerpt = await readExcerpt(response);
-      if (excerpt.length < 40) return { ok: false, error: "Er kwam te weinig leesbare tekst terug. Een cookiebanner of lege pagina is geen analyse." };
-      return { ok: true, finalUrl: current.toString(), excerpt };
+      const document = await readDocument(response, current);
+      if (document.excerpt.length < 40) return { ok: false, error: "Er kwam te weinig leesbare tekst terug. Een cookiebanner of lege pagina is geen analyse." };
+      return { ok: true, finalUrl: current.toString(), excerpt: document.excerpt, links: document.links };
     }
     return { ok: false, error: "De pagina kon niet worden gelezen." };
   } catch (err) {
@@ -57,9 +57,9 @@ export async function fetchPublicPageText(input: string): Promise<PageFetch> {
   }
 }
 
-async function readExcerpt(response: Response): Promise<string> {
+async function readDocument(response: Response, base: URL): Promise<{ excerpt: string; links: string[] }> {
   const reader = response.body?.getReader();
-  if (!reader) return "";
+  if (!reader) return { excerpt: "", links: [] };
   const chunks: Uint8Array[] = [];
   let received = 0;
   while (received < MAX_BYTES) {
@@ -70,11 +70,23 @@ async function readExcerpt(response: Response): Promise<string> {
   }
   await reader.cancel().catch(() => undefined);
   const html = new TextDecoder().decode(Buffer.concat(chunks));
-  return html
+  const links = [...html.matchAll(/href\s*=\s*["']([^"'#]+)["']/gi)]
+    .map((match) => match[1] ?? "")
+    .filter((href) => href && !/^(mailto:|tel:|javascript:)/i.test(href))
+    .flatMap((href) => {
+      try {
+        return [new URL(href, base).toString()];
+      } catch {
+        return [];
+      }
+    })
+    .slice(0, 80);
+  const excerpt = html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 4000);
+  return { excerpt, links };
 }
