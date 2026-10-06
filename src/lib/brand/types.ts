@@ -79,6 +79,8 @@ export type BrandPage = {
   status: "pending" | "ready" | "failed" | "excluded";
   error_message: string;
   excerpt: string;
+  screenshot_path?: string;
+  screenshot_url?: string;
 };
 
 export type BrandFinding = {
@@ -92,6 +94,8 @@ export type BrandFinding = {
   hypothesis: boolean;
   persona_label: string;
   phase_label: string;
+  pin_x?: number | null;
+  pin_y?: number | null;
 };
 
 export type BrandDimension = {

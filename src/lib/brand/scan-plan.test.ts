@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findingIsGrounded, selectScanTargets } from "@/lib/brand/scan-plan";
+import { clampPin, findingIsGrounded, selectScanTargets } from "@/lib/brand/scan-plan";
 
 describe("selectScanTargets", () => {
   it("kiest homepage en een beperkte set relevante interne pagina's", () => {
@@ -14,6 +14,15 @@ describe("selectScanTargets", () => {
     ]);
     expect(targets.map((item) => item.role)).toEqual(["home", "about", "offer", "proof", "contact", "other"]);
     expect(targets.every((item) => item.url.includes("studio.be"))).toBe(true);
+  });
+});
+
+describe("clampPin", () => {
+  it("houdt een pin binnen het beeld", () => {
+    expect(clampPin(120)).toBe(96);
+    expect(clampPin(-4)).toBe(4);
+    expect(clampPin("38.4")).toBe(38);
+    expect(clampPin("niet")).toBeNull();
   });
 });
 

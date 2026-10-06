@@ -11,6 +11,7 @@ function appOrigin(): string {
 const appUrl = appOrigin();
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["unpdf", "mammoth"],
   experimental: {
     serverActions: {
       bodySizeLimit: "12mb",

@@ -2,9 +2,11 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { describeUploadedVisual, proposeBrandAssessment, proposeBrandFindings } from "@/lib/brand/brand-ai";
+import { describeUploadedVisual, proposeBrandAssessment, proposeBrandFindings, proposeSnapshotFindings } from "@/lib/brand/brand-ai";
 import { BRAND_MIGRATION, BRAND_ROUTE, type PageRole } from "@/lib/brand/constants";
+import { extractDocumentText } from "@/lib/brand/documents";
 import { fetchPublicPageText } from "@/lib/brand/fetch-page";
+import { capturePublicScreenshot } from "@/lib/brand/screenshot";
 import { brandSearchConfigured, searchBrandMentions } from "@/lib/brand/mentions";
 import { samePage, selectScanTargets } from "@/lib/brand/scan-plan";
 import type { BrandDimension, BrandFinding, BrandPage, BrandPriority, BrandPublished, BrandSource, BrandWorkbench } from "@/lib/brand/types";
@@ -67,10 +69,34 @@ function mapWorkbench(raw: Record<string, unknown>): BrandWorkbench {
   };
 }
 
+async function withMedia(wb: BrandWorkbench): Promise<BrandWorkbench> {
+  const supabase = await authed();
+  const { data, error } = await supabase.schema("app").rpc("get_brand_media", { p_version_id: wb.version.id });
+  if (error || !data || typeof data !== "object") return wb;
+  const media = data as { pages?: { id: string; screenshot_path: string }[]; findings?: { id: string; pin_x: number | null; pin_y: number | null }[] };
+  const pages = new Map((media.pages ?? []).map((page) => [page.id, page.screenshot_path ?? ""]));
+  const pins = new Map((media.findings ?? []).map((finding) => [finding.id, finding]));
+  return {
+    ...wb,
+    pages: wb.pages.map((page) => ({ ...page, screenshot_path: pages.get(page.id) ?? "" })),
+    findings: wb.findings.map((finding) => {
+      const pin = pins.get(finding.id);
+      return { ...finding, pin_x: pin?.pin_x ?? null, pin_y: pin?.pin_y ?? null };
+    }),
+  };
+}
+
 async function withSourceUrls(wb: BrandWorkbench): Promise<BrandWorkbench> {
-  const paths = wb.sources.filter((source) => source.storage_path && source.mime.startsWith("image/")).map((source) => source.storage_path);
+  const paths = [
+    ...wb.sources.filter((source) => source.storage_path && source.mime.startsWith("image/")).map((source) => source.storage_path),
+    ...wb.pages.map((page) => page.screenshot_path ?? "").filter(Boolean),
+  ];
   const urls = await signBrandPaths(paths);
-  return { ...wb, sources: wb.sources.map((source) => ({ ...source, url: urls[source.storage_path] })) };
+  return {
+    ...wb,
+    sources: wb.sources.map((source) => ({ ...source, url: urls[source.storage_path] })),
+    pages: wb.pages.map((page) => ({ ...page, screenshot_url: page.screenshot_path ? urls[page.screenshot_path] : undefined })),
+  };
 }
 
 export async function signBrandPaths(paths: string[]): Promise<Record<string, string>> {
@@ -97,7 +123,7 @@ export async function loadBrandWorkbenchAction(tenantId: string, versionId?: str
   });
   if (error) return { ok: false, error: /get_brand_workbench|schema cache/i.test(error.message) ? BRAND_MIGRATION : error.message };
   if (!data || typeof data !== "object") return { ok: false, error: "Workbench gaf geen data terug." };
-  return { ok: true, data: await withSourceUrls(mapWorkbench(data as Record<string, unknown>)) };
+  return { ok: true, data: await withSourceUrls(await withMedia(mapWorkbench(data as Record<string, unknown>))) };
 }
 
 async function call(tenantId: string, fn: string, args: Record<string, unknown>): Promise<ActionResult> {
@@ -328,15 +354,27 @@ export async function runBrandAuditAction(tenantId: string, input: unknown): Pro
   if (!loaded.ok || !loaded.data) return { ok: false, error: loaded.ok ? "Geen data" : loaded.error };
   const website = loaded.data.version.website_url.trim();
   const images = loaded.data.sources.filter((source) => source.mime.startsWith("image/") && source.storage_path);
-  if (website.length < 8 && images.length === 0) {
-    return { ok: false, error: "Er is nog geen website of beeld om te lezen. Zet een website of upload een visual. PDF en Word worden bewaard, niet gelezen." };
+  const documents = loaded.data.sources.filter(isStoredDocument);
+  if (website.length < 8 && images.length === 0 && documents.length === 0) {
+    return { ok: false, error: "Er is nog geen website, document of beeld om te lezen. Zet een website of upload materiaal." };
   }
   const supabase = await authed();
+  let snapshot: { bytes: Uint8Array; mime: "image/jpeg" } | null = null;
   try {
     if (website.length >= 8) await scanWebsite(supabase, loaded.data);
+    await readStoredDocuments(supabase, loaded.data);
     await describeMissingVisuals(supabase, loaded.data);
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "De site of het beeld kon niet worden gelezen." };
+    return { ok: false, error: err instanceof Error ? err.message : "De site of de documenten konden niet worden gelezen." };
+  }
+  if (website.length >= 8) {
+    const prepared = await loadBrandWorkbenchAction(tenantId, parsed.data.versionId);
+    const home = prepared.ok ? prepared.data?.pages.find((page) => page.included && (page.role === "home" || samePage(page.url, website))) : undefined;
+    const captured = await capturePublicScreenshot(home?.url || website);
+    if (captured.ok) {
+      snapshot = captured;
+      if (home?.id) await storeScreenshot(supabase, tenantId, parsed.data.versionId, home.id, captured.bytes);
+    }
   }
   if (brandSearchConfigured()) {
     await searchBrandMentionsAction(tenantId, { versionId: parsed.data.versionId });
@@ -344,15 +382,24 @@ export async function runBrandAuditAction(tenantId: string, input: unknown): Pro
   const read = await loadBrandWorkbenchAction(tenantId, parsed.data.versionId);
   if (!read.ok || !read.data) return { ok: false, error: read.ok ? "Geen data" : read.error };
   const readable = read.data.pages.some((page) => page.included && page.excerpt.trim().length >= 40)
-    || read.data.sources.some((source) => source.excerpt.trim().length >= 20);
+    || read.data.sources.some((source) => source.excerpt.trim().length >= 20)
+    || snapshot !== null;
   const stepped = await supabase.schema("app").rpc("set_brand_step", { p_version_id: parsed.data.versionId, p_step: "website" });
   if (stepped.error) return { ok: false, error: stepped.error.message };
   if (!readable) {
     revalidateBrand(tenantId);
-    return { ok: false, error: "Er is geen leesbare paginatekst of beeldbeschrijving. De velden blijven leeg. Een screenshot, pdf of Word-bestand wordt niet als analyse behandeld." };
+    return { ok: false, error: "Er is geen leesbare paginatekst, documenttekst of snapshot. De velden blijven leeg." };
   }
   try {
     const findings = await proposeBrandFindings(read.data);
+    if (snapshot) {
+      const home = read.data.pages.find((page) => page.included && page.screenshot_path) ?? read.data.pages.find((page) => page.role === "home");
+      const pins = await proposeSnapshotFindings(snapshot.bytes, snapshot.mime);
+      findings.findings = [
+        ...pins.map((item) => ({ ...item, page_url: home?.url ?? "" })),
+        ...findings.findings.filter((item) => item.lens !== "visual" || item.scan_key),
+      ];
+    }
     const stored = await supabase.schema("app").rpc("apply_brand_scan", {
       p_version_id: parsed.data.versionId,
       p_payload: findings,
@@ -503,6 +550,67 @@ async function describeMissingVisuals(supabase: Awaited<ReturnType<typeof authed
     });
     if (updated.error) throw new Error(updated.error.message);
   }
+}
+
+function isStoredDocument(source: BrandSource): boolean {
+  const name = source.label.toLowerCase();
+  return Boolean(source.storage_path) && (source.mime === "application/pdf" || source.mime.includes("wordprocessingml") || name.endsWith(".pdf") || name.endsWith(".docx"));
+}
+
+async function readStoredDocuments(supabase: Awaited<ReturnType<typeof authed>>, wb: BrandWorkbench): Promise<void> {
+  const documents = wb.sources.filter(isStoredDocument).slice(0, 6);
+  if (documents.length === 0) return;
+  const admin = createAdminClient();
+  for (const source of documents) {
+    const file = await admin.storage.from("brand-materials").download(source.storage_path);
+    if (file.error || !file.data) continue;
+    let text = "";
+    try {
+      text = await extractDocumentText(source.mime, source.label, new Uint8Array(await file.data.arrayBuffer()));
+    } catch {
+      text = "";
+    }
+    if (text.length < 40) {
+      if (source.excerpt.trim().length >= 40) continue;
+      await supabase.schema("app").rpc("set_brand_source_read", {
+        p_source_id: source.id,
+        p_excerpt: source.excerpt,
+        p_status: "partial",
+        p_error: "Dit bestand heeft geen leesbare tekstlaag. Een afbeelding in een pdf wordt niet gelezen.",
+      });
+      continue;
+    }
+    const saved = await supabase.schema("app").rpc("set_brand_source_read", {
+      p_source_id: source.id,
+      p_excerpt: text,
+      p_status: "ready",
+      p_error: "",
+    });
+    if (saved.error) {
+      await supabase.schema("app").rpc("update_brand_source", {
+        p_source_id: source.id,
+        p_payload: {
+          material_type: source.material_type || "other",
+          label: source.label,
+          period_label: source.period_label,
+          currency: source.currency,
+          channel: source.channel,
+          audience: source.audience,
+          note: source.note,
+          excerpt: text,
+        },
+      });
+    }
+  }
+}
+
+async function storeScreenshot(supabase: Awaited<ReturnType<typeof authed>>, tenantId: string, versionId: string, pageId: string, bytes: Uint8Array): Promise<void> {
+  const admin = createAdminClient();
+  const path = `${tenantId.toLowerCase()}/${versionId.toLowerCase()}/${randomUUID()}.jpg`;
+  const uploaded = await admin.storage.from("brand-materials").upload(path, bytes, { contentType: "image/jpeg", upsert: false });
+  if (uploaded.error) return;
+  const saved = await supabase.schema("app").rpc("set_brand_page_screenshot", { p_page_id: pageId, p_path: path });
+  if (saved.error) await admin.storage.from("brand-materials").remove([path]);
 }
 
 export async function proposeBrandAssessmentAction(tenantId: string, input: unknown): Promise<ActionResult> {

@@ -177,7 +177,7 @@ export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: st
             onSource={(source) => void run("Bron bijwerken", () => updateBrandSourceAction(tenantId, sourcePayload(source)))}
             onArchiveSource={(id) => void run("Bron archiveren", () => archiveBrandSourceAction(tenantId, { id }))}
             onSearch={() => void run("Publieke vermeldingen zoeken", () => searchBrandMentionsAction(tenantId, { versionId: version.id }))}
-            onStart={() => void run("Site en visuals worden gelezen", async () => {
+            onStart={() => void run("Documenten, site en snapshot worden gelezen", async () => {
               const saved = await saveBrandSetupAction(tenantId, setupPayload(wb));
               if (!saved.ok) return saved;
               return runBrandAuditAction(tenantId, { versionId: version.id });
@@ -199,7 +199,7 @@ export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: st
             onFinding={(finding) => void run("Bevinding bewaren", () => saveBrandFindingAction(tenantId, findingPayload(version.id, finding)))}
             onArchiveFinding={(id) => void run("Bevinding archiveren", () => archiveBrandFindingAction(tenantId, { id }))}
             onBack={() => void go("sources")}
-            onRescan={() => void run("Site en visuals worden gelezen", () => runBrandAuditAction(tenantId, { versionId: version.id }))}
+            onRescan={() => void run("Documenten, site en snapshot worden gelezen", () => runBrandAuditAction(tenantId, { versionId: version.id }))}
             onNext={() => void go("image")}
           />
         ) : null}
@@ -372,7 +372,7 @@ function SourcesStep(props: {
   ].filter(Boolean);
   return (
     <section className="space-y-6">
-      <p className="max-w-prose text-sm text-vice-text-muted">Start brand audit leest de website en de geüploade beelden en vult de velden in. Jij kunt elk veld daarna wijzigen. Een nieuwe scan laat die wijziging staan. Er is geen screenshot en geen volledige site. PDF en Word worden bewaard, niet gelezen. Een website bewijst niet wat de markt ervan vindt.</p>
+      <p className="max-w-prose text-sm text-vice-text-muted">Start brand audit leest de geüploade PDF- en Word-bestanden, maakt een snapshot van de homepage en vult de website, de piramide en de samenvatting. Jij kunt elk veld daarna wijzigen. Een nieuwe scan laat die wijziging staan. Een website bewijst niet wat de markt ervan vindt.</p>
       <div className="grid gap-3 md:grid-cols-2">
         {([["keller", "Keller", "Aanbevolen", "Merkopbouw van bekendheid naar binding."], ["aaker", "Aaker", "Alternatief", "Aparte merkwaardedimensies, zonder piramide."]] as const).map(([model, title, badge, copy]) => (
           <button key={model} type="button" disabled={props.locked} className={`rounded-xl border p-4 text-left ${version.model === model ? "border-vice-gold bg-vice-surface" : "border-vice-border bg-vice-surface"}`} onClick={() => {
@@ -401,7 +401,7 @@ function SourcesStep(props: {
         }}
       >
         <p className="font-medium">Merkmateriaal uploaden</p>
-        <p className="mt-1 text-vice-text-muted">PDF, DOCX, JPEG, PNG of WebP, tot 8 MB. Sleep een bestand hierheen of kies er een. Oude DOC eerst bewaren als DOCX of PDF. PDF en Word worden bewaard, niet automatisch uitgelezen. Zet de kern in de toelichting.</p>
+        <p className="mt-1 text-vice-text-muted">PDF, DOCX, JPEG, PNG of WebP, tot 8 MB. Sleep een bestand hierheen of kies er een. Oude DOC eerst bewaren als DOCX of PDF. De audit leest de tekst in PDF en Word. Een pdf zonder tekstlaag wordt niet gelezen.</p>
         <input ref={fileRef} type="file" accept=".pdf,.docx,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" className="sr-only" disabled={props.locked} onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
@@ -421,7 +421,7 @@ function SourcesStep(props: {
               ) : null}
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{source.label}</p>
-                <p className="text-xs text-vice-text-muted">{source.kind === "public" ? "Publieke vermelding" : source.status === "stored" ? "Bewaard, nog niet uitgelezen" : source.status}</p>
+                <p className="text-xs text-vice-text-muted">{source.kind === "public" ? "Publieke vermelding" : source.excerpt.trim().length >= 40 ? "Gelezen" : source.status === "stored" ? "Bewaard, nog niet uitgelezen" : source.status}</p>
                 {source.error_message ? <p className="text-xs text-amber-800 dark:text-amber-200">{source.error_message}</p> : null}
                 {source.excerpt ? <p className="mt-2 text-vice-text-muted">{source.excerpt}</p> : null}
                 {source.source_url ? <a className="mt-1 inline-block text-xs text-vice-gold" href={source.source_url} target="_blank" rel="noreferrer">{source.source_url}</a> : null}
@@ -490,7 +490,7 @@ function WebsiteStep(props: {
   const [phase, setPhase] = useState("");
   return (
     <section className="space-y-5">
-      <p className="max-w-prose text-sm text-vice-text-muted">De AI leest de tekst van een beperkt aantal pagina’s en vult de bevindingen. Pas ze aan; een volgende scan overschrijft jouw tekst niet. Geen screenshot, geen volledige site en geen bewijs van marktperceptie. {props.selectedPages ? `${props.readyPages} van ${props.selectedPages} geselecteerde pagina’s gelezen.` : "Nog geen pagina geselecteerd."}</p>
+      <p className="max-w-prose text-sm text-vice-text-muted">De AI vult deze bevindingen vanuit de snapshot, de paginatekst en de documenten. Pas ze aan; een volgende scan overschrijft jouw tekst niet. De snapshot toont de homepage, niet de hele site en geen marktperceptie. {props.selectedPages ? `${props.readyPages} van ${props.selectedPages} pagina's meegenomen.` : "Nog geen pagina geselecteerd."}</p>
       <div className="flex flex-wrap gap-2" role="tablist">
         {([["visual", "Visueel"], ["text", "Tekst"], ["journey", "Klantreis"]] as const).map(([key, label]) => (
           <button key={key} type="button" role="tab" aria-selected={props.lens === key} className={`rounded-full px-3 py-1 text-sm ${props.lens === key ? "bg-vice-text text-vice-bg" : "bg-vice-surface-muted"}`} onClick={() => props.onLens(key)}>{label}</button>
@@ -513,6 +513,7 @@ function WebsiteStep(props: {
         <Button type="button" variant="secondary" disabled={props.locked || url.trim().length < 8} onClick={() => props.onSavePage({ id: "", url, role, included: true, fetched_at: null, status: "pending", error_message: "", excerpt: "" })}>Voeg pagina toe</Button>
       </div>
       {page?.error_message ? <p className="text-sm text-amber-800 dark:text-amber-200">{page.error_message}</p> : null}
+      {props.lens === "visual" ? <WebsiteSnapshot page={props.wb.pages.find((item) => item.screenshot_url) ?? props.wb.pages.find((item) => item.role === "home")} findings={findings} /> : null}
       {page?.excerpt ? <blockquote className="rounded-xl border border-vice-border bg-vice-surface p-4 text-sm text-vice-text-muted">{page.excerpt}</blockquote> : null}
       {props.lens === "visual" ? (
         <ul className="flex flex-wrap gap-3">
@@ -549,6 +550,33 @@ function WebsiteStep(props: {
         </div>
       </footer>
     </section>
+  );
+}
+
+function WebsiteSnapshot(props: { page?: BrandPage; findings: BrandFinding[] }) {
+  const pins = props.findings.filter((finding) => typeof finding.pin_x === "number" && typeof finding.pin_y === "number");
+  if (!props.page?.screenshot_url) {
+    return <p className="text-sm text-vice-text-muted">Nog geen homepage-snapshot. De tekst van de site kan wel al gelezen zijn.</p>;
+  }
+  return (
+    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(16rem,0.8fr)]">
+      <div className="relative overflow-hidden rounded-xl border border-vice-border bg-vice-surface">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={props.page.screenshot_url} alt="Snapshot van de homepage" className="w-full" />
+        {pins.map((finding, index) => (
+          <span key={finding.id} aria-hidden className="absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-vice-gold text-xs font-medium text-[#1a1814]" style={{ left: `${finding.pin_x}%`, top: `${finding.pin_y}%` }}>{index + 1}</span>
+        ))}
+      </div>
+      <ol className="space-y-3">
+        {pins.map((finding, index) => (
+          <li key={finding.id} className="rounded-xl border border-vice-border bg-vice-surface p-3 text-sm">
+            <p className="font-medium">{index + 1}. {finding.observation}</p>
+            {finding.meaning ? <p className="mt-1 text-vice-text-muted">{finding.meaning}</p> : null}
+          </li>
+        ))}
+        {pins.length === 0 ? <li className="text-sm text-vice-text-muted">De snapshot staat er. Spelden verschijnen bij zichtbare elementen.</li> : null}
+      </ol>
+    </div>
   );
 }
 
@@ -652,6 +680,7 @@ function DimensionButton({ dimension, active, onSelect }: { dimension: BrandDime
     <button type="button" className={`rounded-xl border px-3 py-2 text-left text-sm ${active ? "border-vice-gold bg-vice-surface" : "border-vice-border"}`} onClick={() => onSelect(dimension.id)}>
       <span className="block font-medium">{label}</span>
       <span className="text-xs text-vice-text-muted">{judgement} · {EVIDENCE_LABELS[dimension.evidence_status]}</span>
+      {dimension.gap_note ? <span className="mt-1 block max-w-sm text-xs text-vice-text-muted">{dimension.gap_note}</span> : null}
     </button>
   );
 }
@@ -708,7 +737,7 @@ function ConclusionStep(props: {
   const labels = { ready: "Gereed", attention: "Aandachtspunt", block: "Blokkeert" } as const;
   return (
     <section className="space-y-5" id="brand-print">
-      <p className="max-w-prose text-sm text-vice-text-muted">Een kwalitatieve conclusie. Geen financiële merkwaardering. Zwak en onvoldoende onderzocht blijven apart.</p>
+      <p className="max-w-prose text-sm text-vice-text-muted">Samenvatting van de audit. De AI heeft deze velden ingevuld; pas aan wat je anders ziet. Geen financiële merkwaardering. Zwak en onvoldoende onderzocht blijven apart.</p>
       {([
         ["verdict", "Conclusie"],
         ["strongest", "Sterkste onderbouwde associaties"],

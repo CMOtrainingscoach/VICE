@@ -36,7 +36,7 @@ export function brandChecks(wb: BrandWorkbench): BrandCheck[] {
       level: readyPages === selectedPages ? "ready" : "attention",
       detail: readyPages === 0
         ? "Nog geen paginatekst opgehaald. De audit kan verder zonder scan."
-        : `${readyPages} van ${selectedPages} geselecteerde pagina's als tekst gelezen. Geen volledige site en geen screenshot.`,
+        : `${readyPages} van ${selectedPages} geselecteerde pagina's gelezen.${wb.pages.some((page) => page.screenshot_path) ? " Homepage-snapshot bewaard." : " Geen homepage-snapshot."}`,
     });
   }
   return checks;

@@ -58,6 +58,12 @@ export function selectScanTargets(homeUrl: string, links: string[], limit = 6): 
   return chosen;
 }
 
+export function clampPin(value: unknown): number | null {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(4, Math.min(96, Math.round(number)));
+}
+
 export function findingIsGrounded(observation: string, corpus: string): boolean {
   const text = observation.trim();
   if (text.length < 20) return false;
