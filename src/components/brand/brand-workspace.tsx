@@ -31,8 +31,8 @@ import {
 import { approvalBlocked, brandChecks } from "@/lib/brand/checks";
 import type { BrandDimension, BrandFinding, BrandPage, BrandPriority, BrandSource, BrandWorkbench } from "@/lib/brand/types";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
+import { finalizeAuditContextAction, saveAuditContextAction, type AuditContextDocument } from "@/modules/audit/context-actions";
 import {
-  approveBrandAction,
   archiveBrandFindingAction,
   archiveBrandPriorityAction,
   archiveBrandSourceAction,
@@ -58,8 +58,19 @@ import {
 
 type SaveState = "saving" | "saved" | "unsaved" | "error";
 
-export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: string; tenantName: string; initial: BrandWorkbench }) {
+export function BrandWorkspace({
+  tenantId,
+  tenantName,
+  initial,
+  initialContext,
+}: {
+  tenantId: string;
+  tenantName: string;
+  initial: BrandWorkbench;
+  initialContext: AuditContextDocument | null;
+}) {
   const [wb, setWb] = useState(initial);
+  const [context, setContext] = useState(initialContext);
   const [save, setSave] = useState<SaveState>("saved");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -105,12 +116,38 @@ export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: st
     }
   }
 
+  async function openOverview() {
+    await run("Auditcontext bewaren", async () => {
+      const saved = await saveBrandConclusionAction(tenantId, conclusionPayload(wb));
+      if (!saved.ok) return saved;
+      const doc = await saveAuditContextAction(tenantId, { versionId: version.id });
+      if (!doc.ok || !doc.data) return doc.ok ? { ok: false, error: "Geen contextbestand." } : doc;
+      setContext(doc.data);
+      return { ok: true };
+    });
+  }
+
+  async function finalizeOverview() {
+    await run("Audit afronden", async () => {
+      const done = await finalizeAuditContextAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at });
+      if (!done.ok) return done;
+      setContext((current) => current ? { ...current, status: "final" } : current);
+      return { ok: true };
+    });
+  }
+
   async function go(next: BrandStep) {
     if (locked) {
       setWb((prev) => ({ ...prev, version: { ...prev.version, current_step: next } }));
       return;
     }
-    await run("Stap openen", () => setBrandStepAction(tenantId, { versionId: version.id, step: next }));
+    await run("Stap openen", async () => {
+      const moved = await setBrandStepAction(tenantId, { versionId: version.id, step: next });
+      if (!moved.ok && next === "overview" && /Onbekende stap|current_step/i.test(moved.error)) {
+        return { ok: false, error: "Pas migratie 20260330133700 toe in de Supabase SQL-editor, na 20260330133600." };
+      }
+      return moved;
+    });
   }
 
   async function reopen() {
@@ -232,8 +269,7 @@ export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: st
             }}
             onPriority={(priority) => void run("Prioriteit bewaren", () => saveBrandPriorityAction(tenantId, priorityPayload(version.id, priority)))}
             onArchivePriority={(id) => void run("Prioriteit verwijderen", () => archiveBrandPriorityAction(tenantId, { id }))}
-            onApprove={() => void run("Audit goedkeuren", () => approveBrandAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at }))}
-            onPublish={() => void run("Publiceren", () => publishBrandAction(tenantId, { versionId: version.id }))}
+            onOverview={() => void openOverview()}
             onExport={() => void run("Tekst klaarzetten", async () => {
               const exported = await exportBrandTextAction(tenantId, { versionId: version.id });
               if (!exported.ok || !exported.data) return exported.ok ? { ok: false, error: "Geen tekst" } : exported;
@@ -242,6 +278,19 @@ export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: st
             })}
             onPrint={() => window.print()}
             onBack={() => void go("image")}
+            onReopen={() => void reopen()}
+          />
+        ) : null}
+        {step === "overview" ? (
+          <OverviewStep
+            context={context}
+            checks={checks}
+            locked={locked}
+            published={Boolean(version.published_at)}
+            onRefresh={() => void openOverview()}
+            onFinalize={() => void finalizeOverview()}
+            onPublish={() => void run("Publiceren", () => publishBrandAction(tenantId, { versionId: version.id }))}
+            onBack={() => void go("conclusion")}
             onReopen={() => void reopen()}
           />
         ) : null}
@@ -737,14 +786,12 @@ function ConclusionStep(props: {
   onSave: (patch?: Partial<BrandWorkbench["version"]>) => void;
   onPriority: (priority: Partial<BrandPriority> & Pick<BrandPriority, "title">) => void;
   onArchivePriority: (id: string) => void;
-  onApprove: () => void;
-  onPublish: () => void;
+  onOverview: () => void;
   onExport: () => void;
   onPrint: () => void;
   onBack: () => void;
   onReopen: () => void;
 }) {
-  const blocked = approvalBlocked(props.checks);
   const version = props.wb.version;
   const dirty = useRef(new Set<string>());
   const [title, setTitle] = useState("");
@@ -806,8 +853,50 @@ function ConclusionStep(props: {
           <Button type="button" variant="secondary" onClick={props.onPrint}>Exporteer via print</Button>
           {props.locked ? <Button type="button" variant="secondary" onClick={props.onReopen}>{version.published_at ? "Trek publicatie in en bewerk" : "Hervat bewerken"}</Button> : null}
         </div>
-        {!props.locked ? <Button type="button" className={goldButtonClass} disabled={blocked} onClick={props.onApprove}>Audit goedkeuren</Button> : null}
-        {props.locked && !version.published_at ? <Button type="button" className={goldButtonClass} onClick={props.onPublish}>Publiceer naar klantdashboard</Button> : null}
+        <Button type="button" className={goldButtonClass} onClick={props.onOverview}>Bewaar en open overzicht</Button>
+      </footer>
+    </section>
+  );
+}
+
+function OverviewStep(props: {
+  context: AuditContextDocument | null;
+  checks: ReturnType<typeof brandChecks>;
+  locked: boolean;
+  published: boolean;
+  onRefresh: () => void;
+  onFinalize: () => void;
+  onPublish: () => void;
+  onBack: () => void;
+  onReopen: () => void;
+}) {
+  const blocked = approvalBlocked(props.checks);
+  const saved = props.context?.savedAt ? new Date(props.context.savedAt).toLocaleString("nl-NL") : "";
+  return (
+    <section className="space-y-5">
+      <p className="max-w-prose text-sm text-vice-text-muted">
+        Dit is het markdownbestand met alles wat in de strategische audit is opgeslagen. Latere toepassingen lezen dit bestand als context van het bedrijf. Kijk het na en rond daarna af.
+      </p>
+      <p className="text-xs text-vice-text-muted">
+        {props.context ? `${props.context.status === "final" ? "Afgerond" : "Concept"}${saved ? ` · bewaard ${saved}` : ""}` : "Nog geen bestand."}
+      </p>
+      {props.context ? (
+        <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap rounded-xl border border-vice-border bg-vice-surface p-4 font-sans text-sm text-vice-text">{props.context.markdown}</pre>
+      ) : (
+        <p className="rounded-lg border border-vice-border px-4 py-3 text-sm">{props.locked ? "Er is nog geen bestand. Hervat bewerken om het alsnog te bewaren." : "Bewaar de audit om het bestand te maken."}</p>
+      )}
+      <footer className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="ghost" onClick={props.onBack}>Terug</Button>
+          {!props.locked ? <Button type="button" variant="secondary" onClick={props.onRefresh}>Werk het bestand bij</Button> : null}
+          {props.locked ? <Button type="button" variant="secondary" onClick={props.onReopen}>{props.published ? "Trek publicatie in en bewerk" : "Hervat bewerken"}</Button> : null}
+        </div>
+        {!props.locked ? (
+          <Button type="button" className={goldButtonClass} disabled={!props.context || blocked} onClick={props.onFinalize}>Rond de audit af</Button>
+        ) : null}
+        {props.locked && !props.published ? (
+          <Button type="button" className={goldButtonClass} onClick={props.onPublish}>Publiceer naar klantdashboard</Button>
+        ) : null}
       </footer>
     </section>
   );

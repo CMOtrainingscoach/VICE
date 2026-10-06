@@ -18,7 +18,4 @@ export const AUDIT_STEPS: AuditStep[] = [
   { index: 8, label: "STP", route: "stp", approved: (progress) => progress.stpApproved },
   { index: 9, label: "Persona's", route: "personas", approved: (progress) => progress.personaApproved },
   { index: 10, label: "Brand audit", route: "brand", approved: (progress) => progress.brandApproved },
-  { index: 11, label: "Nog geen framework", route: null, approved: () => false },
-  { index: 12, label: "Nog geen framework", route: null, approved: () => false },
-  { index: 13, label: "Nog geen framework", route: null, approved: () => false },
 ];

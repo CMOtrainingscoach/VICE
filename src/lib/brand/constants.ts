@@ -1,6 +1,6 @@
 export { BRAND_FRAMEWORK_INDEX, BRAND_ROUTE, PERSONA_ROUTE } from "@/lib/value-chain/constants";
 
-export const BRAND_STEPS = ["sources", "website", "image", "conclusion"] as const;
+export const BRAND_STEPS = ["sources", "website", "image", "conclusion", "overview"] as const;
 export type BrandStep = (typeof BRAND_STEPS)[number];
 
 export const BRAND_STEP_LABELS: Record<BrandStep, string> = {
@@ -8,6 +8,7 @@ export const BRAND_STEP_LABELS: Record<BrandStep, string> = {
   website: "Website",
   image: "Merkbeeld",
   conclusion: "Conclusie",
+  overview: "Overzicht",
 };
 
 export const BRAND_STEP_QUESTIONS: Record<BrandStep, string> = {
@@ -15,6 +16,7 @@ export const BRAND_STEP_QUESTIONS: Record<BrandStep, string> = {
   website: "Je website, bekeken door je klant",
   image: "Wat leeft er werkelijk in de markt?",
   conclusion: "Dit is je vertrekpunt als merk",
+  overview: "De opgeslagen context van deze audit",
 };
 
 export const BRAND_MODELS = ["keller", "aaker"] as const;

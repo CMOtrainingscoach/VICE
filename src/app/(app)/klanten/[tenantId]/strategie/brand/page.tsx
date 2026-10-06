@@ -5,6 +5,7 @@ import { getUserAppContext } from "@/lib/auth/context";
 import { BRAND_MIGRATION, PERSONA_ROUTE } from "@/lib/brand/constants";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
+import { loadAuditContextAction } from "@/modules/audit/context-actions";
 import { loadBrandWorkbenchAction } from "@/modules/brand/actions";
 
 export const maxDuration = 300;
@@ -39,12 +40,15 @@ export default async function BrandPage({
     );
   }
 
+  const context = await loadAuditContextAction(tenantId);
+
   return (
     <BrandWorkspace
       key={loaded.data.version.id}
       tenantId={tenantId}
       tenantName={(tenantData as Pick<TenantRow, "name">).name}
       initial={loaded.data}
+      initialContext={context.ok ? context.data ?? null : null}
     />
   );
 }
