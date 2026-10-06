@@ -248,22 +248,9 @@ export function SwotWorkspace({
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <header className="mb-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button type="button" asChild variant="secondary" className="h-8 text-xs">
-            <Link href={`/klanten/${tenantId}/strategie/${MARKETING_5C_ROUTE}`}>← Vorige</Link>
-          </Button>
-          <div className="flex gap-1" aria-label={`Stap ${SWOT_FRAMEWORK_INDEX} van ${AUDIT_FRAMEWORK_COUNT}`}>
-            {Array.from({ length: AUDIT_FRAMEWORK_COUNT }).map((_, i) => (
-              <span
-                key={i}
-                className={cn(
-                  "size-2 rounded-full",
-                  i + 1 === SWOT_FRAMEWORK_INDEX ? "bg-vice-gold ring-2 ring-vice-gold/40" : "bg-vice-border",
-                )}
-              />
-            ))}
-          </div>
-        </div>
+        <Button type="button" asChild variant="secondary" className="h-8 text-xs">
+          <Link href={`/klanten/${tenantId}/strategie/${MARKETING_5C_ROUTE}`}>← Vorige</Link>
+        </Button>
         <p className="mt-4 text-sm text-vice-text-muted">
           Klanten / {tenantName} · Interne werkruimte
         </p>
