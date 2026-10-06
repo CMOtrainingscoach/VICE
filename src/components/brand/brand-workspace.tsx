@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Chip, fieldClass, goldButtonClass } from "@/components/stp/stp-ui";
@@ -175,7 +176,7 @@ export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: st
               void run("Bestand bewaren", () => uploadBrandSourceAction(tenantId, body));
             }}
             onSource={(source) => void run("Bron bijwerken", () => updateBrandSourceAction(tenantId, sourcePayload(source)))}
-            onArchiveSource={(id) => void run("Bron archiveren", () => archiveBrandSourceAction(tenantId, { id }))}
+            onArchiveSource={(id) => void run("Vermelding verwijderen", () => archiveBrandSourceAction(tenantId, { id }))}
             onSearch={() => void run("Publieke vermeldingen zoeken", () => searchBrandMentionsAction(tenantId, { versionId: version.id }))}
             onStart={() => void run("Documenten, site en snapshot worden gelezen", async () => {
               const saved = await saveBrandSetupAction(tenantId, setupPayload(wb));
@@ -197,7 +198,7 @@ export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: st
             onFetch={(page) => void run("Paginatest ophalen", () => fetchBrandPageAction(tenantId, pagePayload(version.id, page)))}
             onSavePage={(page) => void run("Pagina bewaren", () => saveBrandPageAction(tenantId, pagePayload(version.id, page)))}
             onFinding={(finding) => void run("Bevinding bewaren", () => saveBrandFindingAction(tenantId, findingPayload(version.id, finding)))}
-            onArchiveFinding={(id) => void run("Bevinding archiveren", () => archiveBrandFindingAction(tenantId, { id }))}
+            onArchiveFinding={(id) => void run("Bevinding verwijderen", () => archiveBrandFindingAction(tenantId, { id }))}
             onBack={() => void go("sources")}
             onRescan={() => void run("Documenten, site en snapshot worden gelezen", () => runBrandAuditAction(tenantId, { versionId: version.id }))}
             onNext={() => void go("image")}
@@ -230,7 +231,7 @@ export function BrandWorkspace({ tenantId, tenantName, initial }: { tenantId: st
               void run("Conclusie bewaren", () => saveBrandConclusionAction(tenantId, conclusionPayload(next)));
             }}
             onPriority={(priority) => void run("Prioriteit bewaren", () => saveBrandPriorityAction(tenantId, priorityPayload(version.id, priority)))}
-            onArchivePriority={(id) => void run("Prioriteit archiveren", () => archiveBrandPriorityAction(tenantId, { id }))}
+            onArchivePriority={(id) => void run("Prioriteit verwijderen", () => archiveBrandPriorityAction(tenantId, { id }))}
             onApprove={() => void run("Audit goedkeuren", () => approveBrandAction(tenantId, { versionId: version.id, expectedUpdatedAt: version.updated_at }))}
             onPublish={() => void run("Publiceren", () => publishBrandAction(tenantId, { versionId: version.id }))}
             onExport={() => void run("Tekst klaarzetten", async () => {
@@ -420,7 +421,10 @@ function SourcesStep(props: {
                 </>
               ) : null}
               <div className="min-w-0 flex-1">
-                <p className="font-medium">{source.label}</p>
+                <div className="flex items-start gap-2">
+                  <p className="min-w-0 flex-1 font-medium">{source.label}</p>
+                  <RemoveButton label="Verwijder deze informatie" disabled={props.locked} onClick={() => props.onArchiveSource(source.id)} />
+                </div>
                 <p className="text-xs text-vice-text-muted">{source.kind === "public" ? "Publieke vermelding" : source.excerpt.trim().length >= 40 ? "Gelezen" : source.status === "stored" ? "Bewaard, nog niet uitgelezen" : source.status}</p>
                 {source.error_message ? <p className="text-xs text-amber-800 dark:text-amber-200">{source.error_message}</p> : null}
                 {source.excerpt ? <p className="mt-2 text-vice-text-muted">{source.excerpt}</p> : null}
@@ -439,7 +443,6 @@ function SourcesStep(props: {
               <input className={fieldClass} disabled={props.locked} placeholder="Kanaal" value={source.channel} onChange={(event) => props.onSource({ ...source, channel: event.target.value })} />
               <input className={fieldClass} disabled={props.locked} placeholder="Toelichting of kernpassage" value={source.note} onChange={(event) => props.onSource({ ...source, note: event.target.value })} />
             </div>
-            <button type="button" className="mt-2 text-xs underline" disabled={props.locked} onClick={() => props.onArchiveSource(source.id)}>Archiveer</button>
           </li>
         ))}
       </ul>
@@ -513,7 +516,7 @@ function WebsiteStep(props: {
         <Button type="button" variant="secondary" disabled={props.locked || url.trim().length < 8} onClick={() => props.onSavePage({ id: "", url, role, included: true, fetched_at: null, status: "pending", error_message: "", excerpt: "" })}>Voeg pagina toe</Button>
       </div>
       {page?.error_message ? <p className="text-sm text-amber-800 dark:text-amber-200">{page.error_message}</p> : null}
-      {props.lens === "visual" ? <WebsiteSnapshot page={props.wb.pages.find((item) => item.screenshot_url) ?? props.wb.pages.find((item) => item.role === "home")} findings={findings} /> : null}
+      {props.lens === "visual" ? <WebsiteSnapshot page={props.wb.pages.find((item) => item.screenshot_url) ?? props.wb.pages.find((item) => item.role === "home")} findings={findings} locked={props.locked} onArchive={props.onArchiveFinding} /> : null}
       {page?.excerpt ? <blockquote className="rounded-xl border border-vice-border bg-vice-surface p-4 text-sm text-vice-text-muted">{page.excerpt}</blockquote> : null}
       {props.lens === "visual" ? (
         <ul className="flex flex-wrap gap-3">
@@ -553,7 +556,15 @@ function WebsiteStep(props: {
   );
 }
 
-function WebsiteSnapshot(props: { page?: BrandPage; findings: BrandFinding[] }) {
+function RemoveButton(props: { label: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-vice-text-muted hover:bg-vice-surface-muted hover:text-red-700 disabled:opacity-50 dark:hover:text-red-300" disabled={props.disabled} aria-label={props.label} title={props.label} onClick={props.onClick}>
+      <Trash2 className="size-4" aria-hidden />
+    </button>
+  );
+}
+
+function WebsiteSnapshot(props: { page?: BrandPage; findings: BrandFinding[]; locked: boolean; onArchive: (id: string) => void }) {
   const pins = props.findings.filter((finding) => typeof finding.pin_x === "number" && typeof finding.pin_y === "number");
   if (!props.page?.screenshot_url) {
     return <p className="text-sm text-vice-text-muted">Nog geen homepage-snapshot. De tekst van de site kan wel al gelezen zijn.</p>;
@@ -570,7 +581,10 @@ function WebsiteSnapshot(props: { page?: BrandPage; findings: BrandFinding[] }) 
       <ol className="space-y-3">
         {pins.map((finding, index) => (
           <li key={finding.id} className="rounded-xl border border-vice-border bg-vice-surface p-3 text-sm">
-            <p className="font-medium">{index + 1}. {finding.observation}</p>
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 font-medium">{index + 1}. {finding.observation}</p>
+              <RemoveButton label="Verwijder deze bevinding" disabled={props.locked} onClick={() => props.onArchive(finding.id)} />
+            </div>
             {finding.meaning ? <p className="mt-1 text-vice-text-muted">{finding.meaning}</p> : null}
           </li>
         ))}
@@ -597,11 +611,13 @@ function FindingCard(props: {
   }
   return (
     <li className="space-y-2 rounded-xl border border-vice-border p-3 text-sm">
+      <div className="flex justify-end">
+        <RemoveButton label="Verwijder deze bevinding" disabled={props.locked} onClick={() => props.onArchive(finding.id)} />
+      </div>
       <label className="block text-xs">Waarneming<textarea className={`${fieldClass} mt-1`} rows={2} disabled={props.locked} value={observation} onChange={(event) => setObservation(event.target.value)} onBlur={commit} /></label>
       <label className="block text-xs">Interpretatie<textarea className={`${fieldClass} mt-1`} rows={2} disabled={props.locked} value={meaning} onChange={(event) => setMeaning(event.target.value)} onBlur={commit} /></label>
       <label className="block text-xs">Voorstel<textarea className={`${fieldClass} mt-1`} rows={2} disabled={props.locked} value={proposal} onChange={(event) => setProposal(event.target.value)} onBlur={commit} /></label>
       {finding.hypothesis ? <Chip tone="amber">Hypothese</Chip> : null}
-      <button type="button" className="mt-2 block text-xs underline" disabled={props.locked} onClick={() => props.onArchive(finding.id)}>Archiveer</button>
     </li>
   );
 }
@@ -756,10 +772,12 @@ function ConclusionStep(props: {
         <h2 className="font-medium">Merkprioriteiten</h2>
         <ul className="mt-3 space-y-2">
           {props.wb.priorities.map((priority, index) => (
-            <li key={priority.id} className="text-sm">
-              <span className="font-medium">{index + 1}. {priority.title}</span>
-              <span className="text-vice-text-muted"> · {PRIORITY_KIND_LABELS[priority.kind]} · {priority.action}</span>
-              <button type="button" className="ml-2 text-xs underline" disabled={props.locked} onClick={() => props.onArchivePriority(priority.id)}>Archiveer</button>
+            <li key={priority.id} className="flex items-start gap-2 text-sm">
+              <p className="min-w-0 flex-1">
+                <span className="font-medium">{index + 1}. {priority.title}</span>
+                <span className="text-vice-text-muted"> · {PRIORITY_KIND_LABELS[priority.kind]} · {priority.action}</span>
+              </p>
+              <RemoveButton label="Verwijder deze prioriteit" disabled={props.locked} onClick={() => props.onArchivePriority(priority.id)} />
             </li>
           ))}
         </ul>
