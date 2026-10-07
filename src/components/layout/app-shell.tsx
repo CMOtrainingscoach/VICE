@@ -122,6 +122,7 @@ export function AppShell({
         ? workspaceTenant
         : null);
   const meetingsActive = pathname.includes("/meetings");
+  const strategieActive = pathname.includes("/strategie");
 
   const initials = userLabel
     .split(/\s+/)
@@ -178,6 +179,12 @@ export function AppShell({
                 href={`/klanten/${activeClient.tenantId}/meetings`}
                 label="Meetings"
                 active={meetingsActive}
+                indent
+              />
+              <NavLink
+                href={`/klanten/${activeClient.tenantId}/strategie`}
+                label="Strategische audit"
+                active={strategieActive}
                 indent
               />
               <NavLink

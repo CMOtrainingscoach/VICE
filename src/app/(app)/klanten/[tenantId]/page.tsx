@@ -48,7 +48,7 @@ export default async function TenantDetailPage({
           <h1 className="text-3xl font-semibold text-vice-text">{tenant.name}</h1>
           <p className="mt-2 text-sm text-vice-text-muted">
             {isAdmin
-              ? "Klantgegevens en meetings."
+              ? "Klantgegevens, meetings en het strategische contextbestand."
               : "Welkom in je klantomgeving."}
           </p>
           <p className="mt-1 text-xs text-vice-text-muted">
@@ -75,7 +75,7 @@ export default async function TenantDetailPage({
               Verzamel bronnen of nodig de klant uit
             </h2>
             <p className="mt-2 max-w-prose text-sm text-vice-text-muted">
-              Start met een compacte meeting-opname. Transcriptie volgt daarna.
+              Neem een meeting op of upload het markdownbestand bij Strategische audit.
             </p>
           </section>
           <div className="grid gap-8 lg:grid-cols-2">
