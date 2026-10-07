@@ -35,11 +35,13 @@ function NavLink({
   active,
   icon,
   indent,
+  nested,
   disabled,
 }: NavItem & {
   active: boolean;
   icon?: React.ReactNode;
   indent?: boolean;
+  nested?: boolean;
   disabled?: boolean;
 }) {
   if (disabled) {
@@ -48,6 +50,7 @@ function NavLink({
         className={cn(
           "block rounded-md px-3 py-2 text-sm text-vice-text-muted/60",
           indent && "pl-6",
+          nested && "pl-9",
         )}
       >
         {label}
@@ -61,6 +64,7 @@ function NavLink({
       className={cn(
         "relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
         indent && "pl-6",
+        nested && "pl-9",
         active
           ? "bg-vice-surface font-medium text-vice-gold"
           : "text-vice-text-muted hover:bg-vice-surface hover:text-vice-text",
@@ -122,7 +126,11 @@ export function AppShell({
         ? workspaceTenant
         : null);
   const meetingsActive = pathname.includes("/meetings");
-  const strategieActive = pathname.includes("/strategie");
+  const brandActive =
+    Boolean(tenantIdFromPath) &&
+    (pathname === `/klanten/${tenantIdFromPath}/strategie/brand` ||
+      pathname.startsWith(`/klanten/${tenantIdFromPath}/strategie/brand/`));
+  const strategieActive = pathname.includes("/strategie") && !brandActive;
 
   const initials = userLabel
     .split(/\s+/)
@@ -186,6 +194,12 @@ export function AppShell({
                 label="Strategische audit"
                 active={strategieActive}
                 indent
+              />
+              <NavLink
+                href={`/klanten/${activeClient.tenantId}/strategie/brand`}
+                label="Brand"
+                active={brandActive}
+                nested
               />
               <NavLink
                 href="#"
