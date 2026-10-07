@@ -28,6 +28,7 @@ import { goldButtonClass } from "@/components/stp/stp-ui";
 import {
   approveBrandProfileAction,
   archiveBrandItemAction,
+  beginBrandProfileForm,
   compareBrandSourceAction,
   discardAuditContextDocumentAction,
   forkBrandProfileAction,
@@ -44,11 +45,11 @@ import {
 
 const emptyDraft: PromptDraft = { subject: "", use: "", format: "", message: "", composition: "", camera: "", light: "", textSpace: false, exclusions: "" };
 
-export function BrandProfileWorkspace({ tenantId, data }: { tenantId: string; data: BrandProfileView }) {
+export function BrandProfileWorkspace({ tenantId, data, initialError = "" }: { tenantId: string; data: BrandProfileView; initialError?: string }) {
   const router = useRouter();
   const [section, setSection] = useState<BrandSection>("overview");
   const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [sourceText, setSourceText] = useState<string | null>(null);
@@ -113,8 +114,8 @@ export function BrandProfileWorkspace({ tenantId, data }: { tenantId: string; da
             <p className="text-sm">Meerdere auditdocumenten komen in aanmerking. Kies er één. Die koppeling blijft bewaard.</p>
             {data.documents.map((document) => (
               <div key={document.id} className="flex items-stretch gap-2">
-                <button type="button" className="min-w-0 flex-1 rounded-xl border border-vice-border px-4 py-3 text-left text-sm hover:border-vice-gold disabled:opacity-50" disabled={busy} onClick={() => void openConcept(document.id)}>
-                  {document.status === "final" ? "Goedgekeurde audit" : "Conceptaudit"} · {new Date(document.savedAt).toLocaleString("nl-BE")}
+                <button type="button" className="min-w-0 flex-1 rounded-xl border border-vice-border px-4 py-3 text-left text-sm hover:border-vice-gold disabled:opacity-50" disabled={busy} suppressHydrationWarning onClick={() => void openConcept(document.id)}>
+                  {document.status === "final" ? "Goedgekeurde audit" : "Conceptaudit"} · {new Date(document.savedAt).toLocaleString("nl-BE", { timeZone: "Europe/Brussels" })}
                 </button>
                 <button type="button" className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-vice-border text-vice-text-muted hover:bg-vice-surface-muted hover:text-red-700 disabled:opacity-50 dark:hover:text-red-300" disabled={busy} aria-label="Verwijder dit concept" title="Verwijder dit concept" onClick={() => void run(() => discardAuditContextDocumentAction(tenantId, document.id))}>
                   <Trash2 className="size-4" aria-hidden />
@@ -129,7 +130,10 @@ export function BrandProfileWorkspace({ tenantId, data }: { tenantId: string; da
           <Button type="button" asChild className={goldButtonClass}>
             <Link href={`/klanten/${tenantId}/strategie/context`}>Naar contextbestand</Link>
           </Button>
-          <Button type="button" variant="secondary" disabled={busy} onClick={() => run(() => startBrandProfileAction(tenantId))}>Manueel beginnen</Button>
+          <form action={beginBrandProfileForm}>
+            <input type="hidden" name="tenantId" value={tenantId} />
+            <Button type="submit" variant="secondary" disabled={busy}>Manueel beginnen</Button>
+          </form>
         </div>
         {status ? <p className="mt-4 text-sm text-vice-text-muted">{status}</p> : null}
         {error && <p className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300" role="alert">{error}</p>}
@@ -185,9 +189,9 @@ function ProfileBody({
           <a className={`${goldButtonClass} inline-flex h-10 items-center rounded-md px-4 text-sm font-medium`} href={`/api/brand-profile/${tenantId}/export`}>Exporteer brand kit</a>
         </div>
       </div>
-      <p className="mt-4 text-xs text-vice-text-muted">
+      <p className="mt-4 text-xs text-vice-text-muted" suppressHydrationWarning>
         Versie {version.versionNumber}
-        {version.updatedAt ? ` · laatst ${new Date(version.updatedAt).toLocaleString("nl-BE")}` : ""}
+        {version.updatedAt ? ` · laatst ${new Date(version.updatedAt).toLocaleString("nl-BE", { timeZone: "Europe/Brussels" })}` : ""}
         {version.updatedByName ? ` · ${version.updatedByName}` : ""}
         {message ? ` · ${message}` : ""}
       </p>

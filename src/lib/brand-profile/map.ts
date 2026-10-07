@@ -272,6 +272,13 @@ function mapNewer(value: unknown): BrandProfileWorkbench["newerSource"] {
 }
 
 function list(value: unknown): Raw[] {
+  if (typeof value === "string") {
+    try {
+      return list(JSON.parse(value) as unknown);
+    } catch {
+      return [];
+    }
+  }
   return Array.isArray(value) ? value.filter((item): item is Raw => Boolean(item) && typeof item === "object") : [];
 }
 

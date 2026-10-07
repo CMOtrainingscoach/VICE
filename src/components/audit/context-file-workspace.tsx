@@ -41,7 +41,7 @@ export function ContextFileWorkspace({
   }
 
   const savedLabel = savedAt
-    ? `${status === "final" ? "Afgerond" : "Concept"} · bewaard ${new Date(savedAt).toLocaleString("nl-BE")}`
+    ? `${status === "final" ? "Afgerond" : "Concept"} · bewaard ${new Date(savedAt).toLocaleString("nl-BE", { timeZone: "Europe/Brussels" })}`
     : "Nog niet opgeslagen";
 
   return (
@@ -54,7 +54,7 @@ export function ContextFileWorkspace({
       <p className="mt-2 max-w-prose text-sm text-vice-text-muted">
         Dit markdownbestand is de context voor latere functies, zoals Brand. Er wordt niets buiten VICE opgezocht.
       </p>
-      <p className="mt-4 text-xs text-vice-text-muted">{savedLabel}</p>
+      <p className="mt-4 text-xs text-vice-text-muted" suppressHydrationWarning>{savedLabel}</p>
       <textarea
         className={`${fieldClass} mt-4 min-h-[28rem] font-mono`}
         value={markdown}

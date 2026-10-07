@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
 import { parseAuditMarkdown } from "@/lib/brand-profile/parse-audit-markdown";
 import { mapBrandProfile } from "@/lib/brand-profile/map";
@@ -13,6 +14,7 @@ import { ensureStoredAuditContextAction, storePastedAuditMarkdownAction } from "
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
 const MISSING = /get_brand_profile|start_brand_profile|apply_brand_profile_import|save_brand_profile|brand_profile|schema cache|does not exist|Could not find the function/i;
+const PROFILE_ROW_MIGRATION = "Pas migratie 20260330134500 toe in de Supabase SQL-editor, na 20260330134400. Daarna herkent Brand het opgeslagen contextbestand, en werkt Manueel beginnen.";
 
 function migration(message: string): string {
   return MISSING.test(message) ? BRAND_PROFILE_MIGRATION : message;
@@ -28,22 +30,32 @@ export async function loadBrandProfileAction(tenantId: string): Promise<ActionRe
   const supabase = await authed();
   const loaded = await readProfile(supabase, tenantId);
   if (!loaded.ok || !loaded.data) return loaded;
-  const profile = loaded.data;
-  if (profile.access === "published") return { ok: true, data: await signProfile(profile) };
-  if (profile.version) return { ok: true, data: await signProfile(profile) };
-  let current = profile;
-  if (current.documents.length === 0) {
+  if (loaded.data.access !== "edit") return { ok: true, data: await signProfile(loaded.data) };
+
+  let current = await withStoredContext(supabase, tenantId, loaded.data);
+  if (current.version?.sourceDocumentId) return { ok: true, data: await signProfile(current) };
+
+  if (!current.version && current.documents.length === 0) {
     const ensured = await ensureStoredAuditContextAction(tenantId);
     if (!ensured.ok) return ensured;
     if (ensured.data) {
       const refreshed = await readProfile(supabase, tenantId);
       if (!refreshed.ok || !refreshed.data) return refreshed.ok ? { ok: false, error: "Merkprofiel laden mislukt" } : refreshed;
       if (refreshed.data.access !== "edit") return { ok: true, data: await signProfile(refreshed.data) };
-      current = refreshed.data;
-      if (current.version) return { ok: true, data: await signProfile(current) };
+      current = await withStoredContext(supabase, tenantId, refreshed.data);
+      if (current.version?.sourceDocumentId) return { ok: true, data: await signProfile(current) };
     }
   }
+
   const chosen = chooseDocument(current.documents);
+  if (current.version) {
+    if (chosen && current.version.status === "draft" && !current.version.sourceDocumentId) {
+      const imported = await importDocument(supabase, tenantId, current.version.id, null, chosen.id);
+      if (!imported.ok) return imported;
+      return finishOpen(supabase, tenantId);
+    }
+    return { ok: true, data: await signProfile(current) };
+  }
   if (!chosen) {
     return { ok: true, data: { ...current, mode: current.documents.length > 1 ? "choose" : "empty" } };
   }
@@ -51,9 +63,7 @@ export async function loadBrandProfileAction(tenantId: string): Promise<ActionRe
   if (started.error || !started.data) return { ok: false, error: migration(started.error?.message ?? "Merkprofiel starten mislukt") };
   const imported = await importDocument(supabase, tenantId, String(started.data), null, chosen.id);
   if (!imported.ok) return imported;
-  const again = await readProfile(supabase, tenantId);
-  if (!again.ok || !again.data) return again.ok ? { ok: false, error: "Merkprofiel laden mislukt" } : again;
-  return { ok: true, data: await signProfile(again.data) };
+  return finishOpen(supabase, tenantId);
 }
 
 export async function importPastedBrandMarkdownAction(tenantId: string, markdown: string): Promise<ActionResult> {
@@ -81,8 +91,19 @@ export async function startBrandProfileAction(tenantId: string, documentId?: str
       if (!imported.ok) return imported;
     }
   }
+  const visible = await readProfile(supabase, tenantId);
+  if (!visible.ok || !visible.data) return { ok: false, error: visible.ok ? "Merkprofiel laden mislukt" : visible.error };
+  if (visible.data.access === "edit" && !visible.data.version) return { ok: false, error: PROFILE_ROW_MIGRATION };
   revalidatePath(`/klanten/${tenantId}/brand`);
   return { ok: true };
+}
+
+export async function beginBrandProfileForm(formData: FormData): Promise<void> {
+  const tenantId = String(formData.get("tenantId") ?? "");
+  if (!/^[0-9a-f-]{36}$/i.test(tenantId)) redirect("/klanten");
+  const result = await startBrandProfileAction(tenantId);
+  if (!result.ok) redirect(`/klanten/${tenantId}/brand?fout=${encodeURIComponent(result.error)}`);
+  redirect(`/klanten/${tenantId}/brand`);
 }
 
 export async function discardAuditContextDocumentAction(tenantId: string, documentId: string): Promise<ActionResult> {
@@ -268,6 +289,37 @@ async function call(tenantId: string, fn: string, args: Record<string, unknown>)
   if (result.error) return { ok: false, error: migration(result.error.message) };
   revalidatePath(`/klanten/${tenantId}/brand`);
   return { ok: true };
+}
+
+async function withStoredContext(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string,
+  profile: BrandProfileWorkbench,
+): Promise<BrandProfileWorkbench> {
+  if (profile.documents.some((document) => document.id)) return profile;
+  const context = await supabase.schema("app").rpc("get_audit_context", { p_tenant_id: tenantId });
+  if (context.error || !context.data || typeof context.data !== "object") return profile;
+  const row = context.data as { id?: string; markdown?: string; status?: string; saved_at?: string | null; brand_version_id?: string | null };
+  if (!row.id || !row.markdown) return profile;
+  return {
+    ...profile,
+    documents: [{
+      id: String(row.id),
+      status: row.status === "final" ? "final" : "draft",
+      savedAt: row.saved_at ?? "",
+      brandVersionId: row.brand_version_id ? String(row.brand_version_id) : "",
+    }],
+  };
+}
+
+async function finishOpen(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string,
+): Promise<ActionResult<BrandProfileView>> {
+  const again = await readProfile(supabase, tenantId);
+  if (!again.ok || !again.data) return again.ok ? { ok: false, error: "Merkprofiel laden mislukt" } : again;
+  if (again.data.access === "edit" && !again.data.version) return { ok: false, error: PROFILE_ROW_MIGRATION };
+  return { ok: true, data: await signProfile(again.data) };
 }
 
 async function readProfile(supabase: Awaited<ReturnType<typeof createClient>>, tenantId: string): Promise<ActionResult<BrandProfileView>> {
