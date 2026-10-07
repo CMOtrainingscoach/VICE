@@ -11,6 +11,10 @@ export const PERSONA_ROUTE = "personas" as const;
 export const BRAND_FRAMEWORK_INDEX = 10;
 export const BRAND_ROUTE = "brand" as const;
 
+export const CONTEXT_FRAMEWORK_INDEX = 11;
+export const CONTEXT_ROUTE = "context" as const;
+export const CONTEXT_LABEL = "Contextbestand";
+
 export const VC_BUSINESS_TYPES = ["service", "production", "trade", "mixed"] as const;
 export type VcBusinessType = (typeof VC_BUSINESS_TYPES)[number];
 

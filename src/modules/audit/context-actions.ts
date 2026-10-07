@@ -77,6 +77,108 @@ export async function loadAuditContextAction(tenantId: string): Promise<ActionRe
   return { ok: true, data: asDocument(data as { markdown?: string; status?: string; saved_at?: string | null; finalized_at?: string | null } | null) };
 }
 
+export type ContextFileDraft = {
+  markdown: string;
+  savedAt: string | null;
+  status: "draft" | "final" | null;
+};
+
+export async function loadContextEditorAction(tenantId: string): Promise<ActionResult<ContextFileDraft>> {
+  const existing = await loadAuditContextAction(tenantId);
+  if (!existing.ok) return existing;
+  if (existing.data?.markdown) {
+    return {
+      ok: true,
+      data: { markdown: existing.data.markdown, savedAt: existing.data.savedAt, status: existing.data.status },
+    };
+  }
+  const supabase = await client();
+  const progress = await supabase.schema("app").rpc("get_audit_framework_progress", { p_tenant_id: tenantId });
+  if (!Boolean((progress.data as { brand_started?: boolean } | null)?.brand_started)) {
+    return { ok: true, data: { markdown: "", savedAt: null, status: null } };
+  }
+  const brand = await loadBrandWorkbenchAction(tenantId);
+  if (!brand.ok || !brand.data) return { ok: false, error: brand.ok ? "De audit kon niet worden gelezen." : brand.error };
+  const built = await buildStoredAuditMarkdown(tenantId, brand.data.version.id);
+  if (!built.ok || !built.data) return built.ok ? { ok: false, error: "De audit kon niet worden gelezen." } : built;
+  return { ok: true, data: { markdown: built.data.markdown, savedAt: null, status: null } };
+}
+
+export async function saveContextFileAction(tenantId: string, markdown: string): Promise<ActionResult<ContextFileDraft>> {
+  const text = markdown.trim();
+  if (text.length < 40) return { ok: false, error: "Het bestand is te kort om op te slaan." };
+  if (text.length > 500_000) return { ok: false, error: "Deze tekst is te lang." };
+  const supabase = await client();
+  const saved = await supabase.schema("app").rpc("save_strategy_context", {
+    p_tenant_id: tenantId,
+    p_markdown: text,
+  });
+  if (!saved.error) {
+    revalidateContext(tenantId);
+    const row = saved.data as { saved_at?: string; status?: string } | null;
+    return {
+      ok: true,
+      data: { markdown: text, savedAt: row?.saved_at ?? new Date().toISOString(), status: row?.status === "final" ? "final" : "draft" },
+    };
+  }
+  if (!/save_strategy_context|schema cache|does not exist|Could not find the function/i.test(saved.error.message)) {
+    return { ok: false, error: saved.error.message };
+  }
+  const fallback = await saveContextFileFallback(tenantId, text);
+  if (fallback.ok) revalidateContext(tenantId);
+  return fallback;
+}
+
+function revalidateContext(tenantId: string) {
+  revalidatePath(`/klanten/${tenantId}/strategie/context`);
+  revalidatePath(`/klanten/${tenantId}/strategie/${BRAND_ROUTE}`);
+  revalidatePath(`/klanten/${tenantId}/brand`);
+}
+
+async function saveContextFileFallback(tenantId: string, text: string): Promise<ActionResult<ContextFileDraft>> {
+  const supabase = await client();
+  const progress = await supabase.schema("app").rpc("get_audit_framework_progress", { p_tenant_id: tenantId });
+  const started = Boolean((progress.data as { brand_started?: boolean } | null)?.brand_started);
+  if (!started) {
+    const pasted = await storePastedAuditMarkdownAction(tenantId, text);
+    if (!pasted.ok) return pasted;
+    return { ok: true, data: { markdown: text, savedAt: new Date().toISOString(), status: "draft" } };
+  }
+  const brand = await loadBrandWorkbenchAction(tenantId);
+  if (!brand.ok || !brand.data) return { ok: false, error: brand.ok ? "Geen brand audit om het bestand aan te koppelen." : brand.error };
+  const current = await loadAuditContextAction(tenantId);
+  if (!current.ok) return current;
+  if (brand.data.version.status === "approved" && current.data?.markdown) {
+    return { ok: false, error: "Pas migratie 20260330134200 toe in de Supabase SQL-editor, na 20260330134100. Dan kan een goedgekeurde audit het contextbestand bijwerken." };
+  }
+  if (brand.data.version.status !== "approved") {
+    const saved = await supabase.schema("app").rpc("save_audit_context", {
+      p_version_id: brand.data.version.id,
+      p_markdown: text,
+    });
+    if (saved.error) return { ok: false, error: migrationError(saved.error.message) };
+    const row = saved.data as { saved_at?: string } | null;
+    return { ok: true, data: { markdown: text, savedAt: row?.saved_at ?? new Date().toISOString(), status: "draft" } };
+  }
+  const stored = await supabase.schema("app").rpc("store_audit_context_if_missing", {
+    p_version_id: brand.data.version.id,
+    p_markdown: text,
+  });
+  if (stored.error) {
+    return {
+      ok: false,
+      error: /store_audit_context_if_missing|schema cache|does not exist|Could not find the function/i.test(stored.error.message)
+        ? "Pas migratie 20260330134200 toe in de Supabase SQL-editor, na 20260330134100."
+        : stored.error.message,
+    };
+  }
+  const row = stored.data as { saved_at?: string; status?: string } | null;
+  return {
+    ok: true,
+    data: { markdown: text, savedAt: row?.saved_at ?? new Date().toISOString(), status: row?.status === "final" ? "final" : "draft" },
+  };
+}
+
 async function optional<T>(present: boolean, load: () => Promise<ActionResult<T>>): Promise<FrameworkLoad<T>> {
   if (!present) return { state: "missing" };
   const result = await load();

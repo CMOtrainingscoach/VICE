@@ -2,6 +2,8 @@
 
 import { Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AuditStepNav } from "@/components/audit/audit-step-nav";
 import { Button } from "@/components/ui/button";
 import { Chip, fieldClass, goldButtonClass } from "@/components/stp/stp-ui";
@@ -29,8 +31,9 @@ import {
 } from "@/lib/brand/constants";
 import { approvalBlocked, brandChecks } from "@/lib/brand/checks";
 import type { BrandDimension, BrandFinding, BrandPage, BrandPriority, BrandSource, BrandWorkbench } from "@/lib/brand/types";
+import { CONTEXT_ROUTE } from "@/lib/value-chain/constants";
 import { AUDIT_FRAMEWORK_COUNT } from "@/lib/pestel/constants";
-import { finalizeAuditContextAction, saveAuditContextAction, type AuditContextDocument } from "@/modules/audit/context-actions";
+import { finalizeAuditContextAction, type AuditContextDocument } from "@/modules/audit/context-actions";
 import {
   archiveBrandFindingAction,
   archiveBrandPriorityAction,
@@ -68,6 +71,7 @@ export function BrandWorkspace({
   initial: BrandWorkbench;
   initialContext: AuditContextDocument | null;
 }) {
+  const router = useRouter();
   const [wb, setWb] = useState(initial);
   const [context, setContext] = useState(initialContext);
   const [save, setSave] = useState<SaveState>("saved");
@@ -115,15 +119,23 @@ export function BrandWorkspace({
     }
   }
 
-  async function openOverview() {
-    await run("Auditcontext bewaren", async () => {
-      const saved = await saveBrandConclusionAction(tenantId, conclusionPayload(wb));
-      if (!saved.ok) return saved;
-      const doc = await saveAuditContextAction(tenantId, { versionId: version.id });
-      if (!doc.ok || !doc.data) return doc.ok ? { ok: false, error: "Geen contextbestand." } : doc;
-      setContext(doc.data);
-      return { ok: true };
-    });
+  async function goToContext() {
+    if (locked) {
+      router.push(`/klanten/${tenantId}/strategie/${CONTEXT_ROUTE}`);
+      return;
+    }
+    setBusy("Conclusie bewaren");
+    setError("");
+    setSave("saving");
+    const saved = await saveBrandConclusionAction(tenantId, conclusionPayload(wb));
+    setBusy("");
+    if (!saved.ok) {
+      setError(saved.error || "De conclusie is niet bewaard.");
+      setSave("error");
+      return;
+    }
+    setSave("saved");
+    router.push(`/klanten/${tenantId}/strategie/${CONTEXT_ROUTE}`);
   }
 
   async function finalizeOverview() {
@@ -264,7 +276,7 @@ export function BrandWorkspace({
             }}
             onPriority={(priority) => void run("Prioriteit bewaren", () => saveBrandPriorityAction(tenantId, priorityPayload(version.id, priority)))}
             onArchivePriority={(id) => void run("Prioriteit verwijderen", () => archiveBrandPriorityAction(tenantId, { id }))}
-            onOverview={() => void openOverview()}
+            onOverview={() => void goToContext()}
             onExport={() => void run("Tekst klaarzetten", async () => {
               const exported = await exportBrandTextAction(tenantId, { versionId: version.id });
               if (!exported.ok || !exported.data) return exported.ok ? { ok: false, error: "Geen tekst" } : exported;
@@ -277,11 +289,11 @@ export function BrandWorkspace({
         ) : null}
         {step === "overview" ? (
           <OverviewStep
+            tenantId={tenantId}
             context={context}
             checks={checks}
             locked={locked}
             published={Boolean(version.published_at)}
-            onRefresh={() => void openOverview()}
             onFinalize={() => void finalizeOverview()}
             onPublish={() => void run("Publiceren", () => publishBrandAction(tenantId, { versionId: version.id }))}
             onReopen={() => void reopen()}
@@ -835,40 +847,37 @@ function ConclusionStep(props: {
           <Button type="button" variant="secondary" onClick={props.onPrint}>Exporteer via print</Button>
           {props.locked ? <Button type="button" variant="secondary" onClick={props.onReopen}>{version.published_at ? "Trek publicatie in en bewerk" : "Hervat bewerken"}</Button> : null}
         </div>
-        <Button type="button" className={goldButtonClass} onClick={props.onOverview}>Bewaar en open overzicht</Button>
+        <Button type="button" className={goldButtonClass} onClick={props.onOverview}>Naar contextbestand →</Button>
       </footer>
     </section>
   );
 }
 
 function OverviewStep(props: {
+  tenantId: string;
   context: AuditContextDocument | null;
   checks: ReturnType<typeof brandChecks>;
   locked: boolean;
   published: boolean;
-  onRefresh: () => void;
   onFinalize: () => void;
   onPublish: () => void;
   onReopen: () => void;
 }) {
   const blocked = approvalBlocked(props.checks);
-  const saved = props.context?.savedAt ? new Date(props.context.savedAt).toLocaleString("nl-NL") : "";
+  const saved = props.context?.savedAt ? new Date(props.context.savedAt).toLocaleString("nl-BE") : "";
   return (
     <section className="space-y-5">
       <p className="max-w-prose text-sm text-vice-text-muted">
-        Dit is het markdownbestand met alles wat in de strategische audit is opgeslagen. Latere toepassingen lezen dit bestand als context van het bedrijf. Kijk het na en rond daarna af.
+        Het markdownbestand staat op stap 11. Sla het daar op. Brand en latere functies lezen dat bestand als context.
       </p>
       <p className="text-xs text-vice-text-muted">
-        {props.context ? `${props.context.status === "final" ? "Afgerond" : "Concept"}${saved ? ` · bewaard ${saved}` : ""}` : "Nog geen bestand."}
+        {props.context ? `${props.context.status === "final" ? "Afgerond" : "Concept"}${saved ? ` · bewaard ${saved}` : ""}` : "Nog geen bestand op stap 11."}
       </p>
-      {props.context ? (
-        <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap rounded-xl border border-vice-border bg-vice-surface p-4 font-sans text-sm text-vice-text">{props.context.markdown}</pre>
-      ) : (
-        <p className="rounded-lg border border-vice-border px-4 py-3 text-sm">{props.locked ? "Er is nog geen bestand. Hervat bewerken om het alsnog te bewaren." : "Bewaar de audit om het bestand te maken."}</p>
-      )}
+      <Button type="button" asChild className={goldButtonClass}>
+        <Link href={`/klanten/${props.tenantId}/strategie/${CONTEXT_ROUTE}`}>Naar contextbestand →</Link>
+      </Button>
       <footer className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          {!props.locked ? <Button type="button" variant="secondary" onClick={props.onRefresh}>Werk het bestand bij</Button> : null}
           {props.locked ? <Button type="button" variant="secondary" onClick={props.onReopen}>{props.published ? "Trek publicatie in en bewerk" : "Hervat bewerken"}</Button> : null}
         </div>
         {!props.locked ? (

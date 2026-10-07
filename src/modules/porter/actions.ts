@@ -43,6 +43,7 @@ export type AuditFrameworkProgress = {
   personaStarted: boolean;
   brandApproved: boolean;
   brandStarted: boolean;
+  contextSaved: boolean;
 };
 
 export async function getAuditFrameworkProgressAction(
@@ -94,8 +95,18 @@ export async function getAuditFrameworkProgressAction(
       personaStarted: Boolean(raw?.persona_started),
       brandApproved: Boolean(raw?.brand_approved),
       brandStarted: Boolean(raw?.brand_started),
+      contextSaved: await contextFileSaved(supabase, tenantId),
     },
   };
+}
+
+async function contextFileSaved(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string,
+): Promise<boolean> {
+  const context = await supabase.schema("app").rpc("get_audit_context", { p_tenant_id: tenantId });
+  if (context.error || !context.data || typeof context.data !== "object") return false;
+  return Boolean((context.data as { markdown?: string }).markdown);
 }
 
 export async function loadPorterWorkbenchAction(

@@ -16,7 +16,7 @@ export const BRAND_STEP_QUESTIONS: Record<BrandStep, string> = {
   website: "Je website, bekeken door je klant",
   image: "Wat leeft er werkelijk in de markt?",
   conclusion: "Dit is je vertrekpunt als merk",
-  overview: "De opgeslagen context van deze audit",
+  overview: "Rond de brand audit af",
 };
 
 export const BRAND_MODELS = ["keller", "aaker"] as const;

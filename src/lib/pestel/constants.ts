@@ -1,5 +1,5 @@
 export const PESTEL_FRAMEWORK_INDEX = 1;
-export const AUDIT_FRAMEWORK_COUNT = 10;
+export const AUDIT_FRAMEWORK_COUNT = 11;
 
 export const PESTEL_DIMENSIONS = [
   "political",
