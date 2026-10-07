@@ -8,7 +8,7 @@ import { sanitizeSvg } from "@/lib/brand-profile/svg";
 import { BRAND_PROFILE_MIGRATION, type BrandProfileEmpty, type BrandProfilePublished, type BrandProfileView, type BrandProfileWorkbench, type SourceDocument } from "@/lib/brand-profile/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { ensureStoredAuditContextAction } from "@/modules/audit/context-actions";
+import { ensureStoredAuditContextAction, storePastedAuditMarkdownAction } from "@/modules/audit/context-actions";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -54,6 +54,12 @@ export async function loadBrandProfileAction(tenantId: string): Promise<ActionRe
   const again = await readProfile(supabase, tenantId);
   if (!again.ok || !again.data) return again.ok ? { ok: false, error: "Merkprofiel laden mislukt" } : again;
   return { ok: true, data: await signProfile(again.data) };
+}
+
+export async function importPastedBrandMarkdownAction(tenantId: string, markdown: string): Promise<ActionResult> {
+  const stored = await storePastedAuditMarkdownAction(tenantId, markdown);
+  if (!stored.ok || !stored.data) return stored.ok ? { ok: false, error: "De geplakte tekst is niet bewaard." } : stored;
+  return startBrandProfileAction(tenantId, stored.data.id);
 }
 
 export async function startBrandProfileAction(tenantId: string, documentId?: string): Promise<ActionResult> {

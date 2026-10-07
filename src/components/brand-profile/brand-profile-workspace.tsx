@@ -22,13 +22,14 @@ import {
   type BrandVersion,
   type ColorRole,
 } from "@/lib/brand-profile/types";
-import { goldButtonClass } from "@/components/stp/stp-ui";
+import { fieldClass, goldButtonClass } from "@/components/stp/stp-ui";
 import {
   approveBrandProfileAction,
   archiveBrandItemAction,
   compareBrandSourceAction,
   forkBrandProfileAction,
   loadBrandSourceAction,
+  importPastedBrandMarkdownAction,
   publishBrandProfileAction,
   resolveBrandReviewAction,
   saveBrandColorAction,
@@ -50,6 +51,8 @@ export function BrandProfileWorkspace({ tenantId, data }: { tenantId: string; da
   const [editing, setEditing] = useState(false);
   const [sourceText, setSourceText] = useState<string | null>(null);
   const [copied, setCopied] = useState("");
+  const [manual, setManual] = useState(false);
+  const [markdown, setMarkdown] = useState("");
 
   async function run(task: () => Promise<{ ok: boolean; error?: string }>) {
     setBusy(true);
@@ -87,9 +90,34 @@ export function BrandProfileWorkspace({ tenantId, data }: { tenantId: string; da
         ) : (
           <p className="mt-6 text-sm text-vice-text-muted">Er is nog geen contextbestand van deze audit. Er wordt niets buiten VICE opgezocht.</p>
         )}
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Button type="button" className={goldButtonClass} disabled={busy} onClick={() => run(() => startBrandProfileAction(tenantId))}>Manueel beginnen</Button>
-        </div>
+        {manual ? (
+          <form
+            className="mt-6 max-w-3xl space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(() => importPastedBrandMarkdownAction(tenantId, markdown));
+            }}
+          >
+            <label className="block text-sm" htmlFor="brand-markdown">
+              Plak hier de markdown van de strategische audit.
+              <textarea
+                id="brand-markdown"
+                className={`${fieldClass} mt-2 min-h-64 font-mono`}
+                value={markdown}
+                onChange={(event) => setMarkdown(event.target.value)}
+                placeholder="# Strategische audit — …"
+              />
+            </label>
+            <div className="flex flex-wrap gap-3">
+              <Button type="submit" className={goldButtonClass} disabled={busy || markdown.trim().length < 40}>Gebruik deze tekst</Button>
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => setManual(false)}>Annuleren</Button>
+            </div>
+          </form>
+        ) : (
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button type="button" className={goldButtonClass} disabled={busy} onClick={() => { setError(""); setManual(true); }}>Manueel beginnen</Button>
+          </div>
+        )}
         {error && <p className="mt-4 text-sm text-red-700 dark:text-red-300">{error}</p>}
       </Shell>
     );

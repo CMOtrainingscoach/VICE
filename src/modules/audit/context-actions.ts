@@ -168,6 +168,68 @@ export async function ensureStoredAuditContextAction(tenantId: string): Promise<
   return { ok: false, error: stored.error.message };
 }
 
+export async function storePastedAuditMarkdownAction(tenantId: string, markdown: string): Promise<ActionResult<{ id: string }>> {
+  const text = markdown.trim();
+  if (text.length < 40) return { ok: false, error: "Plak de markdown van de audit." };
+  if (text.length > 500_000) return { ok: false, error: "Deze tekst is te lang." };
+  const supabase = await client();
+  const pasted = await supabase.schema("app").rpc("store_pasted_audit_markdown", {
+    p_tenant_id: tenantId,
+    p_markdown: text,
+  });
+  if (!pasted.error && pasted.data) return { ok: true, data: { id: String(pasted.data) } };
+  if (pasted.error && !/store_pasted_audit_markdown|schema cache|does not exist|Could not find the function/i.test(pasted.error.message)) {
+    return { ok: false, error: pasted.error.message };
+  }
+
+  const brand = await loadBrandWorkbenchAction(tenantId);
+  if (!brand.ok || !brand.data) return { ok: false, error: brand.ok ? "Geen brand audit om de tekst aan te koppelen." : brand.error };
+  const before = await supabase.schema("app").rpc("get_brand_profile", { p_tenant_id: tenantId });
+  const existingId = documentIdForVersion(before.data, brand.data.version.id);
+  if (existingId) {
+    const current = await supabase.schema("app").rpc("get_brand_profile_document", { p_document_id: existingId });
+    const stored = current.data && typeof current.data === "object" ? String((current.data as { markdown?: string }).markdown ?? "") : "";
+    if (stored.trim() === text) return { ok: true, data: { id: existingId } };
+    return { ok: false, error: "Er is al een auditbestand. Pas migratie 20260330134100 toe in de Supabase SQL-editor, na 20260330134000, om een geplakte tekst apart te bewaren." };
+  }
+  if (brand.data.version.status !== "approved") {
+    const saved = await supabase.schema("app").rpc("save_audit_context", {
+      p_version_id: brand.data.version.id,
+      p_markdown: text,
+    });
+    if (saved.error) return { ok: false, error: migrationError(saved.error.message) };
+  } else {
+    const stored = await supabase.schema("app").rpc("store_audit_context_if_missing", {
+      p_version_id: brand.data.version.id,
+      p_markdown: text,
+    });
+    if (stored.error) {
+      return {
+        ok: false,
+        error: /store_audit_context_if_missing|schema cache|does not exist|Could not find the function/i.test(stored.error.message)
+          ? "Pas migratie 20260330134100 toe in de Supabase SQL-editor, na 20260330134000."
+          : stored.error.message,
+      };
+    }
+  }
+  const after = await supabase.schema("app").rpc("get_brand_profile", { p_tenant_id: tenantId });
+  const id = documentIdForVersion(after.data, brand.data.version.id);
+  if (!id) return { ok: false, error: "De geplakte tekst is niet teruggevonden." };
+  return { ok: true, data: { id } };
+}
+
+function documentIdForVersion(data: unknown, versionId: string): string | null {
+  if (!data || typeof data !== "object" || !("documents" in data)) return null;
+  const documents = (data as { documents?: unknown }).documents;
+  if (!Array.isArray(documents)) return null;
+  const match = documents.find((item) => {
+    if (!item || typeof item !== "object") return false;
+    return String((item as { brandVersionId?: string }).brandVersionId) === versionId;
+  });
+  if (!match || typeof match !== "object" || !("id" in match)) return null;
+  return String((match as { id: unknown }).id);
+}
+
 function hasOtherFramework(presence: Presence | null, progress: { pestel_approved?: boolean; porter_approved?: boolean; five_c_approved?: boolean; swot_approved?: boolean; vrio_approved?: boolean; bcg_approved?: boolean; value_chain_started?: boolean; stp_started?: boolean; persona_started?: boolean }): boolean {
   return Boolean(
     presence?.pestel || presence?.porter || presence?.five_c || presence?.swot || presence?.vrio || presence?.bcg || presence?.value_chain || presence?.stp || presence?.persona
