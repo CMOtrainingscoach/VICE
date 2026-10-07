@@ -75,3 +75,57 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+.prose-vice {
+  color: var(--vice-text);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.prose-vice h1 {
+  margin: 0 0 1rem;
+  font-family: var(--font-vice-display), var(--font-vice-sans), system-ui, sans-serif;
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.prose-vice h2 {
+  margin: 1.75rem 0 0.75rem;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.prose-vice h3 {
+  margin: 1.35rem 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.prose-vice p {
+  margin: 0 0 1rem;
+}
+
+.prose-vice ul,
+.prose-vice ol {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
+.prose-vice li {
+  margin: 0.25rem 0;
+}
+
+.prose-vice a {
+  color: var(--vice-gold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-vice strong {
+  font-weight: 650;
+}

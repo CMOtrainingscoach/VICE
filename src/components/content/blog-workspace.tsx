@@ -62,11 +62,12 @@ export function BlogWorkspace({
       setLanguage(initial.language);
       setLengthKey(initial.lengthKey);
       setSourceText(initial.sourceText);
-      setTitle(initial.title);
-      setBodyHtml(initial.bodyHtml);
+      const documentHtml = ensureDocumentHtml(initial.title, initial.bodyHtml);
+      setTitle(initial.title || extractTitleClient(documentHtml));
+      setBodyHtml(documentHtml);
       setForceEditor(Boolean(initial.title || initial.bodyHtml));
-      if (editorRef.current && editorRef.current.innerHTML !== initial.bodyHtml) {
-        editorRef.current.innerHTML = initial.bodyHtml || "<p></p>";
+      if (editorRef.current && editorRef.current.innerHTML !== documentHtml) {
+        editorRef.current.innerHTML = documentHtml;
       }
     } else {
       setForceEditor(false);
@@ -81,7 +82,7 @@ export function BlogWorkspace({
       setSaveState("saving");
       const html = editorRef.current?.innerHTML ?? bodyHtml;
       void saveBlogConceptAction(current.id, current.updatedAt, {
-        title,
+        title: extractTitleClient(html) || title,
         bodyHtml: html,
         mode,
         language,
@@ -151,11 +152,12 @@ export function BlogWorkspace({
         setError(generated.ok ? "Genereren mislukt" : generated.error);
         return;
       }
+      const documentHtml = ensureDocumentHtml(generated.data.title, generated.data.bodyHtml);
       setConcept(generated.data);
       setTitle(generated.data.title);
-      setBodyHtml(generated.data.bodyHtml);
+      setBodyHtml(documentHtml);
       setForceEditor(true);
-      if (editorRef.current) editorRef.current.innerHTML = generated.data.bodyHtml || "<p></p>";
+      if (editorRef.current) editorRef.current.innerHTML = documentHtml;
       dirtyRef.current = false;
       setSaveState("saved");
       router.refresh();
@@ -170,11 +172,12 @@ export function BlogWorkspace({
     try {
       const current = await ensureConcept();
       if (!current) return;
+      const documentHtml = ensureDocumentHtml(current.title || "Titel", current.bodyHtml || "<p></p>");
       setForceEditor(true);
-      setTitle(current.title || "");
-      setBodyHtml(current.bodyHtml || "<p></p>");
+      setTitle(extractTitleClient(documentHtml));
+      setBodyHtml(documentHtml);
       requestAnimationFrame(() => {
-        if (editorRef.current) editorRef.current.innerHTML = current.bodyHtml || "<p></p>";
+        if (editorRef.current) editorRef.current.innerHTML = documentHtml;
       });
       setSaveState("saved");
     } finally {
@@ -188,7 +191,7 @@ export function BlogWorkspace({
     setError("");
     const html = editorRef.current?.innerHTML ?? bodyHtml;
     const saved = await saveBlogConceptAction(concept.id, concept.updatedAt, {
-      title,
+      title: extractTitleClient(html) || title,
       bodyHtml: html,
       mode,
       language,
@@ -201,7 +204,9 @@ export function BlogWorkspace({
       return;
     }
     setConcept(saved.data);
+    setTitle(saved.data.title);
     setBodyHtml(saved.data.bodyHtml);
+    if (editorRef.current) editorRef.current.innerHTML = saved.data.bodyHtml;
     dirtyRef.current = false;
     setSaveState("saved");
   }
@@ -238,10 +243,11 @@ export function BlogWorkspace({
       setError(applied.ok ? "Voorstel toepassen mislukt" : applied.error);
       return;
     }
+    const documentHtml = ensureDocumentHtml(applied.data.title, applied.data.bodyHtml);
     setConcept(applied.data);
     setTitle(applied.data.title);
-    setBodyHtml(applied.data.bodyHtml);
-    if (editorRef.current) editorRef.current.innerHTML = applied.data.bodyHtml;
+    setBodyHtml(documentHtml);
+    if (editorRef.current) editorRef.current.innerHTML = documentHtml;
     dirtyRef.current = false;
     setProposal(null);
     setSaveState("saved");
@@ -268,8 +274,18 @@ export function BlogWorkspace({
   }
 
   async function copyText() {
-    const plain = [title, htmlToPlainClient(editorRef.current?.innerHTML ?? bodyHtml)].filter(Boolean).join("\n\n");
-    await navigator.clipboard.writeText(plain);
+    const html = editorRef.current?.innerHTML ?? bodyHtml;
+    const plain = htmlToPlainClient(html);
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+        }),
+      ]);
+    } catch {
+      await navigator.clipboard.writeText(plain);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -388,24 +404,16 @@ export function BlogWorkspace({
         <div className="mt-8 grid gap-6 lg:grid-cols-[1.35fr_1fr]">
           <section className="rounded-2xl border border-vice-border bg-vice-surface p-4 md:p-6">
             <EditorToolbar editorRef={editorRef} />
-            <Input
-              className="mt-4 border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
-              value={title}
-              onChange={(event) => {
-                setTitle(event.target.value);
-                dirtyRef.current = true;
-                setSaveState("idle");
-              }}
-              placeholder="Titel"
-            />
             <div
               ref={editorRef}
-              className="prose-vice mt-3 min-h-80 rounded-md border border-transparent px-1 py-2 text-sm leading-7 outline-none focus:border-vice-border"
+              className="prose-vice mt-4 min-h-80 rounded-md border border-transparent px-1 py-2 outline-none focus:border-vice-border"
               contentEditable
               suppressContentEditableWarning
               onInput={() => {
                 dirtyRef.current = true;
-                setBodyHtml(editorRef.current?.innerHTML ?? "");
+                const html = editorRef.current?.innerHTML ?? "";
+                setBodyHtml(html);
+                setTitle(extractTitleClient(html) || title);
                 setSaveState("idle");
               }}
             />
@@ -439,8 +447,7 @@ export function BlogWorkspace({
             {proposal ? (
               <div className="mt-4 rounded-xl border border-vice-gold/40 bg-vice-gold/5 p-4">
                 <p className="text-sm font-medium">AI-voorstel</p>
-                <p className="mt-2 text-base font-semibold">{proposal.title}</p>
-                <div className="mt-2 max-h-64 overflow-auto text-sm" dangerouslySetInnerHTML={{ __html: proposal.bodyHtml }} />
+                <div className="prose-vice mt-2 max-h-64 overflow-auto" dangerouslySetInnerHTML={{ __html: proposal.bodyHtml }} />
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button type="button" disabled={busy !== ""} onClick={() => void acceptProposal()}>Voorstel gebruiken</Button>
                   <Button type="button" variant="secondary" onClick={() => setProposal(null)}>Huidige tekst behouden</Button>
@@ -643,8 +650,10 @@ function EditorToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElemen
   }
   return (
     <div className="flex flex-wrap gap-1 border-b border-vice-border pb-3">
+      <ToolButton onClick={() => command("formatBlock", "h1")}>H1</ToolButton>
       <ToolButton onClick={() => command("formatBlock", "h2")}>H2</ToolButton>
       <ToolButton onClick={() => command("formatBlock", "h3")}>H3</ToolButton>
+      <ToolButton onClick={() => command("formatBlock", "p")}>Tekst</ToolButton>
       <ToolButton onClick={() => command("bold")}><strong>B</strong></ToolButton>
       <ToolButton onClick={() => command("italic")}><em>I</em></ToolButton>
       <ToolButton onClick={() => command("insertUnorderedList")}>• Lijst</ToolButton>
@@ -696,6 +705,22 @@ function htmlToPlainClient(html: string): string {
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .trim();
+}
+
+function extractTitleClient(html: string): string {
+  const match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  return match ? htmlToPlainClient(match[1]) : "";
+}
+
+function ensureDocumentHtml(title: string, bodyHtml: string): string {
+  const html = bodyHtml?.trim() || "";
+  if (/<h1[\s>]/i.test(html)) return html;
+  const safe = title
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  return `<h1>${safe || "Titel"}</h1>${html || "<p></p>"}`;
 }
 
 const fieldClass = "w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm";

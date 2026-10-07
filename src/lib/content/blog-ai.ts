@@ -30,7 +30,7 @@ function systemRules(voice: string, language: string): string {
         ].join(" ")
       : "Write in natural English.",
     "Doel: de tekst moet klinken alsof een ervaren menselijke copywriter hem schreef. Geen AI-achtige toon.",
-    "Hoofdletters: alleen aan het begin van een zin en bij eigennamen. Geen Title Case in tussenkoppen of losse woorden. Geen ALL CAPS.",
+    "Hoofdletters: alleen aan het begin van een zin en volgens de gewone spellingsregels (eigennamen, afkortingen zoals AI of CEO, enz.). Geen Title Case. Dit geldt voor de titel, tussenkoppen én body. Voorbeeld: 'Meer richting in je marketing' — niet 'Meer Richting In Je Marketing'. Geen ALL CAPS.",
     "Schrijf in volzinnen. Wissel zinslengte af. Vermijd opsommingen van abstracte buzzwoorden zonder uitleg.",
     "Vermijd typische AI-constructies, onder meer:",
     "- 'geen X, maar Y' / 'niet X, maar Y' / 'niet alleen X, ook Y' als vaste truc",
@@ -42,9 +42,14 @@ function systemRules(voice: string, language: string): string {
     "Tone of voice bepaalt hoe de tekst klinkt, niet welke feiten waar zijn.",
     "Verzin geen statistieken, onderzoeken, cases, testimonials, certificeringen, prijzen of resultaten.",
     "Als feiten ontbreken: formuleer zonder de claim of stel geen interne opmerkingen in de artikeltekst.",
+    "Structuur van bodyHtml is verplicht:",
+    "- Exact één <h1> met de artikeltitel (zelfde tekst als JSON-veld title).",
+    "- Daarna een inleiding in <p>.",
+    "- Logische secties met <h2>, en <h3> alleen waar een echte subsectie helpt.",
+    "- Lopende tekst in <p>. Opsommingen met <ul>/<ol>/<li> alleen als dat de leesbaarheid écht verbetert.",
+    "- Benadruk spaarzaam met <strong> en <em>. Links alleen met <a href>.",
     "Geen scripts, geen inline event handlers, geen externe scripts in HTML.",
-    "Antwoord als JSON met keys: title (string), bodyHtml (string met alleen <p>, <h2>, <h3>, <ul>, <ol>, <li>, <strong>, <em>, <a href>).",
-    "Gebruik geen <h1> in bodyHtml. De titel staat apart.",
+    "Antwoord als JSON met keys: title (string), bodyHtml (string met alleen <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <a href>).",
     voice ? `Tone of voice van de klant:\n${voice}` : "",
   ].filter(Boolean).join("\n\n");
 }
@@ -78,10 +83,12 @@ export async function generateBlogText(input: {
     userParts.push(`Brontekst:\n${input.sourceText}`);
   } else {
     userParts.push("Modus: nieuw artikel.");
-    userParts.push("Genereer titel, inleiding, logische tussenkoppen, body en passend slot.");
+    userParts.push("Genereer een volledig artikel met <h1>, inleiding, <h2>/<h3>-secties, bodyparagrafen en passend slot.");
+    userParts.push("Titel en tussenkoppen in zinsvorm: alleen de eerste letter van de zin/kop hoofdletter, verder geen Title Case.");
     userParts.push("Alleen een CTA wanneer die past en onderbouwd is vanuit de invoer.");
     userParts.push(`Onderwerp:\n${input.sourceText}`);
   }
+  userParts.push("Zet altijd H1, H2 (en H3 waar nuttig) en paragraaftekst in bodyHtml — geen platte tekst zonder koppen.");
   userParts.push(`Lengte: ${LENGTH_HINT[input.lengthKey]}`);
   if (input.positioning) userParts.push(`Positionering (geen bewijs, alleen context):\n${input.positioning}`);
 
@@ -103,7 +110,7 @@ export async function generateBlogText(input: {
     bodyHtml: sanitizeBlogHtml(String(json.bodyHtml ?? json.body_html ?? json.body ?? "")),
   });
   if (!parsed.success) throw new Error("De AI-output was ongeldig. Probeer opnieuw.");
-  return parsed.data;
+  return normalizeBlogDocument(parsed.data.title, parsed.data.bodyHtml);
 }
 
 export async function generateBlogImage(input: {
@@ -178,6 +185,35 @@ export function sanitizeBlogHtml(html: string): string {
     .replace(/\son\w+='[^']*'/gi, "")
     .replace(/javascript:/gi, "")
     .replace(/<\/?(?:html|body|head|iframe|object|embed|form|input|button)[^>]*>/gi, "");
+}
+
+export function escapeHtmlText(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function extractBlogTitle(html: string): string {
+  const match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  return match ? htmlToPlain(match[1]) : "";
+}
+
+export function stripBlogH1(html: string): string {
+  return html.replace(/<h1[\s\S]*?<\/h1>/gi, "").trim();
+}
+
+/** Zorgt dat het blogbericht precies één H1 heeft, gevolgd door body met H2/H3/p. */
+export function normalizeBlogDocument(title: string, bodyHtml: string): BlogAiResult {
+  const sanitized = sanitizeBlogHtml(bodyHtml);
+  const fromH1 = extractBlogTitle(sanitized);
+  const resolvedTitle = (title.trim() || fromH1 || "Naamloos artikel").trim();
+  const rest = stripBlogH1(sanitized) || "<p></p>";
+  return {
+    title: resolvedTitle,
+    bodyHtml: sanitizeBlogHtml(`<h1>${escapeHtmlText(resolvedTitle)}</h1>${rest}`),
+  };
 }
 
 export function htmlToPlain(html: string): string {

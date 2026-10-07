@@ -7,7 +7,7 @@ import {
   generateBlogImage,
   generateBlogText,
   htmlToPlain,
-  sanitizeBlogHtml,
+  normalizeBlogDocument,
 } from "@/lib/content/blog-ai";
 import {
   BLOG_MIGRATION,
@@ -157,9 +157,16 @@ export async function saveBlogConceptAction(
 ): Promise<ActionResult<BlogConcept>> {
   const supabase = await authed();
   if (typeof patch.bodyHtml === "string") {
-    const html = sanitizeBlogHtml(patch.bodyHtml);
-    const plain = htmlToPlain(html);
-    patch = { ...patch, bodyHtml: html, bodyPlain: plain, wordCount: countWords(plain) };
+    const titleHint = typeof patch.title === "string" ? patch.title : "";
+    const normalized = normalizeBlogDocument(titleHint, patch.bodyHtml);
+    const plain = htmlToPlain(normalized.bodyHtml);
+    patch = {
+      ...patch,
+      title: normalized.title,
+      bodyHtml: normalized.bodyHtml,
+      bodyPlain: plain,
+      wordCount: countWords(plain),
+    };
   }
   const saved = await supabase.schema("app").rpc("save_blog_concept", {
     p_concept_id: conceptId,
@@ -206,13 +213,14 @@ export async function generateBlogTextAction(conceptId: string): Promise<ActionR
       lengthKey: concept.lengthKey,
       voice: concept.brandVoiceSnapshot,
     });
-    const plain = htmlToPlain(generated.bodyHtml);
+    const document = normalizeBlogDocument(generated.title, generated.bodyHtml);
+    const plain = htmlToPlain(document.bodyHtml);
     const saved = await supabase.schema("app").rpc("save_blog_concept", {
       p_concept_id: conceptId,
       p_expected: null,
       p_patch: {
-        title: generated.title,
-        bodyHtml: generated.bodyHtml,
+        title: document.title,
+        bodyHtml: document.bodyHtml,
         bodyPlain: plain,
         wordCount: countWords(plain),
         textJobStatus: "ready",
@@ -223,8 +231,8 @@ export async function generateBlogTextAction(conceptId: string): Promise<ActionR
     await supabase.schema("app").rpc("add_blog_revision", {
       p_concept_id: conceptId,
       p_kind: "generate",
-      p_title: generated.title,
-      p_body_html: generated.bodyHtml,
+      p_title: document.title,
+      p_body_html: document.bodyHtml,
       p_body_plain: plain,
       p_instruction: "",
     });
@@ -266,10 +274,11 @@ export async function rewriteBlogTextAction(
       currentTitle: concept.title,
       currentBodyHtml: concept.bodyHtml,
     });
+    const document = normalizeBlogDocument(generated.title, generated.bodyHtml);
     return {
       ok: true,
       data: {
-        proposal: { title: generated.title, bodyHtml: generated.bodyHtml },
+        proposal: { title: document.title, bodyHtml: document.bodyHtml },
         concept,
       },
     };
@@ -285,15 +294,15 @@ export async function applyBlogRewriteAction(
   bodyHtml: string,
   instruction: string,
 ): Promise<ActionResult<BlogConcept>> {
-  const html = sanitizeBlogHtml(bodyHtml);
-  const plain = htmlToPlain(html);
+  const document = normalizeBlogDocument(title, bodyHtml);
+  const plain = htmlToPlain(document.bodyHtml);
   const supabase = await authed();
   const saved = await supabase.schema("app").rpc("save_blog_concept", {
     p_concept_id: conceptId,
     p_expected: expectedUpdatedAt,
     p_patch: {
-      title,
-      bodyHtml: html,
+      title: document.title,
+      bodyHtml: document.bodyHtml,
       bodyPlain: plain,
       wordCount: countWords(plain),
       textJobStatus: "ready",
@@ -304,8 +313,8 @@ export async function applyBlogRewriteAction(
   await supabase.schema("app").rpc("add_blog_revision", {
     p_concept_id: conceptId,
     p_kind: "rewrite",
-    p_title: title,
-    p_body_html: html,
+    p_title: document.title,
+    p_body_html: document.bodyHtml,
     p_body_plain: plain,
     p_instruction: instruction,
   });
@@ -426,6 +435,9 @@ async function mapConcept(raw: unknown): Promise<BlogConcept | null> {
     (Array.isArray(row.visuals) ? row.visuals : []).map((item) => mapVisual(item)),
   );
   const selected = row.selectedVisual ? await mapVisual(row.selectedVisual) : null;
+  const rawTitle = String(row.title ?? "");
+  const rawBody = String(row.bodyHtml ?? "");
+  const document = rawBody || rawTitle ? normalizeBlogDocument(rawTitle, rawBody || "<p></p>") : { title: "", bodyHtml: "" };
   return {
     id: String(row.id),
     tenantId: String(row.tenantId ?? ""),
@@ -433,8 +445,8 @@ async function mapConcept(raw: unknown): Promise<BlogConcept | null> {
     language: String(row.language ?? "nl"),
     lengthKey: row.lengthKey === "short" || row.lengthKey === "long" ? row.lengthKey : "medium",
     sourceText: String(row.sourceText ?? ""),
-    title: String(row.title ?? ""),
-    bodyHtml: String(row.bodyHtml ?? ""),
+    title: document.title || rawTitle,
+    bodyHtml: document.bodyHtml || rawBody,
     bodyPlain: String(row.bodyPlain ?? ""),
     wordCount: Number(row.wordCount) || 0,
     brandId: row.brandId ? String(row.brandId) : null,
