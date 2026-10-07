@@ -131,6 +131,10 @@ export function AppShell({
     (pathname === `/klanten/${tenantIdFromPath}/strategie/brand` ||
       pathname.startsWith(`/klanten/${tenantIdFromPath}/strategie/brand/`));
   const strategieActive = pathname.includes("/strategie") && !brandActive;
+  const contentActive =
+    Boolean(tenantIdFromPath) &&
+    (pathname === `/klanten/${tenantIdFromPath}/content` ||
+      pathname.startsWith(`/klanten/${tenantIdFromPath}/content/`));
 
   const initials = userLabel
     .split(/\s+/)
@@ -190,6 +194,13 @@ export function AppShell({
                 indent
               />
               <NavLink
+                href="#"
+                label="Documenten"
+                active={false}
+                indent
+                disabled
+              />
+              <NavLink
                 href={`/klanten/${activeClient.tenantId}/strategie`}
                 label="Strategische audit"
                 active={strategieActive}
@@ -202,11 +213,10 @@ export function AppShell({
                 nested
               />
               <NavLink
-                href="#"
-                label="Documenten"
-                active={false}
+                href={`/klanten/${activeClient.tenantId}/content`}
+                label="Content"
+                active={contentActive}
                 indent
-                disabled
               />
             </div>
           )}
