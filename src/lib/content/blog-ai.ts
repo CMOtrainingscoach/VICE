@@ -17,9 +17,27 @@ const LENGTH_HINT: Record<BlogLength, string> = {
 };
 
 function systemRules(voice: string, language: string): string {
+  const isDutch = language !== "en";
   return [
     "Je schrijft blogs voor VICE, een strategisch platform.",
-    `Schrijf in het ${language === "en" ? "Engels" : "Nederlands"}.`,
+    isDutch
+      ? [
+          "Schrijf in het Nederlands met Belgische spelling en woordenschat.",
+          "Volg de officiële Nederlandse spelling zoals in België gebruikelijk (Woordenlijst).",
+          "Kies Belgische formuleringen waar die natuurlijk zijn (bijv. bankkaart i.p.v. pinpas, gsm waar dat past).",
+          "Vermijd typisch Nederlandse (NL) spreektaal of Holland-centrische voorbeelden tenzij de klant dat vraagt.",
+          "Aanspreekvorm (je/jij of u) volgt de tone of voice van de klant.",
+        ].join(" ")
+      : "Write in natural English.",
+    "Doel: de tekst moet klinken alsof een ervaren menselijke copywriter hem schreef. Geen AI-achtige toon.",
+    "Hoofdletters: alleen aan het begin van een zin en bij eigennamen. Geen Title Case in tussenkoppen of losse woorden. Geen ALL CAPS.",
+    "Schrijf in volzinnen. Wissel zinslengte af. Vermijd opsommingen van abstracte buzzwoorden zonder uitleg.",
+    "Vermijd typische AI-constructies, onder meer:",
+    "- 'geen X, maar Y' / 'niet X, maar Y' / 'niet alleen X, ook Y' als vaste truc",
+    "- 'In een wereld waarin…', 'Laten we eens kijken…', 'Het is geen geheim dat…'",
+    "- 'Hier is waarom…', 'Kort samengevat:', 'Belangrijk om te onthouden:'",
+    "- overdreven antithesen, rijtjes van drie, en sloganeske parallelle zinnen",
+    "- overbodige metaforen, opgeblazen beloftes en generieke motivational language",
     "Gebruik uitsluitend de tone of voice van de klant.",
     "Tone of voice bepaalt hoe de tekst klinkt, niet welke feiten waar zijn.",
     "Verzin geen statistieken, onderzoeken, cases, testimonials, certificeringen, prijzen of resultaten.",
