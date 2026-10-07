@@ -77,11 +77,30 @@ export async function startBrandProfileAction(tenantId: string, documentId?: str
       const imported = await importDocument(supabase, tenantId, String(forked.data), null, documentId);
       if (!imported.ok) return imported;
     } else {
-      const imported = await importDocument(supabase, tenantId, versionId, profile.access === "edit" ? profile.version?.updatedAt ?? null : null, documentId);
+      const imported = await importDocument(supabase, tenantId, versionId, null, documentId);
       if (!imported.ok) return imported;
     }
   }
   revalidatePath(`/klanten/${tenantId}/brand`);
+  return { ok: true };
+}
+
+export async function discardAuditContextDocumentAction(tenantId: string, documentId: string): Promise<ActionResult> {
+  const supabase = await authed();
+  const removed = await supabase.schema("app").rpc("discard_audit_context_document", {
+    p_tenant_id: tenantId,
+    p_document_id: documentId,
+  });
+  if (removed.error) {
+    return {
+      ok: false,
+      error: /discard_audit_context_document|schema cache|does not exist|Could not find the function/i.test(removed.error.message)
+        ? "Pas migratie 20260330134300 toe in de Supabase SQL-editor, na 20260330134200."
+        : removed.error.message,
+    };
+  }
+  revalidatePath(`/klanten/${tenantId}/brand`);
+  revalidatePath(`/klanten/${tenantId}/strategie/context`);
   return { ok: true };
 }
 

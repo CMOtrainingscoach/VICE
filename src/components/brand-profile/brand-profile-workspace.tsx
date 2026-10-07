@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +29,7 @@ import {
   approveBrandProfileAction,
   archiveBrandItemAction,
   compareBrandSourceAction,
+  discardAuditContextDocumentAction,
   forkBrandProfileAction,
   loadBrandSourceAction,
   publishBrandProfileAction,
@@ -52,16 +54,46 @@ export function BrandProfileWorkspace({ tenantId, data }: { tenantId: string; da
   const [sourceText, setSourceText] = useState<string | null>(null);
   const [copied, setCopied] = useState("");
 
+  const [status, setStatus] = useState("");
+
   async function run(task: () => Promise<{ ok: boolean; error?: string }>) {
     setBusy(true);
     setError("");
     setMessage("");
-    const result = await task();
-    setBusy(false);
-    if (!result.ok) setError(result.error ?? "Mislukt");
-    else {
-      setMessage("Opgeslagen");
+    setStatus("");
+    try {
+      const result = await task();
+      if (!result?.ok) setError(result?.error || "Mislukt");
+      else {
+        setMessage("Opgeslagen");
+        router.refresh();
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Mislukt");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openConcept(documentId: string) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    setStatus("Concept openen…");
+    let opened = false;
+    try {
+      const result = await startBrandProfileAction(tenantId, documentId);
+      if (!result?.ok) {
+        setError(result?.error || "Dit concept kon niet geopend worden.");
+        return;
+      }
+      opened = true;
       router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Dit concept kon niet geopend worden.");
+    } finally {
+      setBusy(false);
+      if (!opened) setStatus("");
     }
   }
 
@@ -80,9 +112,14 @@ export function BrandProfileWorkspace({ tenantId, data }: { tenantId: string; da
           <div className="mt-8 space-y-3">
             <p className="text-sm">Meerdere auditdocumenten komen in aanmerking. Kies er één. Die koppeling blijft bewaard.</p>
             {data.documents.map((document) => (
-              <button key={document.id} type="button" className="block w-full rounded-xl border border-vice-border px-4 py-3 text-left text-sm hover:border-vice-gold" disabled={busy} onClick={() => run(() => startBrandProfileAction(tenantId, document.id))}>
-                {document.status === "final" ? "Goedgekeurde audit" : "Conceptaudit"} · {new Date(document.savedAt).toLocaleString("nl-BE")}
-              </button>
+              <div key={document.id} className="flex items-stretch gap-2">
+                <button type="button" className="min-w-0 flex-1 rounded-xl border border-vice-border px-4 py-3 text-left text-sm hover:border-vice-gold disabled:opacity-50" disabled={busy} onClick={() => void openConcept(document.id)}>
+                  {document.status === "final" ? "Goedgekeurde audit" : "Conceptaudit"} · {new Date(document.savedAt).toLocaleString("nl-BE")}
+                </button>
+                <button type="button" className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-vice-border text-vice-text-muted hover:bg-vice-surface-muted hover:text-red-700 disabled:opacity-50 dark:hover:text-red-300" disabled={busy} aria-label="Verwijder dit concept" title="Verwijder dit concept" onClick={() => void run(() => discardAuditContextDocumentAction(tenantId, document.id))}>
+                  <Trash2 className="size-4" aria-hidden />
+                </button>
+              </div>
             ))}
           </div>
         ) : (
@@ -94,7 +131,8 @@ export function BrandProfileWorkspace({ tenantId, data }: { tenantId: string; da
           </Button>
           <Button type="button" variant="secondary" disabled={busy} onClick={() => run(() => startBrandProfileAction(tenantId))}>Manueel beginnen</Button>
         </div>
-        {error && <p className="mt-4 text-sm text-red-700 dark:text-red-300">{error}</p>}
+        {status ? <p className="mt-4 text-sm text-vice-text-muted">{status}</p> : null}
+        {error && <p className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300" role="alert">{error}</p>}
       </Shell>
     );
   }
