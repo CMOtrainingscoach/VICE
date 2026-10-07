@@ -2,19 +2,9 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { TenantForm } from "@/components/clients/tenant-form";
 import { TenantAdminPanel } from "@/components/clients/tenant-admin-panel";
-import { BrandPublishedView } from "@/components/brand/brand-published";
-import { BcgPublishedView } from "@/components/bcg/bcg-published";
-import { PersonaPublishedView } from "@/components/persona/persona-published";
-import { StpPublishedView } from "@/components/stp/stp-published";
 import { EmptyState } from "@/components/ui/empty-state";
-import type { BrandPublished } from "@/lib/brand/types";
-import type { BcgPublished } from "@/lib/bcg/types";
-import type { PersonaPublished } from "@/lib/persona/types";
-import type { StpPublished } from "@/lib/stp/types";
 import { getUserAppContext } from "@/lib/auth/context";
 import { createClient } from "@/lib/supabase/server";
-import { loadBrandPublishedAction } from "@/modules/brand/actions";
-import { loadPersonaPublishedAction } from "@/modules/persona/actions";
 import { TENANT_STATUS_LABELS, type TenantRow } from "@/lib/types/tenant";
 
 export default async function TenantDetailPage({
@@ -38,24 +28,6 @@ export default async function TenantDetailPage({
 
   const tenant = data as TenantRow;
   const isAdmin = ctx.isPlatformAdmin;
-  let publishedBcg: BcgPublished | null = null;
-  let publishedStp: StpPublished | null = null;
-  let publishedPersonas: PersonaPublished | null = null;
-  let publishedBrand: BrandPublished | null = null;
-  if (!isAdmin) {
-    const published = await supabase.schema("app").rpc("get_bcg_published", { p_tenant_id: tenantId });
-    if (!published.error && published.data && typeof published.data === "object" && (published.data as BcgPublished).published) {
-      publishedBcg = published.data as BcgPublished;
-    }
-    const stp = await supabase.schema("app").rpc("get_stp_published", { p_tenant_id: tenantId });
-    if (!stp.error && stp.data && typeof stp.data === "object" && (stp.data as StpPublished).published) {
-      publishedStp = stp.data as StpPublished;
-    }
-    const personas = await loadPersonaPublishedAction(tenantId);
-    if (personas?.published) publishedPersonas = personas;
-    const brand = await loadBrandPublishedAction(tenantId);
-    if (brand?.published) publishedBrand = brand;
-  }
 
   return (
     <div className="p-8">
@@ -76,7 +48,7 @@ export default async function TenantDetailPage({
           <h1 className="text-3xl font-semibold text-vice-text">{tenant.name}</h1>
           <p className="mt-2 text-sm text-vice-text-muted">
             {isAdmin
-              ? "Je strategie krijgt vorm — intake en audit volgen in fase 2–3."
+              ? "Klantgegevens en meetings."
               : "Welkom in je klantomgeving."}
           </p>
           <p className="mt-1 text-xs text-vice-text-muted">
@@ -103,7 +75,7 @@ export default async function TenantDetailPage({
               Verzamel bronnen of nodig de klant uit
             </h2>
             <p className="mt-2 max-w-prose text-sm text-vice-text-muted">
-              Start met een compacte meeting-opname; transcriptie en audit volgen later.
+              Start met een compacte meeting-opname. Transcriptie volgt daarna.
             </p>
           </section>
           <div className="grid gap-8 lg:grid-cols-2">
@@ -116,13 +88,9 @@ export default async function TenantDetailPage({
         </>
       ) : (
         <>
-          {publishedBcg ? <BcgPublishedView data={publishedBcg} /> : null}
-          {publishedStp ? <StpPublishedView data={publishedStp} /> : null}
-          {publishedPersonas ? <PersonaPublishedView data={publishedPersonas} /> : null}
-          {publishedBrand ? <BrandPublishedView data={publishedBrand} /> : null}
           <EmptyState
-            title="Strategisch dashboard"
-            description="Na afronding van de audit en vrijgave door Hardwig zie je hier je goedgekeurde strategie. Een gepubliceerde BCG-matrix, een ICP, de persona’s met hun klantreis en de brand audit verschijnen hierboven."
+            title="Welkom"
+            description="Dit is je klantomgeving."
           />
         </>
       )}

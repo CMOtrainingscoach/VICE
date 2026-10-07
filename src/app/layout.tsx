@@ -16,7 +16,7 @@ const interDisplay = Inter({
 
 export const metadata: Metadata = {
   title: "VICE",
-  description: "Klant- en strategieplatform van Hardwig Aerts",
+  description: "Klantplatform van Hardwig Aerts",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

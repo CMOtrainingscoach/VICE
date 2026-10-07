@@ -66,7 +66,7 @@ export default async function KlantenListPage({
           description={
             q
               ? "Pas je zoekterm aan of maak een nieuwe klant aan."
-              : "Start met een klantprofiel en auditdoel."
+              : "Start met een klantprofiel."
           }
           action={
             !q ? (

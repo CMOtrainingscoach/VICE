@@ -78,11 +78,6 @@ function NavLink({
   );
 }
 
-function brandActive(pathname: string, tenantId: string): boolean {
-  const base = `/klanten/${tenantId}/brand`;
-  return pathname === base || pathname.startsWith(`${base}/`);
-}
-
 export function AppShell({
   children,
   userLabel,
@@ -127,7 +122,6 @@ export function AppShell({
         ? workspaceTenant
         : null);
   const meetingsActive = pathname.includes("/meetings");
-  const strategieActive = pathname.includes("/strategie");
 
   const initials = userLabel
     .split(/\s+/)
@@ -193,18 +187,6 @@ export function AppShell({
                 indent
                 disabled
               />
-              <NavLink
-                href={`/klanten/${activeClient.tenantId}/strategie/pestel`}
-                label="Strategische audit"
-                active={strategieActive}
-                indent
-              />
-              <NavLink
-                href={`/klanten/${activeClient.tenantId}/brand`}
-                label="Brand"
-                active={brandActive(pathname, activeClient.tenantId)}
-                indent
-              />
             </div>
           )}
 
@@ -217,11 +199,6 @@ export function AppShell({
                 href={`/klanten/${clientNav.tenantId}`}
                 label="Overzicht"
                 active={pathname === `/klanten/${clientNav.tenantId}`}
-              />
-              <NavLink
-                href={`/klanten/${clientNav.tenantId}/brand`}
-                label="Brand"
-                active={brandActive(pathname, clientNav.tenantId)}
               />
             </div>
           )}

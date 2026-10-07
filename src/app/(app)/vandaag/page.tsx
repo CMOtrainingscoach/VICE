@@ -12,7 +12,7 @@ export default async function VandaagPage() {
       <div className="p-8">
         <EmptyState
           title="Welkom"
-          description="Je klantomgeving opent via het menu. Strategische modules volgen in latere fases."
+          description="Je klantomgeving opent via het menu."
         />
       </div>
     );
@@ -45,7 +45,7 @@ export default async function VandaagPage() {
       {rows.length === 0 ? (
         <EmptyState
           title="Nog geen klanten"
-          description="Voeg je eerste klant toe om intake en audit later te starten."
+          description="Voeg je eerste klant toe."
           action={
             <Button asChild>
               <Link href="/klanten/nieuw">Eerste klant aanmaken</Link>
