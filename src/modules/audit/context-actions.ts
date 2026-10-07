@@ -121,6 +121,9 @@ export async function saveContextFileAction(tenantId: string, markdown: string):
       data: { markdown: text, savedAt: row?.saved_at ?? new Date().toISOString(), status: row?.status === "final" ? "final" : "draft" },
     };
   }
+  if (/audit_context_documents_brand_version_id_key|duplicate key/i.test(saved.error.message)) {
+    return { ok: false, error: "Pas migratie 20260330134400 toe in de Supabase SQL-editor, na 20260330134300. Daarna kun je het bestand opnieuw opslaan." };
+  }
   if (!/save_strategy_context|schema cache|does not exist|Could not find the function/i.test(saved.error.message)) {
     return { ok: false, error: saved.error.message };
   }
