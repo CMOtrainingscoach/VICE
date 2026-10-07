@@ -46,3 +46,16 @@ export function porterResearchMaxOutputTokens(): number {
   const n = raw ? Number.parseInt(raw, 10) : 4096;
   return Number.isFinite(n) && n > 256 ? Math.min(n, 16_384) : 4096;
 }
+
+export function resolveBlogTextModel(): string {
+  return (
+    process.env.VICE_BLOG_MODEL?.trim()
+    || process.env.VICE_CONTENT_MODEL?.trim()
+    || process.env.VICE_ANALYSIS_MODEL?.trim()
+    || "gpt-4o"
+  );
+}
+
+export function resolveBlogImageModel(): string {
+  return process.env.VICE_BLOG_IMAGE_MODEL?.trim() || "gpt-image-1";
+}

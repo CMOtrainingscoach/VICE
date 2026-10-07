@@ -14,6 +14,7 @@ export default async function ContentTypePage({
 }) {
   const { tenantId, type } = await params;
   if (!ALLOWED.has(type as ContentTypeId)) notFound();
+  if (type === "blog") redirect(`/klanten/${tenantId}/content/blog`);
 
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
