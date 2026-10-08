@@ -7,6 +7,7 @@ import {
   generateBlogImage,
   generateBlogText,
   htmlToPlain,
+  hydrateInlineVisualUrls,
   normalizeBlogDocument,
 } from "@/lib/content/blog-ai";
 import {
@@ -461,6 +462,10 @@ async function mapConcept(raw: unknown): Promise<BlogConcept | null> {
   const rawTitle = String(row.title ?? "");
   const rawBody = String(row.bodyHtml ?? "");
   const document = rawBody || rawTitle ? normalizeBlogDocument(rawTitle, rawBody || "<p></p>") : { title: "", bodyHtml: "" };
+  const mappedVisuals = visuals.filter((item): item is BlogVisual => Boolean(item));
+  const hydratedBody = document.bodyHtml
+    ? hydrateInlineVisualUrls(document.bodyHtml, mappedVisuals)
+    : rawBody;
   return {
     id: String(row.id),
     tenantId: String(row.tenantId ?? ""),
@@ -469,7 +474,7 @@ async function mapConcept(raw: unknown): Promise<BlogConcept | null> {
     lengthKey: row.lengthKey === "short" || row.lengthKey === "long" ? row.lengthKey : "medium",
     sourceText: String(row.sourceText ?? ""),
     title: document.title || rawTitle,
-    bodyHtml: document.bodyHtml || rawBody,
+    bodyHtml: hydratedBody,
     bodyPlain: String(row.bodyPlain ?? ""),
     wordCount: Number(row.wordCount) || 0,
     brandId: row.brandId ? String(row.brandId) : null,
@@ -480,7 +485,7 @@ async function mapConcept(raw: unknown): Promise<BlogConcept | null> {
       : {}) as BlogConcept["brandVisualSnapshot"],
     selectedVisualId: row.selectedVisualId ? String(row.selectedVisualId) : null,
     selectedVisual: selected,
-    visuals: visuals.filter((item): item is BlogVisual => Boolean(item)),
+    visuals: mappedVisuals,
     textJobStatus: asJob(row.textJobStatus),
     textJobError: String(row.textJobError ?? ""),
     imageJobStatus: asJob(row.imageJobStatus),

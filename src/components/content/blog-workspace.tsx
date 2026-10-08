@@ -55,8 +55,57 @@ export function BlogWorkspace({
   const [deletingId, setDeletingId] = useState("");
   const editorRef = useRef<HTMLDivElement>(null);
   const dirtyRef = useRef(false);
+  const savedRangeRef = useRef<Range | null>(null);
   const conceptRef = useRef(concept);
   conceptRef.current = concept;
+
+  function rememberEditorSelection() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !editorRef.current) return;
+    const range = selection.getRangeAt(0);
+    if (editorRef.current.contains(range.commonAncestorContainer)) {
+      savedRangeRef.current = range.cloneRange();
+    }
+  }
+
+  function insertHtmlAtCursor(html: string) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const selection = window.getSelection();
+    if (savedRangeRef.current && selection) {
+      selection.removeAllRanges();
+      selection.addRange(savedRangeRef.current);
+    }
+    const inserted = document.execCommand("insertHTML", false, html);
+    if (!inserted) {
+      editor.insertAdjacentHTML("beforeend", html);
+    }
+    dirtyRef.current = true;
+    const next = editor.innerHTML;
+    setBodyHtml(next);
+    setTitle(extractTitleClient(next) || title);
+    setSaveState("idle");
+    rememberEditorSelection();
+  }
+
+  function insertMoreBreak() {
+    insertHtmlAtCursor(BLOG_MORE_BREAK_HTML);
+  }
+
+  function insertVisualInArticle(visual: { id: string; url: string | null; altText: string }) {
+    if (!visual.url) {
+      setError("Dit beeld heeft geen downloadbare URL. Genereer opnieuw of herlaad de pagina.");
+      return;
+    }
+    insertHtmlAtCursor(
+      buildInlineVisualHtmlClient({
+        visualId: visual.id,
+        url: visual.url,
+        altText: visual.altText,
+      }),
+    );
+  }
 
   useEffect(() => {
     setConceptList(concepts);
@@ -281,7 +330,8 @@ export function BlogWorkspace({
   }
 
   async function copyText() {
-    const html = editorRef.current?.innerHTML ?? bodyHtml;
+    const rawHtml = editorRef.current?.innerHTML ?? bodyHtml;
+    const html = toBlogExportHtmlClient(rawHtml);
     const plain = htmlToPlainClient(html);
     try {
       await navigator.clipboard.write([
@@ -433,18 +483,25 @@ export function BlogWorkspace({
       ) : (
         <div className="mt-8 grid gap-6 lg:grid-cols-[1.35fr_1fr]">
           <section className="rounded-2xl border border-vice-border bg-vice-surface p-4 md:p-6">
-            <EditorToolbar editorRef={editorRef} />
+            <EditorToolbar
+              editorRef={editorRef}
+              onInsertMore={() => insertMoreBreak()}
+            />
             <div
               ref={editorRef}
               className="prose-vice mt-4 min-h-80 rounded-md border border-transparent px-1 py-2 outline-none focus:border-vice-border"
               contentEditable
               suppressContentEditableWarning
+              onMouseUp={rememberEditorSelection}
+              onKeyUp={rememberEditorSelection}
+              onBlur={rememberEditorSelection}
               onInput={() => {
                 dirtyRef.current = true;
                 const html = editorRef.current?.innerHTML ?? "";
                 setBodyHtml(html);
                 setTitle(extractTitleClient(html) || title);
                 setSaveState("idle");
+                rememberEditorSelection();
               }}
             />
             <p className="mt-3 text-xs text-vice-text-muted">{concept?.wordCount ?? 0} woorden</p>
@@ -499,6 +556,7 @@ export function BlogWorkspace({
               });
             }}
             onAlt={(visualId, alt) => void updateBlogVisualAltAction(visualId, alt)}
+            onInsert={(visual) => insertVisualInArticle(visual)}
           />
         </div>
       )}
@@ -604,6 +662,7 @@ function VisualCard({
   onTweak,
   onSelect,
   onAlt,
+  onInsert,
   disabledReason,
 }: {
   brand: BrandContext;
@@ -614,6 +673,7 @@ function VisualCard({
   onTweak?: () => void;
   onSelect?: (id: string) => void;
   onAlt?: (id: string, alt: string) => void;
+  onInsert?: (visual: { id: string; url: string | null; altText: string }) => void;
   disabledReason?: string;
 }) {
   const selected = concept?.selectedVisual;
@@ -638,6 +698,15 @@ function VisualCard({
             </Button>
             <Button type="button" variant="secondary" disabled={!canGenerate || busy} onClick={onTweak}>
               Pas beeld aan
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!onInsert || !selected.url}
+              title="Plaats de cursor in het artikel, klik daarna hier"
+              onClick={() => onInsert?.(selected)}
+            >
+              In artikel invoegen
             </Button>
             <a className="inline-flex h-10 items-center rounded-md border border-vice-border px-4 text-sm" href={selected.url} download>
               Download
@@ -701,7 +770,13 @@ function VisualCard({
   );
 }
 
-function EditorToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElement | null> }) {
+function EditorToolbar({
+  editorRef,
+  onInsertMore,
+}: {
+  editorRef: React.RefObject<HTMLDivElement | null>;
+  onInsertMore: () => void;
+}) {
   function command(cmd: string, value?: string) {
     editorRef.current?.focus();
     document.execCommand(cmd, false, value);
@@ -719,15 +794,27 @@ function EditorToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElemen
         const href = window.prompt("Link-URL");
         if (href) command("createLink", href);
       }}>Link</ToolButton>
+      <ToolButton
+        onClick={onInsertMore}
+        title="Korte versie / meer lezen (WordPress & Blogger <!--more-->)"
+      >
+        Meer…
+      </ToolButton>
       <ToolButton onClick={() => command("undo")}>Undo</ToolButton>
       <ToolButton onClick={() => command("redo")}>Redo</ToolButton>
     </div>
   );
 }
 
-function ToolButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+function ToolButton({ children, onClick, title }: { children: ReactNode; onClick: () => void; title?: string }) {
   return (
-    <button type="button" className="rounded-md border border-vice-border px-2 py-1 text-xs text-vice-text-muted hover:text-vice-text" onClick={onClick}>
+    <button
+      type="button"
+      title={title}
+      className="rounded-md border border-vice-border px-2 py-1 text-xs text-vice-text-muted hover:text-vice-text"
+      onClick={onClick}
+      onMouseDown={(event) => event.preventDefault()}
+    >
       {children}
     </button>
   );
@@ -754,8 +841,34 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+const BLOG_MORE_BREAK_HTML =
+  '<div class="blog-more-break" data-blog-more="true" contenteditable="false"><span>Meer lezen — korte versie stopt hier</span></div>';
+
+function escapeHtmlClient(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildInlineVisualHtmlClient(input: { visualId: string; url: string; altText: string }): string {
+  const alt = escapeHtmlClient(input.altText || "Blogvisual");
+  const id = escapeHtmlClient(input.visualId);
+  const src = escapeHtmlClient(input.url);
+  return `<figure class="blog-inline-visual" data-visual-id="${id}" contenteditable="false"><img data-visual-id="${id}" src="${src}" alt="${alt}" /></figure><p></p>`;
+}
+
+function toBlogExportHtmlClient(html: string): string {
+  return html
+    .replace(/<div[^>]*data-blog-more(?:="[^"]*")?[^>]*>[\s\S]*?<\/div>/gi, "<!--more-->")
+    .replace(/<hr[^>]*data-blog-more(?:="[^"]*")?[^>]*\/?>/gi, "<!--more-->");
+}
+
 function htmlToPlainClient(html: string): string {
   return html
+    .replace(/<div[^>]*data-blog-more(?:="[^"]*")?[^>]*>[\s\S]*?<\/div>/gi, "\n\n<!--more-->\n\n")
+    .replace(/<!--more-->/gi, "\n\n<!--more-->\n\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n\n")
     .replace(/<\/h[1-6]>/gi, "\n\n")

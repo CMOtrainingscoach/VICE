@@ -191,6 +191,9 @@ export async function generateBlogImage(input: {
   throw new Error("De beeldprovider gaf geen bruikbaar resultaat.");
 }
 
+export const BLOG_MORE_BREAK_HTML =
+  '<div class="blog-more-break" data-blog-more="true" contenteditable="false"><span>Meer lezen — korte versie stopt hier</span></div>';
+
 export function sanitizeBlogHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
@@ -198,6 +201,45 @@ export function sanitizeBlogHtml(html: string): string {
     .replace(/\son\w+='[^']*'/gi, "")
     .replace(/javascript:/gi, "")
     .replace(/<\/?(?:html|body|head|iframe|object|embed|form|input|button)[^>]*>/gi, "");
+}
+
+/** Zet de editor-markering om naar WordPress/Blogger <!--more--> voor export/kopiëren. */
+export function toBlogExportHtml(html: string): string {
+  return sanitizeBlogHtml(html)
+    .replace(/<div[^>]*data-blog-more(?:="[^"]*")?[^>]*>[\s\S]*?<\/div>/gi, "<!--more-->")
+    .replace(/<hr[^>]*data-blog-more(?:="[^"]*")?[^>]*\/?>/gi, "<!--more-->");
+}
+
+export function buildInlineVisualHtml(input: {
+  visualId: string;
+  url: string;
+  altText: string;
+}): string {
+  const alt = escapeHtmlText(input.altText || "Blogvisual");
+  const id = escapeHtmlText(input.visualId);
+  const src = escapeHtmlText(input.url);
+  return `<figure class="blog-inline-visual" data-visual-id="${id}" contenteditable="false"><img data-visual-id="${id}" src="${src}" alt="${alt}" /></figure><p></p>`;
+}
+
+export function hydrateInlineVisualUrls(
+  html: string,
+  visuals: { id: string; url: string | null; altText: string }[],
+): string {
+  const byId = new Map(visuals.map((visual) => [visual.id, visual]));
+  return html.replace(
+    /<figure([^>]*data-visual-id=["']([^"']+)["'][^>]*)>[\s\S]*?<\/figure>/gi,
+    (_full, _attrs: string, id: string) => {
+      const visual = byId.get(id);
+      if (!visual?.url) {
+        return `<figure class="blog-inline-visual" data-visual-id="${escapeHtmlText(id)}" contenteditable="false"><span class="blog-inline-visual-missing">Beeld niet beschikbaar</span></figure>`;
+      }
+      return buildInlineVisualHtml({
+        visualId: id,
+        url: visual.url,
+        altText: visual.altText,
+      }).replace(/<p><\/p>$/, "");
+    },
+  );
 }
 
 export function escapeHtmlText(text: string): string {

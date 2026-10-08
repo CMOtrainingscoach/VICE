@@ -129,3 +129,47 @@ body {
 .prose-vice strong {
   font-weight: 650;
 }
+
+.prose-vice .blog-more-break {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+  border: none;
+  color: var(--vice-text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.prose-vice .blog-more-break::before,
+.prose-vice .blog-more-break::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--vice-border);
+}
+
+.prose-vice .blog-inline-visual {
+  margin: 1.25rem 0;
+  padding: 0;
+  border: 0;
+}
+
+.prose-vice .blog-inline-visual img {
+  display: block;
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--vice-border);
+  object-fit: cover;
+}
+
+.prose-vice .blog-inline-visual-missing {
+  display: block;
+  padding: 1rem;
+  border: 1px dashed var(--vice-border);
+  border-radius: 0.75rem;
+  color: var(--vice-text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
