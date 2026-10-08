@@ -155,7 +155,9 @@ export async function saveBlogConceptAction(
   conceptId: string,
   expectedUpdatedAt: string,
   patch: Record<string, unknown>,
+  options?: { quiet?: boolean },
 ): Promise<ActionResult<BlogConcept>> {
+  const quiet = Boolean(options?.quiet);
   const supabase = await authed();
   if (typeof patch.bodyHtml === "string") {
     const titleHint = typeof patch.title === "string" ? patch.title : "";
@@ -177,7 +179,8 @@ export async function saveBlogConceptAction(
   if (saved.error || !saved.data) return { ok: false, error: migration(saved.error?.message ?? "Opslaan mislukt") };
   const mapped = await mapConcept(saved.data);
   if (!mapped) return { ok: false, error: "Opslaan mislukt" };
-  if (patch.bodyHtml != null || patch.title != null) {
+  // Revisies alleen bij expliciete opslag — niet bij elke autosave-keystroke.
+  if (!quiet && (patch.bodyHtml != null || patch.title != null)) {
     await supabase.schema("app").rpc("add_blog_revision", {
       p_concept_id: conceptId,
       p_kind: "manual",
@@ -187,7 +190,7 @@ export async function saveBlogConceptAction(
       p_instruction: "",
     });
   }
-  revalidateBlog(mapped.tenantId, mapped.id);
+  if (!quiet) revalidateBlog(mapped.tenantId, mapped.id);
   return { ok: true, data: mapped };
 }
 

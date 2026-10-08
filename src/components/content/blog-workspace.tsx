@@ -59,7 +59,11 @@ export function BlogWorkspace({
   const dirtyRef = useRef(false);
   const savedRangeRef = useRef<Range | null>(null);
   const conceptRef = useRef(concept);
+  const autosaveTimerRef = useRef<number | null>(null);
+  const savingRef = useRef(false);
   conceptRef.current = concept;
+
+  const AUTOSAVE_IDLE_MS = 5000;
 
   function rememberEditorSelection() {
     const selection = window.getSelection();
@@ -239,31 +243,70 @@ export function BlogWorkspace({
     }
   }, [initial]);
 
+  function scheduleAutosave() {
+    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = window.setTimeout(() => {
+      void runQuietAutosave();
+    }, AUTOSAVE_IDLE_MS);
+  }
+
+  async function runQuietAutosave() {
+    const current = conceptRef.current;
+    if (!current || !dirtyRef.current || savingRef.current || busy !== "") return;
+    savingRef.current = true;
+    setSaveState("saving");
+    const htmlSnapshot = editorRef.current?.innerHTML ?? bodyHtml;
+    const titleSnapshot = extractTitleClient(htmlSnapshot) || title;
+    try {
+      const saved = await saveBlogConceptAction(
+        current.id,
+        current.updatedAt,
+        {
+          title: titleSnapshot,
+          bodyHtml: htmlSnapshot,
+          mode,
+          language,
+          lengthKey,
+          sourceText,
+        },
+        { quiet: true },
+      );
+      if (!saved.ok || !saved.data) {
+        setSaveState("failed");
+        return;
+      }
+      const stillTyping = editorRef.current?.innerHTML !== htmlSnapshot;
+      // Geen editor-HTML overschrijven: alleen metadata bijwerken zodat typen niet onderbroken wordt.
+      setConcept((prev) =>
+        prev && prev.id === saved.data!.id
+          ? {
+              ...prev,
+              updatedAt: saved.data!.updatedAt,
+              wordCount: stillTyping ? prev.wordCount : saved.data!.wordCount,
+              textJobStatus: saved.data!.textJobStatus,
+              textJobError: saved.data!.textJobError,
+            }
+          : saved.data!,
+      );
+      dirtyRef.current = stillTyping;
+      setSaveState(stillTyping ? "idle" : "saved");
+      if (stillTyping) scheduleAutosave();
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     if (!concept || !dirtyRef.current) return;
-    const timer = window.setTimeout(() => {
-      const current = conceptRef.current;
-      if (!current || !dirtyRef.current) return;
-      setSaveState("saving");
-      const html = editorRef.current?.innerHTML ?? bodyHtml;
-      void saveBlogConceptAction(current.id, current.updatedAt, {
-        title: extractTitleClient(html) || title,
-        bodyHtml: html,
-        mode,
-        language,
-        lengthKey,
-        sourceText,
-      }).then((saved) => {
-        if (!saved.ok || !saved.data) {
-          setSaveState("failed");
-          return;
-        }
-        setConcept(saved.data);
-        dirtyRef.current = false;
-        setSaveState("saved");
-      });
-    }, 1200);
-    return () => window.clearTimeout(timer);
+    scheduleAutosave();
+    // Alleen herplannen bij inhoudelijke wijzigingen; blur/save regelt de rest.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scheduleAutosave is stabiel genoeg via refs
   }, [title, bodyHtml, mode, language, lengthKey, sourceText, concept?.id]);
 
   const hasResult = forceEditor || Boolean(concept && (concept.title || concept.bodyHtml));
@@ -498,7 +541,13 @@ export function BlogWorkspace({
               <h1 className="font-display text-4xl tracking-tight text-vice-text">Je blogpost</h1>
               <span className="rounded-full border border-vice-border px-3 py-1 text-xs text-vice-text-muted">Concept</span>
               <span className="text-xs text-vice-text-muted">
-                {saveState === "saving" ? "Opslaan…" : saveState === "saved" ? "Automatisch opgeslagen" : saveState === "failed" ? "Opslaan mislukt" : "Nog niet opgeslagen"}
+                {saveState === "saving"
+                  ? "Opslaan…"
+                  : saveState === "saved"
+                    ? "Opgeslagen"
+                    : saveState === "failed"
+                      ? "Opslaan mislukt"
+                      : "Wordt zo opgeslagen"}
               </span>
             </div>
           </div>
@@ -609,7 +658,10 @@ export function BlogWorkspace({
               suppressContentEditableWarning
               onMouseUp={rememberEditorSelection}
               onKeyUp={rememberEditorSelection}
-              onBlur={rememberEditorSelection}
+              onBlur={() => {
+                rememberEditorSelection();
+                if (dirtyRef.current) void runQuietAutosave();
+              }}
               onClick={(event) => {
                 const target = event.target as HTMLElement | null;
                 if (!target) return;
