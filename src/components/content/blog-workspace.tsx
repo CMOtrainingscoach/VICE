@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Copy, ImageIcon, LoaderCircle, Sparkles } from "lucide-react";
+import { Check, Copy, ImageIcon, LoaderCircle, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,7 @@ import { LENGTH_LABELS, type BlogConcept, type BlogConceptSummary, type BlogLeng
 import {
   applyBlogRewriteAction,
   createBlogConceptAction,
+  deleteBlogConceptAction,
   generateBlogTextAction,
   generateBlogVisualAction,
   rewriteBlogTextAction,
@@ -50,10 +51,16 @@ export function BlogWorkspace({
   const [tweakOpen, setTweakOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [forceEditor, setForceEditor] = useState(Boolean(initial && (initial.title || initial.bodyHtml)));
+  const [conceptList, setConceptList] = useState(concepts);
+  const [deletingId, setDeletingId] = useState("");
   const editorRef = useRef<HTMLDivElement>(null);
   const dirtyRef = useRef(false);
   const conceptRef = useRef(concept);
   conceptRef.current = concept;
+
+  useEffect(() => {
+    setConceptList(concepts);
+  }, [concepts]);
 
   useEffect(() => {
     setConcept(initial);
@@ -290,6 +297,29 @@ export function BlogWorkspace({
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function deleteConcept(itemId: string) {
+    if (!window.confirm("Dit blogconcept permanent verwijderen? Tekst, revisies en visuals gaan mee weg.")) {
+      return;
+    }
+    setDeletingId(itemId);
+    setError("");
+    const result = await deleteBlogConceptAction(itemId);
+    setDeletingId("");
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setConceptList((list) => list.filter((item) => item.id !== itemId));
+    if (concept?.id === itemId) {
+      setConcept(null);
+      setForceEditor(false);
+      setTitle("");
+      setBodyHtml("");
+      router.replace(`/klanten/${tenantId}/content/blog`);
+    }
+    router.refresh();
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
       <p className="text-sm text-vice-text-muted">
@@ -489,18 +519,46 @@ export function BlogWorkspace({
         </div>
       ) : null}
 
-      {concepts.length > 0 ? (
+      {conceptList.length > 0 ? (
         <section className="mt-10">
           <h2 className="text-sm font-medium text-vice-text">Mijn blogconcepten</h2>
           <ul className="mt-3 divide-y divide-vice-border rounded-xl border border-vice-border bg-vice-surface">
-            {concepts.map((item) => (
-              <li key={item.id}>
-                <Link href={`/klanten/${tenantId}/content/blog/${item.id}`} className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-vice-surface-muted/60">
-                  <span>{item.title || item.sourceText || "Naamloos concept"}</span>
-                  <span className="text-xs text-vice-text-muted">
+            {conceptList.map((item) => (
+              <li key={item.id} className="flex items-center gap-2 px-3 py-2 sm:px-4">
+                <Link
+                  href={`/klanten/${tenantId}/content/blog/${item.id}`}
+                  className="min-w-0 flex-1 rounded-md px-1 py-2 text-sm hover:bg-vice-surface-muted/60"
+                >
+                  <span className="block truncate">{item.title || item.sourceText || "Naamloos concept"}</span>
+                  <span className="mt-0.5 block text-xs text-vice-text-muted">
                     {new Date(item.updatedAt).toLocaleString("nl-BE", { timeZone: "Europe/Brussels" })}
                   </span>
                 </Link>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Link
+                    href={`/klanten/${tenantId}/content/blog/${item.id}`}
+                    className="inline-flex size-8 items-center justify-center rounded-md text-vice-text-muted hover:bg-vice-surface-muted hover:text-vice-text"
+                    aria-label="Concept bewerken"
+                    title="Bewerken"
+                  >
+                    <Pencil className="size-4" aria-hidden />
+                  </Link>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="size-8 p-0 text-vice-text-muted hover:bg-vice-surface-muted hover:text-vice-danger"
+                    disabled={deletingId === item.id || busy !== ""}
+                    aria-label="Concept verwijderen"
+                    title="Verwijderen"
+                    onClick={() => void deleteConcept(item.id)}
+                  >
+                    {deletingId === item.id ? (
+                      <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Trash2 className="size-4" aria-hidden />
+                    )}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

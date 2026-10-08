@@ -24,7 +24,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
-const MISSING = /list_blog_concepts|get_blog_concept|create_blog_concept|save_blog_concept|add_blog_|schema cache|does not exist|Could not find the function/i;
+const MISSING = /list_blog_concepts|get_blog_concept|create_blog_concept|save_blog_concept|delete_blog_concept|add_blog_|schema cache|does not exist|Could not find the function/i;
 
 function migration(message: string): string {
   return MISSING.test(message) ? BLOG_MIGRATION : message;
@@ -409,6 +409,29 @@ export async function selectBlogVisualAction(
   visualId: string,
 ): Promise<ActionResult<BlogConcept>> {
   return saveBlogConceptAction(conceptId, expectedUpdatedAt, { selectedVisualId: visualId });
+}
+
+export async function deleteBlogConceptAction(conceptId: string): Promise<ActionResult<{ tenantId: string }>> {
+  const supabase = await authed();
+  const deleted = await supabase.schema("app").rpc("delete_blog_concept", { p_concept_id: conceptId });
+  if (deleted.error || !deleted.data) {
+    return { ok: false, error: migration(deleted.error?.message ?? "Concept verwijderen mislukt") };
+  }
+  const row = deleted.data as { tenantId?: string; storagePaths?: unknown };
+  const tenantId = String(row.tenantId ?? "");
+  const paths = Array.isArray(row.storagePaths)
+    ? row.storagePaths.map(String).filter(Boolean)
+    : [];
+  if (paths.length > 0) {
+    try {
+      const admin = createAdminClient();
+      await admin.storage.from("content-assets").remove(paths);
+    } catch {
+      // DB-rij is weg; orphan storage wordt later opgeruimd.
+    }
+  }
+  if (tenantId) revalidateBlog(tenantId, conceptId);
+  return { ok: true, data: { tenantId } };
 }
 
 export async function updateBlogVisualAltAction(visualId: string, altText: string): Promise<ActionResult> {

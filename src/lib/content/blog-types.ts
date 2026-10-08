@@ -76,7 +76,7 @@ export type BrandContext = {
 };
 
 export const BLOG_MIGRATION =
-  "Pas migratie 20260330134800 toe in de Supabase SQL-editor, na 20260330134700.";
+  "Pas migratie 20260330134800 toe in de Supabase SQL-editor, na 20260330134700. Voor verwijderen: ook 20260330134900.";
 
 export const LENGTH_LABELS: Record<BlogLength, string> = {
   short: "Kort",
