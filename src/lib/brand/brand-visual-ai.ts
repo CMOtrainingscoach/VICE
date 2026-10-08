@@ -1,22 +1,114 @@
 import OpenAI from "openai";
-import { z } from "zod";
 import { emptyVisualStyle, type BrandVisualStyle } from "@/lib/brand/types";
 import { modelSupportsCustomTemperature, resolveBrandVisionModel } from "@/lib/openai/models";
 
-const extractedSchema = z.object({
-  styles: z
-    .array(
-      z.object({
-        name: z.string().min(1),
-        tags: z.array(z.string()).default([]),
-        do: z.string().default(""),
-        avoid: z.string().default(""),
-        stylePrompt: z.string().min(20),
-        imageIndexes: z.array(z.number().int().nonnegative()).default([]),
-      }),
-    )
-    .min(1),
-});
+type CoercedStyle = {
+  name: string;
+  tags: string[];
+  do: string;
+  avoid: string;
+  stylePrompt: string;
+  imageIndexes: number[];
+};
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : value == null ? "" : String(value).trim();
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    if (typeof value === "string" && value.trim()) {
+      return value.split(/[,;|]/).map((part) => part.trim()).filter(Boolean);
+    }
+    return [];
+  }
+  return value.map((item) => asString(item)).filter(Boolean);
+}
+
+function asIndexArray(value: unknown, imageCount: number): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "number" ? item : Number.parseInt(String(item), 10)))
+    .filter((item) => Number.isFinite(item) && item >= 0 && item < imageCount)
+    .map((item) => Math.trunc(item));
+}
+
+function pickStylePrompt(row: Record<string, unknown>): string {
+  return (
+    asString(row.stylePrompt) ||
+    asString(row.style_prompt) ||
+    asString(row.prompt) ||
+    asString(row.visualPrompt) ||
+    asString(row.merkstijl) ||
+    asString(row.description)
+  );
+}
+
+function coerceStyles(raw: unknown, imageCount: number): CoercedStyle[] {
+  const root = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  let list: unknown =
+    root.styles ??
+    root.Styles ??
+    root.beeldstijlen ??
+    root.stijlen ??
+    root.results ??
+    root.data;
+
+  if (!Array.isArray(list)) {
+    if (pickStylePrompt(root) || rowName(root)) {
+      list = [root];
+    } else {
+      list = [];
+    }
+  }
+
+  return (list as unknown[])
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    .map((row, index) => {
+      const tags = asStringArray(row.tags ?? row.Keywords ?? row.keywords);
+      const doText = asString(row.do ?? row.wel ?? row.include);
+      const avoid = asString(row.avoid ?? row.vermijd ?? row.exclude);
+      let stylePrompt = pickStylePrompt(row);
+      if (stylePrompt.length < 40) {
+        stylePrompt = [
+          stylePrompt,
+          doText ? `Do: ${doText}` : "",
+          avoid ? `Avoid: ${avoid}` : "",
+          tags.length ? `Mood: ${tags.join(", ")}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+          .trim();
+      }
+      return {
+        name: asString(row.name ?? row.title ?? row.naam ?? row.label) || `Beeldstijl ${index + 1}`,
+        tags: tags.slice(0, 12),
+        do: doText,
+        avoid,
+        stylePrompt,
+        imageIndexes: asIndexArray(row.imageIndexes ?? row.image_indexes ?? row.images ?? row.indexes, imageCount),
+      };
+    })
+    .filter((style) => style.stylePrompt.length >= 20);
+}
+
+function rowName(row: Record<string, unknown>): string {
+  return asString(row.name ?? row.title ?? row.naam);
+}
+
+function parseJsonLenient(raw: string): unknown {
+  const trimmed = raw.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(trimmed.slice(start, end + 1));
+    }
+    throw new Error("JSON parse failed");
+  }
+}
 
 export async function extractVisualStylesFromImages(input: {
   brandName: string;
@@ -37,58 +129,86 @@ export async function extractVisualStylesFromImages(input: {
         "Doel: haal uitvoerbare beeldstijl(en) voor latere AI-beeldgeneratie.",
         "Als de beelden één coherente stijl delen: geef exact 1 stijl.",
         "Als er duidelijk verschillende stijlen/clusters zijn: maak aparte stijlen (max 4).",
-        "Elke stylePrompt moet een complete Engelse image-prompt-blok zijn (8-16 zinnen) dat camera, licht, sfeer, locatie, materialen, kleur en verboden elementen vastlegt.",
+        "Elke stylePrompt moet een complete Engelse image-prompt-blok zijn (minstens 8 zinnen) over camera, licht, sfeer, locatie, materialen, kleur en verboden elementen.",
         "Gebruik imageIndexes (0-based) om te markeren welke uploads bij welke stijl horen.",
-        "Antwoord als JSON: { styles: [{ name, tags, do, avoid, stylePrompt, imageIndexes }] }.",
-        "Geen generieke stock-look. Geen Miami/tropisch/cyberpunk tenzij de beelden dat tonen.",
+        'Antwoord UITSLUITEND als JSON-object met key "styles": array van { "name", "tags", "do", "avoid", "stylePrompt", "imageIndexes" }.',
+        "Geen markdown, geen uitleg buiten JSON.",
       ].join("\n"),
     },
   ];
 
+  // detail "low" is genoeg voor stijl en voorkomt truncated/ongeldige antwoorden bij grote foto's
   input.images.forEach((image, index) => {
     parts.push({ type: "text", text: `Image index ${index}: ${image.name}` });
     parts.push({
       type: "image_url",
       image_url: {
         url: `data:${image.mime};base64,${Buffer.from(image.bytes).toString("base64")}`,
-        detail: "high",
+        detail: "low",
       },
     });
   });
 
-  const completion = await openai.chat.completions.create({
-    model,
-    ...(modelSupportsCustomTemperature(model) ? { temperature: 0.2 } : {}),
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content:
-          "Je bent een art director die merkbeeldstijlen uit referentiefoto's destilleert tot herbruikbare image-generation prompts.",
-      },
-      { role: "user", content: parts },
-    ],
-  });
+  let raw = "";
+  try {
+    const completion = await openai.chat.completions.create({
+      model,
+      ...(modelSupportsCustomTemperature(model) ? { temperature: 0.2 } : {}),
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "Je bent een art director die merkbeeldstijlen uit referentiefoto's destilleert tot herbruikbare image-generation prompts. Antwoord altijd met geldige JSON.",
+        },
+        { role: "user", content: parts },
+      ],
+    });
+    raw = completion.choices[0]?.message?.content?.trim() ?? "";
+    const refusal = (completion.choices[0]?.message as { refusal?: string } | undefined)?.refusal;
+    if (refusal) throw new Error(`Model weigerde de analyse: ${refusal}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Stijlanalyse mislukt";
+    if (/vision|image|unsupported|modalit/i.test(message)) {
+      throw new Error(
+        `Dit vision-model (${model}) kon de foto niet verwerken. Zet VICE_BRAND_VISION_MODEL op gpt-4o of een vision-capable model.`,
+      );
+    }
+    throw error instanceof Error ? error : new Error(message);
+  }
 
-  const raw = completion.choices[0]?.message?.content;
-  if (!raw) throw new Error("Geen stijlanalyse van het model ontvangen.");
-  const parsed = extractedSchema.safeParse(JSON.parse(raw) as unknown);
-  if (!parsed.success) throw new Error("De stijlanalyse was ongeldig. Probeer opnieuw met duidelijkere beelden.");
+  if (!raw) throw new Error("Geen stijlanalyse van het model ontvangen. Probeer opnieuw.");
 
-  const styles = parsed.data.styles.map((style) =>
+  let json: unknown;
+  try {
+    json = parseJsonLenient(raw);
+  } catch {
+    throw new Error("Het AI-antwoord was geen geldige JSON. Probeer opnieuw.");
+  }
+
+  const coerced = coerceStyles(json, input.images.length);
+  if (coerced.length === 0) {
+    throw new Error(
+      "De stijlanalyse leverde geen bruikbare stijl-prompt op. Probeer opnieuw, of vul de basisstijl handmatig in.",
+    );
+  }
+
+  const styles = coerced.map((style) =>
     emptyVisualStyle({
-      name: style.name.trim(),
+      name: style.name,
       active: true,
-      tags: style.tags.map((tag) => tag.trim()).filter(Boolean).slice(0, 12),
-      do: style.do.trim(),
-      avoid: style.avoid.trim(),
-      stylePrompt: style.stylePrompt.trim(),
+      tags: style.tags,
+      do: style.do,
+      avoid: style.avoid,
+      stylePrompt: style.stylePrompt,
       references: [],
     }),
   );
 
   return {
     styles,
-    assignment: parsed.data.styles.map((style) => style.imageIndexes),
+    assignment: coerced.map((style) =>
+      style.imageIndexes.length > 0 ? style.imageIndexes : input.images.map((_, index) => index),
+    ),
   };
 }
