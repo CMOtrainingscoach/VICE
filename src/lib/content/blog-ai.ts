@@ -30,7 +30,15 @@ function systemRules(voice: string, language: string): string {
         ].join(" ")
       : "Write in natural English.",
     "Doel: de tekst moet klinken alsof een ervaren menselijke copywriter hem schreef. Geen AI-achtige toon.",
-    "Hoofdletters: alleen aan het begin van een zin en volgens de gewone spellingsregels (eigennamen, afkortingen zoals AI of CEO, enz.). Geen Title Case. Dit geldt voor de titel, tussenkoppen én body. Voorbeeld: 'Meer richting in je marketing' — niet 'Meer Richting In Je Marketing'. Geen ALL CAPS.",
+    [
+      "HOOFDLETTERS — harde regel voor title, <h1>, <h2> en <h3>:",
+      "Gebruik zinsvorm (sentence case). Nooit Title Case. Nooit elk woord met een hoofdletter.",
+      "Alleen de eerste letter van de titel/kop mag een hoofdletter zijn, plus eigennamen en vaste afkortingen (AI, CEO, VICE, België).",
+      "Fout (verboden): 'Waarom Strakke Latex Pakjes In Films Een Blikvanger Zijn'",
+      "Goed: 'Waarom strakke latex pakjes in films een blikvanger zijn'",
+      "Fout: 'Meer Richting In Je Marketing' — Goed: 'Meer richting in je marketing'",
+      "Dit geldt absoluut ook voor het JSON-veld title en de <h1>. Geen ALL CAPS.",
+    ].join(" "),
     "Schrijf in volzinnen. Wissel zinslengte af. Vermijd opsommingen van abstracte buzzwoorden zonder uitleg.",
     "Vermijd typische AI-constructies, onder meer:",
     "- 'geen X, maar Y' / 'niet X, maar Y' / 'niet alleen X, ook Y' als vaste truc",
@@ -84,11 +92,16 @@ export async function generateBlogText(input: {
   } else {
     userParts.push("Modus: nieuw artikel.");
     userParts.push("Genereer een volledig artikel met <h1>, inleiding, <h2>/<h3>-secties, bodyparagrafen en passend slot.");
-    userParts.push("Titel en tussenkoppen in zinsvorm: alleen de eerste letter van de zin/kop hoofdletter, verder geen Title Case.");
+    userParts.push(
+      "Titel (<h1>) en tussenkoppen in zinsvorm: NOOIT Title Case. Voorbeeld title: 'Waarom strakke latex pakjes in films een blikvanger zijn'.",
+    );
     userParts.push("Alleen een CTA wanneer die past en onderbouwd is vanuit de invoer.");
     userParts.push(`Onderwerp:\n${input.sourceText}`);
   }
   userParts.push("Zet altijd H1, H2 (en H3 waar nuttig) en paragraaftekst in bodyHtml — geen platte tekst zonder koppen.");
+  userParts.push(
+    "Controleer title en <h1> vóór je antwoordt: als meer dan het eerste woord een hoofdletter heeft (zonder eigennamen), herschrijf naar zinsvorm.",
+  );
   userParts.push(`Lengte: ${LENGTH_HINT[input.lengthKey]}`);
   if (input.positioning) userParts.push(`Positionering (geen bewijs, alleen context):\n${input.positioning}`);
 
@@ -204,12 +217,80 @@ export function stripBlogH1(html: string): string {
   return html.replace(/<h1[\s\S]*?<\/h1>/gi, "").trim();
 }
 
+const HEADING_ACRONYMS = new Set([
+  "ai",
+  "ceo",
+  "cmo",
+  "crm",
+  "seo",
+  "b2b",
+  "b2c",
+  "kmo",
+  "btw",
+  "eu",
+  "vs",
+  "uk",
+  "vice",
+  "hr",
+  "pr",
+  "api",
+  "saas",
+]);
+
+/** Zet Title Case / overmatige hoofdletters om naar zinsvorm (eerste letter + acronyms/eigennamen-heuristiek). */
+export function toSentenceCaseHeading(text: string, locale = "nl-BE"): string {
+  const trimmed = text.trim().replace(/\s+/g, " ");
+  if (!trimmed) return trimmed;
+
+  const words = trimmed.split(" ");
+  const letterWords = words.filter((word) => /[A-Za-zÀ-ÿ]/.test(word));
+  const titleCased = letterWords.filter((word) => {
+    const core = word.replace(/^[^A-Za-zÀ-ÿ]+/, "").replace(/[^A-Za-zÀ-ÿ]+$/, "");
+    return core.length > 1 && /^[A-ZÀ-Ü][a-zà-ü'’-]+$/.test(core);
+  });
+  const looksLikeTitleCase =
+    letterWords.length >= 3 && titleCased.length / letterWords.length >= 0.5;
+
+  if (!looksLikeTitleCase && !/^[A-ZÀ-Ü\s'’-]+$/.test(trimmed)) {
+    // Al zinsvorm of korte kop: laat staan, behalve ALL CAPS
+    if (!/^[A-ZÀ-Ü0-9\s'’.,:;!?-]+$/.test(trimmed) || letterWords.length < 2) {
+      return trimmed;
+    }
+  }
+
+  return words
+    .map((word, index) => {
+      const match = word.match(/^([^A-Za-zÀ-ÿ]*)([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’-]*)([^A-Za-zÀ-ÿ]*)$/);
+      if (!match) return word;
+      const [, prefix, core, suffix] = match;
+      const lower = core.toLocaleLowerCase(locale);
+      if (HEADING_ACRONYMS.has(lower)) {
+        return `${prefix}${lower.toLocaleUpperCase("en-US")}${suffix}`;
+      }
+      if (index === 0) {
+        return `${prefix}${lower.charAt(0).toLocaleUpperCase(locale)}${lower.slice(1)}${suffix}`;
+      }
+      // Behoud bestaande eigennamen die niet Title-Case-achtig in de hele string zaten;
+      // bij Title Case forceren we lowercase.
+      return `${prefix}${lower}${suffix}`;
+    })
+    .join(" ");
+}
+
+function applySentenceCaseToHeadings(html: string): string {
+  return html.replace(/<(h[1-3])(\s[^>]*)?>([\s\S]*?)<\/\1>/gi, (_full, tag: string, attrs: string | undefined, inner: string) => {
+    const plain = htmlToPlain(inner);
+    const fixed = toSentenceCaseHeading(plain);
+    return `<${tag.toLowerCase()}${attrs ?? ""}>${escapeHtmlText(fixed)}</${tag.toLowerCase()}>`;
+  });
+}
+
 /** Zorgt dat het blogbericht precies één H1 heeft, gevolgd door body met H2/H3/p. */
 export function normalizeBlogDocument(title: string, bodyHtml: string): BlogAiResult {
-  const sanitized = sanitizeBlogHtml(bodyHtml);
+  const sanitized = applySentenceCaseToHeadings(sanitizeBlogHtml(bodyHtml));
   const fromH1 = extractBlogTitle(sanitized);
-  const resolvedTitle = (title.trim() || fromH1 || "Naamloos artikel").trim();
-  const rest = stripBlogH1(sanitized) || "<p></p>";
+  const resolvedTitle = toSentenceCaseHeading((title.trim() || fromH1 || "Naamloos artikel").trim());
+  const rest = applySentenceCaseToHeadings(stripBlogH1(sanitized) || "<p></p>");
   return {
     title: resolvedTitle,
     bodyHtml: sanitizeBlogHtml(`<h1>${escapeHtmlText(resolvedTitle)}</h1>${rest}`),
