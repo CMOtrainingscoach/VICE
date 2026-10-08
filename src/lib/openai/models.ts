@@ -55,6 +55,15 @@ export function resolveBlogTextModel(): string {
   );
 }
 
+/** Sommige GPT-5 / reasoning-modellen laten alleen de standaard temperature toe. */
+export function modelSupportsCustomTemperature(model: string): boolean {
+  const id = model.trim().toLowerCase();
+  if (!id) return true;
+  if (id.includes("gpt-5") || id.includes("sol")) return false;
+  if (/^o[0-9]/.test(id)) return false;
+  return true;
+}
+
 export function resolveBlogImageModel(): string {
   return process.env.VICE_BLOG_IMAGE_MODEL?.trim() || "gpt-image-1";
 }

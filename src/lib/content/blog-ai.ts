@@ -1,6 +1,10 @@
 import OpenAI from "openai";
 import { z } from "zod";
-import { resolveBlogImageModel, resolveBlogTextModel } from "@/lib/openai/models";
+import {
+  modelSupportsCustomTemperature,
+  resolveBlogImageModel,
+  resolveBlogTextModel,
+} from "@/lib/openai/models";
 import type { BlogLength, BlogMode } from "@/lib/content/blog-types";
 
 const blogResultSchema = z.object({
@@ -107,7 +111,7 @@ export async function generateBlogText(input: {
 
   const completion = await openai.chat.completions.create({
     model,
-    temperature: 0.4,
+    ...(modelSupportsCustomTemperature(model) ? { temperature: 0.4 } : {}),
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemRules(input.voice, input.language) },
