@@ -51,8 +51,7 @@ export function resolveBlogTextModel(): string {
   return (
     process.env.VICE_BLOG_MODEL?.trim()
     || process.env.VICE_CONTENT_MODEL?.trim()
-    || process.env.VICE_ANALYSIS_MODEL?.trim()
-    || "gpt-4o"
+    || "gpt-5.6-sol"
   );
 }
 

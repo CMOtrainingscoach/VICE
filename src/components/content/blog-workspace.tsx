@@ -12,6 +12,7 @@ import {
   applyBlogRewriteAction,
   createBlogConceptAction,
   deleteBlogConceptAction,
+  deleteBlogVisualAction,
   generateBlogTextAction,
   generateBlogVisualAction,
   rewriteBlogTextAction,
@@ -164,6 +165,29 @@ export function BlogWorkspace({
 
   function cancelVisualPlacement() {
     setPendingVisual(null);
+  }
+
+  async function deleteVisual(visualId: string) {
+    if (!window.confirm("Deze gegenereerde afbeelding permanent verwijderen?")) return;
+    setBusy("delete-visual");
+    setError("");
+    const result = await deleteBlogVisualAction(visualId);
+    setBusy("");
+    if (!result.ok || !result.data) {
+      setError(result.ok ? "Visual verwijderen mislukt" : result.error);
+      return;
+    }
+    setConcept(result.data);
+    if (pendingVisual?.id === visualId) setPendingVisual(null);
+    const documentHtml = ensureDocumentHtml(result.data.title, result.data.bodyHtml);
+    setTitle(result.data.title);
+    setBodyHtml(documentHtml);
+    if (forceEditor || Boolean(result.data.title || result.data.bodyHtml)) {
+      setEditorHtml(documentHtml);
+    }
+    dirtyRef.current = false;
+    setSaveState("saved");
+    router.refresh();
   }
 
   function placeVisualAtPoint(clientX: number, clientY: number) {
@@ -700,8 +724,10 @@ export function BlogWorkspace({
             }}
             onAlt={(visualId, alt) => void updateBlogVisualAltAction(visualId, alt)}
             onInsert={(visual) => beginVisualPlacement(visual)}
+            onDeleteVisual={(visualId) => void deleteVisual(visualId)}
             placing={Boolean(pendingVisual)}
             onCancelPlace={cancelVisualPlacement}
+            deletingVisual={busy === "delete-visual"}
           />
         </div>
       )}
@@ -808,8 +834,10 @@ function VisualCard({
   onSelect,
   onAlt,
   onInsert,
+  onDeleteVisual,
   placing,
   onCancelPlace,
+  deletingVisual,
   disabledReason,
 }: {
   brand: BrandContext;
@@ -821,8 +849,10 @@ function VisualCard({
   onSelect?: (id: string) => void;
   onAlt?: (id: string, alt: string) => void;
   onInsert?: (visual: { id: string; url: string | null; altText: string }) => void;
+  onDeleteVisual?: (visualId: string) => void;
   placing?: boolean;
   onCancelPlace?: () => void;
+  deletingVisual?: boolean;
   disabledReason?: string;
 }) {
   const selected = concept?.selectedVisual;
@@ -834,8 +864,23 @@ function VisualCard({
       </div>
       {selected?.url ? (
         <div className="mt-4 space-y-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={selected.url} alt={selected.altText || "Blogvisual"} className="w-full rounded-xl border border-vice-border object-cover" />
+          <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={selected.url} alt={selected.altText || "Blogvisual"} className="w-full rounded-xl border border-vice-border object-cover" />
+            {onDeleteVisual ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="absolute right-2 top-2 size-8 bg-vice-surface/90 p-0 text-vice-text-muted shadow-sm hover:bg-vice-surface hover:text-vice-danger"
+                disabled={busy || deletingVisual}
+                aria-label="Afbeelding verwijderen"
+                title="Verwijderen"
+                onClick={() => onDeleteVisual(selected.id)}
+              >
+                {deletingVisual ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              </Button>
+            ) : null}
+          </div>
           <p className="text-xs text-vice-text-muted">
             Beeldstijl: {selected.styleSummary || "merkbeeldstijl"}
             {selected.brandVersionNumber != null ? ` · Brand v${selected.brandVersionNumber}` : ""}
@@ -850,11 +895,11 @@ function VisualCard({
             </p>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" disabled={!canGenerate || busy} onClick={onGenerate}>
+            <Button type="button" variant="secondary" disabled={!canGenerate || busy || deletingVisual} onClick={onGenerate}>
               {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
               Opnieuw genereren
             </Button>
-            <Button type="button" variant="secondary" disabled={!canGenerate || busy} onClick={onTweak}>
+            <Button type="button" variant="secondary" disabled={!canGenerate || busy || deletingVisual} onClick={onTweak}>
               Pas beeld aan
             </Button>
             {placing ? (
@@ -865,7 +910,7 @@ function VisualCard({
               <Button
                 type="button"
                 variant="secondary"
-                disabled={!onInsert || !selected.url}
+                disabled={!onInsert || !selected.url || deletingVisual}
                 title="Klik daarna in het artikel waar de foto moet staan"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => onInsert?.(selected)}
@@ -876,6 +921,17 @@ function VisualCard({
             <a className="inline-flex h-10 items-center rounded-md border border-vice-border px-4 text-sm" href={selected.url} download>
               Download
             </a>
+            {onDeleteVisual ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-vice-danger hover:bg-vice-surface-muted"
+                disabled={busy || deletingVisual}
+                onClick={() => onDeleteVisual(selected.id)}
+              >
+                <Trash2 className="size-4" /> Verwijderen
+              </Button>
+            ) : null}
           </div>
           <Field label="Alt-tekst">
             <Input
@@ -883,22 +939,42 @@ function VisualCard({
               onBlur={(event) => onAlt?.(selected.id, event.target.value)}
             />
           </Field>
-          {concept && concept.visuals.length > 1 ? (
+          {concept && concept.visuals.length > 0 ? (
             <div className="grid grid-cols-3 gap-2">
               {concept.visuals.map((visual) => (
-                <button
+                <div
                   key={visual.id}
-                  type="button"
-                  className={`overflow-hidden rounded-lg border ${concept.selectedVisualId === visual.id ? "border-vice-gold" : "border-vice-border"}`}
-                  onClick={() => onSelect?.(visual.id)}
+                  className={`relative overflow-hidden rounded-lg border ${concept.selectedVisualId === visual.id ? "border-vice-gold" : "border-vice-border"}`}
                 >
-                  {visual.url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={visual.url} alt="" className="aspect-video w-full object-cover" />
-                  ) : (
-                    <span className="flex aspect-video items-center justify-center text-xs text-vice-text-muted">…</span>
-                  )}
-                </button>
+                  <button
+                    type="button"
+                    className="block w-full"
+                    onClick={() => onSelect?.(visual.id)}
+                    aria-label="Visual selecteren"
+                  >
+                    {visual.url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={visual.url} alt="" className="aspect-video w-full object-cover" />
+                    ) : (
+                      <span className="flex aspect-video items-center justify-center text-xs text-vice-text-muted">…</span>
+                    )}
+                  </button>
+                  {onDeleteVisual ? (
+                    <button
+                      type="button"
+                      className="absolute right-1 top-1 inline-flex size-6 items-center justify-center rounded-full border border-vice-border bg-vice-surface/95 text-vice-text-muted hover:text-vice-danger"
+                      aria-label="Variant verwijderen"
+                      title="Verwijderen"
+                      disabled={busy || deletingVisual}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDeleteVisual(visual.id);
+                      }}
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  ) : null}
+                </div>
               ))}
             </div>
           ) : null}

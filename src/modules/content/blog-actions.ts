@@ -25,7 +25,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
-const MISSING = /list_blog_concepts|get_blog_concept|create_blog_concept|save_blog_concept|delete_blog_concept|add_blog_|schema cache|does not exist|Could not find the function/i;
+const MISSING = /list_blog_concepts|get_blog_concept|create_blog_concept|save_blog_concept|delete_blog_concept|delete_blog_visual|add_blog_|schema cache|does not exist|Could not find the function/i;
 
 function migration(message: string): string {
   return MISSING.test(message) ? BLOG_MIGRATION : message;
@@ -443,6 +443,43 @@ export async function updateBlogVisualAltAction(visualId: string, altText: strin
   });
   if (updated.error) return { ok: false, error: migration(updated.error.message) };
   return { ok: true };
+}
+
+export async function deleteBlogVisualAction(visualId: string): Promise<ActionResult<BlogConcept>> {
+  const supabase = await authed();
+  const deleted = await supabase.schema("app").rpc("delete_blog_visual", { p_visual_id: visualId });
+  if (deleted.error || !deleted.data) {
+    return { ok: false, error: migration(deleted.error?.message ?? "Visual verwijderen mislukt") };
+  }
+  const row = deleted.data as { concept?: unknown; storagePath?: string; visualId?: string };
+  if (row.storagePath) {
+    try {
+      const admin = createAdminClient();
+      await admin.storage.from("content-assets").remove([String(row.storagePath)]);
+    } catch {
+      // DB-rij is weg; orphan storage wordt later opgeruimd.
+    }
+  }
+  let mapped = await mapConcept(row.concept);
+  if (!mapped) return { ok: false, error: "Visual verwijderen mislukt" };
+
+  const cleanedBody = mapped.bodyHtml.replace(
+    new RegExp(
+      `<figure[^>]*data-visual-id=["']${visualId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'][^>]*>[\\s\\S]*?<\\/figure>`,
+      "gi",
+    ),
+    "",
+  );
+  if (cleanedBody !== mapped.bodyHtml) {
+    const saved = await saveBlogConceptAction(mapped.id, mapped.updatedAt, {
+      title: mapped.title,
+      bodyHtml: cleanedBody,
+    });
+    if (saved.ok && saved.data) mapped = saved.data;
+  }
+
+  revalidateBlog(mapped.tenantId, mapped.id);
+  return { ok: true, data: mapped };
 }
 
 function revalidateBlog(tenantId: string, conceptId?: string) {
