@@ -91,6 +91,30 @@ export function BlogWorkspace({
 
   function insertMoreBreak() {
     insertHtmlAtCursor(BLOG_MORE_BREAK_HTML);
+    requestAnimationFrame(() => enhanceMoreBreaks(editorRef.current));
+  }
+
+  function syncEditorFromDom() {
+    const editor = editorRef.current;
+    if (!editor) return;
+    dirtyRef.current = true;
+    const next = editor.innerHTML;
+    setBodyHtml(next);
+    setTitle(extractTitleClient(next) || title);
+    setSaveState("idle");
+  }
+
+  function removeMoreBreak(node: Element) {
+    const parent = node.closest("[data-blog-more]") ?? node;
+    parent.remove();
+    syncEditorFromDom();
+    rememberEditorSelection();
+  }
+
+  function setEditorHtml(html: string) {
+    if (!editorRef.current) return;
+    editorRef.current.innerHTML = html;
+    requestAnimationFrame(() => enhanceMoreBreaks(editorRef.current));
   }
 
   function insertVisualInArticle(visual: { id: string; url: string | null; altText: string }) {
@@ -123,7 +147,9 @@ export function BlogWorkspace({
       setBodyHtml(documentHtml);
       setForceEditor(Boolean(initial.title || initial.bodyHtml));
       if (editorRef.current && editorRef.current.innerHTML !== documentHtml) {
-        editorRef.current.innerHTML = documentHtml;
+        setEditorHtml(documentHtml);
+      } else {
+        requestAnimationFrame(() => enhanceMoreBreaks(editorRef.current));
       }
     } else {
       setForceEditor(false);
@@ -213,7 +239,7 @@ export function BlogWorkspace({
       setTitle(generated.data.title);
       setBodyHtml(documentHtml);
       setForceEditor(true);
-      if (editorRef.current) editorRef.current.innerHTML = documentHtml;
+      setEditorHtml(documentHtml);
       dirtyRef.current = false;
       setSaveState("saved");
       router.refresh();
@@ -232,9 +258,7 @@ export function BlogWorkspace({
       setForceEditor(true);
       setTitle(extractTitleClient(documentHtml));
       setBodyHtml(documentHtml);
-      requestAnimationFrame(() => {
-        if (editorRef.current) editorRef.current.innerHTML = documentHtml;
-      });
+      requestAnimationFrame(() => setEditorHtml(documentHtml));
       setSaveState("saved");
     } finally {
       setBusy("");
@@ -262,7 +286,7 @@ export function BlogWorkspace({
     setConcept(saved.data);
     setTitle(saved.data.title);
     setBodyHtml(saved.data.bodyHtml);
-    if (editorRef.current) editorRef.current.innerHTML = saved.data.bodyHtml;
+    setEditorHtml(saved.data.bodyHtml);
     dirtyRef.current = false;
     setSaveState("saved");
   }
@@ -303,7 +327,7 @@ export function BlogWorkspace({
     setConcept(applied.data);
     setTitle(applied.data.title);
     setBodyHtml(documentHtml);
-    if (editorRef.current) editorRef.current.innerHTML = documentHtml;
+    setEditorHtml(documentHtml);
     dirtyRef.current = false;
     setProposal(null);
     setSaveState("saved");
@@ -495,6 +519,31 @@ export function BlogWorkspace({
               onMouseUp={rememberEditorSelection}
               onKeyUp={rememberEditorSelection}
               onBlur={rememberEditorSelection}
+              onClick={(event) => {
+                const target = event.target as HTMLElement | null;
+                if (!target) return;
+                const removeBtn = target.closest("[data-remove-more]");
+                const more = target.closest("[data-blog-more]");
+                if (removeBtn && more) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  removeMoreBreak(more);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Backspace" && event.key !== "Delete") return;
+                const editor = editorRef.current;
+                const selection = window.getSelection();
+                if (!editor || !selection || !selection.isCollapsed || selection.rangeCount === 0) return;
+                const range = selection.getRangeAt(0);
+                const adjacent =
+                  event.key === "Backspace"
+                    ? findAdjacentMoreBreak(range, "before")
+                    : findAdjacentMoreBreak(range, "after");
+                if (!adjacent) return;
+                event.preventDefault();
+                removeMoreBreak(adjacent);
+              }}
               onInput={() => {
                 dirtyRef.current = true;
                 const html = editorRef.current?.innerHTML ?? "";
@@ -502,6 +551,7 @@ export function BlogWorkspace({
                 setTitle(extractTitleClient(html) || title);
                 setSaveState("idle");
                 rememberEditorSelection();
+                enhanceMoreBreaks(editorRef.current);
               }}
             />
             <p className="mt-3 text-xs text-vice-text-muted">{concept?.wordCount ?? 0} woorden</p>
@@ -842,7 +892,76 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 const BLOG_MORE_BREAK_HTML =
-  '<div class="blog-more-break" data-blog-more="true" contenteditable="false"><span>Meer lezen — korte versie stopt hier</span></div>';
+  '<div class="blog-more-break" data-blog-more="true" contenteditable="false"><span>Meer lezen — korte versie stopt hier</span><button type="button" class="blog-more-break-remove" data-remove-more="true" contenteditable="false" aria-label="Meer-lezen verwijderen" title="Verwijderen">×</button></div>';
+
+function enhanceMoreBreaks(root: HTMLElement | null) {
+  if (!root) return;
+  root.querySelectorAll<HTMLElement>("[data-blog-more]").forEach((node) => {
+    if (node.querySelector("[data-remove-more]")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "blog-more-break-remove";
+    button.setAttribute("data-remove-more", "true");
+    button.setAttribute("contenteditable", "false");
+    button.setAttribute("aria-label", "Meer-lezen verwijderen");
+    button.title = "Verwijderen";
+    button.textContent = "×";
+    node.appendChild(button);
+  });
+}
+
+function findAdjacentMoreBreak(range: Range, side: "before" | "after"): Element | null {
+  const container = range.startContainer;
+  const offset = range.startOffset;
+
+  const asElement = (node: Node | null): Element | null => {
+    if (!node) return null;
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as Element;
+      return el.closest?.("[data-blog-more]") ?? (el.hasAttribute?.("data-blog-more") ? el : null);
+    }
+    return null;
+  };
+
+  const walk = (node: Node | null, direction: "previousSibling" | "nextSibling"): Element | null => {
+    let current: Node | null = node;
+    while (current) {
+      const hit = asElement(current) ?? (current.nodeType === Node.ELEMENT_NODE
+        ? (current as Element).querySelector?.("[data-blog-more]")
+        : null);
+      if (hit) return hit;
+      current = (current as ChildNode)[direction];
+    }
+    return null;
+  };
+
+  if (container.nodeType === Node.TEXT_NODE) {
+    const text = container.textContent ?? "";
+    if (side === "before" && offset === 0) {
+      return walk(container.previousSibling, "previousSibling")
+        ?? asElement(container.parentElement?.previousSibling ?? null)
+        ?? walk(container.parentElement?.previousSibling ?? null, "previousSibling");
+    }
+    if (side === "after" && offset === text.length) {
+      return walk(container.nextSibling, "nextSibling")
+        ?? asElement(container.parentElement?.nextSibling ?? null)
+        ?? walk(container.parentElement?.nextSibling ?? null, "nextSibling");
+    }
+    return null;
+  }
+
+  if (container.nodeType === Node.ELEMENT_NODE) {
+    const el = container as Element;
+    if (side === "before") {
+      const prev = el.childNodes[offset - 1] ?? el.previousSibling;
+      return asElement(prev) ?? walk(prev, "previousSibling");
+    }
+    const next = el.childNodes[offset] ?? el.nextSibling;
+    return asElement(next) ?? walk(next, "nextSibling");
+  }
+
+  return null;
+}
 
 function escapeHtmlClient(text: string): string {
   return text

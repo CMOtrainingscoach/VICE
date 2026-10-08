@@ -192,7 +192,7 @@ export async function generateBlogImage(input: {
 }
 
 export const BLOG_MORE_BREAK_HTML =
-  '<div class="blog-more-break" data-blog-more="true" contenteditable="false"><span>Meer lezen — korte versie stopt hier</span></div>';
+  '<div class="blog-more-break" data-blog-more="true" contenteditable="false"><span>Meer lezen — korte versie stopt hier</span><button type="button" class="blog-more-break-remove" data-remove-more="true" contenteditable="false" aria-label="Meer-lezen verwijderen" title="Verwijderen">×</button></div>';
 
 export function sanitizeBlogHtml(html: string): string {
   return html

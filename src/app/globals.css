@@ -131,6 +131,7 @@ body {
 }
 
 .prose-vice .blog-more-break {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -141,6 +142,7 @@ body {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   user-select: none;
+  cursor: pointer;
 }
 
 .prose-vice .blog-more-break::before,
@@ -148,6 +150,30 @@ body {
   content: "";
   flex: 1;
   border-top: 1px dashed var(--vice-border);
+}
+
+.prose-vice .blog-more-break-remove {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  transform: translateY(-50%);
+  border: 1px solid var(--vice-border);
+  border-radius: 999px;
+  background: var(--vice-surface);
+  color: var(--vice-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.prose-vice .blog-more-break-remove:hover {
+  color: var(--vice-danger);
+  border-color: var(--vice-danger);
 }
 
 .prose-vice .blog-inline-visual {
