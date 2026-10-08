@@ -139,6 +139,7 @@ export async function generateBlogImage(input: {
   avoidText: string;
   colors: { name: string; hex: string; role: string }[];
   brandName: string;
+  styleName?: string;
   tweak?: string;
 }): Promise<{ bytes: Uint8Array; mime: string; prompt: string; styleSummary: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -153,22 +154,25 @@ export async function generateBlogImage(input: {
     .join(", ");
 
   const styleSummary = [
+    input.styleName,
     input.stylePrompt,
     input.tags.length ? `Tags: ${input.tags.join(", ")}` : "",
-    input.doText ? `Wel: ${input.doText}` : "",
   ].filter(Boolean).join(" · ").slice(0, 220) || `Beeldstijl van ${input.brandName}`;
 
   const prompt = [
+    "LOCKED BRAND VISUAL STYLE — follow this block strictly; do not invent another aesthetic:",
+    input.stylePrompt || `Brand look of ${input.brandName}`,
+    "",
     `Editorial blog visual for ${input.brandName}, wide 16:9 composition.`,
+    input.styleName ? `Active style variant: ${input.styleName}` : "",
     `Subject: ${input.title || input.summary}`,
-    input.summary ? `Article context: ${input.summary.slice(0, 400)}` : "",
-    input.stylePrompt ? `Brand visual style: ${input.stylePrompt}` : "",
+    input.summary ? `Article context (content only, not style): ${input.summary.slice(0, 400)}` : "",
     input.tags.length ? `Mood tags: ${input.tags.join(", ")}` : "",
     input.doText ? `Do: ${input.doText}` : "",
     input.avoidText ? `Avoid: ${input.avoidText}` : "",
     colorLine ? `Brand colors as atmosphere only (not exact print match): ${colorLine}` : "",
-    input.tweak ? `User change request: ${input.tweak}` : "",
-    "Photorealistic, no logos, no readable text, no watermarks, no UI mockups.",
+    input.tweak ? `User change request (keep brand style): ${input.tweak}` : "",
+    "Photorealistic, no logos, no readable text, no watermarks, no UI mockups, no generic stock look.",
   ].filter(Boolean).join("\n");
 
   const result = await openai.images.generate({

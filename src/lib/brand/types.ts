@@ -17,11 +17,31 @@ export type BrandColor = {
   role: string;
 };
 
+export type BrandVisualReference = {
+  id: string;
+  path: string;
+  name: string;
+  url?: string | null;
+};
+
+export type BrandVisualStyle = {
+  id: string;
+  name: string;
+  active: boolean;
+  tags: string[];
+  do: string;
+  avoid: string;
+  stylePrompt: string;
+  references: BrandVisualReference[];
+};
+
 export type BrandVisual = {
   tags: string[];
   do: string;
   avoid: string;
   stylePrompt: string;
+  /** Afgeleide of manuele stijlen; actieve stijlen verschijnen in bloggeneratie. */
+  styles: BrandVisualStyle[];
 };
 
 export type BrandPromptTemplate = {
@@ -96,5 +116,37 @@ export function emptyTypography(): Record<TypeRole, TypeStyle> {
 }
 
 export function emptyVisual(): BrandVisual {
-  return { tags: [], do: "", avoid: "", stylePrompt: "" };
+  return { tags: [], do: "", avoid: "", stylePrompt: "", styles: [] };
+}
+
+export function emptyVisualStyle(partial?: Partial<BrandVisualStyle>): BrandVisualStyle {
+  return {
+    id: partial?.id ?? crypto.randomUUID(),
+    name: partial?.name ?? "Beeldstijl",
+    active: partial?.active ?? true,
+    tags: partial?.tags ?? [],
+    do: partial?.do ?? "",
+    avoid: partial?.avoid ?? "",
+    stylePrompt: partial?.stylePrompt ?? "",
+    references: partial?.references ?? [],
+  };
+}
+
+export function activeBrandStyles(visual: BrandVisual): BrandVisualStyle[] {
+  const fromList = (visual.styles ?? []).filter((style) => style.active && style.stylePrompt.trim().length >= 20);
+  if (fromList.length > 0) return fromList;
+  if (visual.stylePrompt.trim().length >= 20) {
+    return [
+      emptyVisualStyle({
+        id: "legacy-default",
+        name: "Basisstijl",
+        active: true,
+        tags: visual.tags,
+        do: visual.do,
+        avoid: visual.avoid,
+        stylePrompt: visual.stylePrompt,
+      }),
+    ];
+  }
+  return [];
 }

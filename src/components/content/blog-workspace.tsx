@@ -55,6 +55,7 @@ export function BlogWorkspace({
   const [conceptList, setConceptList] = useState(concepts);
   const [deletingId, setDeletingId] = useState("");
   const [pendingVisual, setPendingVisual] = useState<{ id: string; url: string; altText: string } | null>(null);
+  const [selectedStyleId, setSelectedStyleId] = useState(brand.styles[0]?.id ?? "");
   const editorRef = useRef<HTMLDivElement>(null);
   const dirtyRef = useRef(false);
   const savedRangeRef = useRef<Range | null>(null);
@@ -212,6 +213,12 @@ export function BlogWorkspace({
   useEffect(() => {
     setConceptList(concepts);
   }, [concepts]);
+
+  useEffect(() => {
+    if (!brand.styles.some((style) => style.id === selectedStyleId)) {
+      setSelectedStyleId(brand.styles[0]?.id ?? "");
+    }
+  }, [brand.styles, selectedStyleId]);
 
   useEffect(() => {
     if (!pendingVisual) return;
@@ -465,7 +472,7 @@ export function BlogWorkspace({
     try {
       const current = await ensureConcept();
       if (!current) return;
-      const result = await generateBlogVisualAction(current.id, tweak);
+      const result = await generateBlogVisualAction(current.id, tweak, selectedStyleId || undefined);
       if (!result.ok || !result.data) {
         setError(result.ok ? "Visual genereren mislukt" : result.error);
         return;
@@ -627,6 +634,8 @@ export function BlogWorkspace({
             canGenerate={canGenerateVisual}
             busy={busy === "image"}
             onGenerate={() => void runVisual()}
+            selectedStyleId={selectedStyleId}
+            onStyleChange={setSelectedStyleId}
             disabledReason={
               !brand.hasVisual
                 ? "Beeldstijl ontbreekt"
@@ -768,6 +777,8 @@ export function BlogWorkspace({
             busy={busy === "image"}
             onGenerate={() => void runVisual()}
             onTweak={() => setTweakOpen(true)}
+            selectedStyleId={selectedStyleId}
+            onStyleChange={setSelectedStyleId}
             onSelect={(visualId) => {
               if (!concept) return;
               void selectBlogVisualAction(concept.id, concept.updatedAt, visualId).then((result) => {
@@ -890,6 +901,8 @@ function VisualCard({
   placing,
   onCancelPlace,
   deletingVisual,
+  selectedStyleId,
+  onStyleChange,
   disabledReason,
 }: {
   brand: BrandContext;
@@ -905,15 +918,36 @@ function VisualCard({
   placing?: boolean;
   onCancelPlace?: () => void;
   deletingVisual?: boolean;
+  selectedStyleId?: string;
+  onStyleChange?: (styleId: string) => void;
   disabledReason?: string;
 }) {
   const selected = concept?.selectedVisual;
+  const styleOptions = brand.styles;
   return (
     <section className="rounded-2xl border border-vice-border bg-vice-surface p-6">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-lg font-medium">Blogvisual</h2>
         {selected ? <span className="rounded-full border border-vice-border px-2 py-0.5 text-[11px] text-vice-text-muted">AI-gegenereerd</span> : null}
       </div>
+      {styleOptions.length > 0 ? (
+        <div className="mt-4">
+          <Label className="mb-1.5 block text-xs text-vice-text-muted">Beeldstijl</Label>
+          <select
+            className="w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
+            value={selectedStyleId || styleOptions[0]?.id || ""}
+            disabled={busy || deletingVisual}
+            onChange={(event) => onStyleChange?.(event.target.value)}
+          >
+            {styleOptions.map((style) => (
+              <option key={style.id} value={style.id}>{style.name}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-vice-text-muted">
+            De gekozen merkstijl-prompt wordt hard meegestuurd bij generatie.
+          </p>
+        </div>
+      ) : null}
       {selected?.url ? (
         <div className="mt-4 space-y-3">
           <div className="relative">

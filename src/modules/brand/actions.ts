@@ -2,14 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
+import { extractVisualStylesFromImages } from "@/lib/brand/brand-visual-ai";
 import {
   BRAND_MIGRATION,
   emptyTypography,
   emptyVisual,
+  emptyVisualStyle,
   TYPE_ROLES,
   type BrandColor,
   type BrandPromptTemplate,
   type BrandVisual,
+  type BrandVisualReference,
+  type BrandVisualStyle,
   type ClientBrand,
   type ClientBrandView,
   type TypeRole,
@@ -92,6 +96,95 @@ export async function reopenClientBrandAction(tenantId: string): Promise<ActionR
   return { ok: true, data: brand };
 }
 
+export async function analyzeBrandVisualStylesAction(
+  tenantId: string,
+  expectedUpdatedAt: string,
+  formData: FormData,
+): Promise<ActionResult<ClientBrand>> {
+  const files = formData.getAll("files").filter((item): item is File => item instanceof File);
+  if (files.length === 0) return { ok: false, error: "Upload minstens één referentiebeeld." };
+  if (files.length > 8) return { ok: false, error: "Upload maximaal 8 beelden per analyse." };
+
+  const loaded = await loadClientBrandAction(tenantId);
+  if (!loaded.ok || !loaded.data?.brand) return { ok: false, error: loaded.ok ? "Geen merkdefinitie." : loaded.error };
+  const brand = loaded.data.brand;
+
+  const images: { bytes: Uint8Array; mime: string; name: string; path: string }[] = [];
+  const admin = createAdminClient();
+  try {
+    for (const file of files) {
+      if (file.size <= 0 || file.size > 8 * 1024 * 1024) {
+        return { ok: false, error: `Bestand te groot of leeg: ${file.name}` };
+      }
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const sniffed = sniffImage(bytes);
+      if (!sniffed || sniffed.ext === "svg") {
+        return { ok: false, error: `Gebruik PNG, JPEG of WebP (geen SVG): ${file.name}` };
+      }
+      const path = `${tenantId}/visual-refs/${crypto.randomUUID()}.${sniffed.ext}`;
+      const uploaded = await admin.storage.from("brand-kit").upload(path, bytes, {
+        contentType: sniffed.mime,
+        upsert: false,
+      });
+      if (uploaded.error) {
+        return {
+          ok: false,
+          error: /mime|brand-kit|bucket/i.test(uploaded.error.message) ? BRAND_MIGRATION : uploaded.error.message,
+        };
+      }
+      images.push({ bytes, mime: sniffed.mime, name: file.name, path });
+    }
+
+    const extracted = await extractVisualStylesFromImages({
+      brandName: brand.brandName || loaded.data.tenantName,
+      images: images.map((image) => ({ bytes: image.bytes, mime: image.mime, name: image.name })),
+    });
+
+    const styles: BrandVisualStyle[] = extracted.styles.map((style, styleIndex) => {
+      const indexes = extracted.assignment[styleIndex] ?? [];
+      const refs: BrandVisualReference[] = (indexes.length > 0 ? indexes : images.map((_, i) => i))
+        .filter((index) => index >= 0 && index < images.length)
+        .map((index) => ({
+          id: crypto.randomUUID(),
+          path: images[index].path,
+          name: images[index].name,
+          url: null,
+        }));
+      // Deduplicate paths
+      const unique = new Map(refs.map((ref) => [ref.path, ref]));
+      return emptyVisualStyle({
+        ...style,
+        references: [...unique.values()],
+      });
+    });
+
+    // Als er geen assignment was, hang alle refs aan de eerste stijl.
+    if (styles.length === 1 && styles[0].references.length === 0) {
+      styles[0].references = images.map((image) => ({
+        id: crypto.randomUUID(),
+        path: image.path,
+        name: image.name,
+        url: null,
+      }));
+    }
+
+    const primary = styles[0];
+    const nextVisual: BrandVisual = {
+      ...brand.visual,
+      styles: [...(brand.visual.styles ?? []).filter((style) => style.id !== "legacy-default"), ...styles],
+      // Basisvelden volgen de primaire nieuwe stijl zodat bestaande blogflows blijven werken.
+      tags: primary?.tags?.length ? primary.tags : brand.visual.tags,
+      do: primary?.do || brand.visual.do,
+      avoid: primary?.avoid || brand.visual.avoid,
+      stylePrompt: primary?.stylePrompt || brand.visual.stylePrompt,
+    };
+
+    return saveClientBrandAction(tenantId, expectedUpdatedAt || brand.updatedAt, { visual: nextVisual });
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Stijlanalyse mislukt" };
+  }
+}
+
 export async function uploadBrandLogoAction(tenantId: string, formData: FormData): Promise<ActionResult<ClientBrand>> {
   const expected = String(formData.get("expectedUpdatedAt") ?? "");
   const file = formData.get("file");
@@ -148,6 +241,21 @@ async function mapBrand(raw: unknown): Promise<ClientBrand | null> {
       logoUrl = null;
     }
   }
+  const visual = mapVisual(row.visual);
+  if (visual.styles.length > 0) {
+    try {
+      const adminClient = createAdminClient();
+      for (const style of visual.styles) {
+        for (const ref of style.references) {
+          const signed = await adminClient.storage.from("brand-kit").createSignedUrl(ref.path, 60 * 60);
+          ref.url = signed.data?.signedUrl ?? null;
+        }
+      }
+    } catch {
+      // URLs blijven null
+    }
+  }
+
   return {
     id: String(row.id),
     tenantId: String(row.tenantId ?? ""),
@@ -159,7 +267,7 @@ async function mapBrand(raw: unknown): Promise<ClientBrand | null> {
     voice: String(row.voice ?? ""),
     typography: mapTypography(row.typography),
     colors: mapColors(row.colors),
-    visual: mapVisual(row.visual),
+    visual,
     promptTemplates: mapTemplates(row.promptTemplates),
     logoPath,
     logoName: String(row.logoName ?? ""),
@@ -207,11 +315,38 @@ function mapVisual(value: unknown): BrandVisual {
   const empty = emptyVisual();
   if (!value || typeof value !== "object") return empty;
   const raw = value as Record<string, unknown>;
+  const styles = Array.isArray(raw.styles)
+    ? raw.styles
+        .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+        .map((item, index) =>
+          emptyVisualStyle({
+            id: String(item.id ?? `style-${index}`),
+            name: String(item.name ?? `Stijl ${index + 1}`),
+            active: item.active !== false,
+            tags: Array.isArray(item.tags) ? item.tags.map(String).filter(Boolean) : [],
+            do: String(item.do ?? ""),
+            avoid: String(item.avoid ?? ""),
+            stylePrompt: String(item.stylePrompt ?? ""),
+            references: Array.isArray(item.references)
+              ? item.references
+                  .filter((ref): ref is Record<string, unknown> => Boolean(ref) && typeof ref === "object")
+                  .map((ref, refIndex) => ({
+                    id: String(ref.id ?? `ref-${index}-${refIndex}`),
+                    path: String(ref.path ?? ""),
+                    name: String(ref.name ?? ""),
+                    url: null,
+                  }))
+                  .filter((ref) => Boolean(ref.path))
+              : [],
+          }),
+        )
+    : [];
   return {
     tags: Array.isArray(raw.tags) ? raw.tags.map(String).filter(Boolean) : [],
     do: String(raw.do ?? ""),
     avoid: String(raw.avoid ?? ""),
     stylePrompt: String(raw.stylePrompt ?? ""),
+    styles,
   };
 }
 

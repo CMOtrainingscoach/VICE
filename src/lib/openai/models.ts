@@ -67,3 +67,8 @@ export function modelSupportsCustomTemperature(model: string): boolean {
 export function resolveBlogImageModel(): string {
   return process.env.VICE_BLOG_IMAGE_MODEL?.trim() || "gpt-image-1";
 }
+
+/** Vision-model om beeldstijl uit referentiefoto's te halen. */
+export function resolveBrandVisionModel(): string {
+  return process.env.VICE_BRAND_VISION_MODEL?.trim() || "gpt-4o";
+}

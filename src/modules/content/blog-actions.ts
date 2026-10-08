@@ -54,6 +54,29 @@ export async function loadBlogBrandContextAction(tenantId: string): Promise<Acti
   const visualRaw = (row?.visual && typeof row.visual === "object" ? row.visual : {}) as Record<string, unknown>;
   const stylePrompt = String(visualRaw.stylePrompt ?? "").trim();
   const tags = Array.isArray(visualRaw.tags) ? visualRaw.tags.map(String).filter(Boolean) : [];
+  const styles = Array.isArray(visualRaw.styles)
+    ? visualRaw.styles
+        .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+        .filter((item) => item.active !== false && String(item.stylePrompt ?? "").trim().length >= 20)
+        .map((item, index) => ({
+          id: String(item.id ?? `style-${index}`),
+          name: String(item.name ?? `Stijl ${index + 1}`),
+          tags: Array.isArray(item.tags) ? item.tags.map(String).filter(Boolean) : [],
+          do: String(item.do ?? ""),
+          avoid: String(item.avoid ?? ""),
+          stylePrompt: String(item.stylePrompt ?? "").trim(),
+        }))
+    : [];
+  if (styles.length === 0 && stylePrompt.length >= 20) {
+    styles.push({
+      id: "legacy-default",
+      name: "Basisstijl",
+      tags,
+      do: String(visualRaw.do ?? ""),
+      avoid: String(visualRaw.avoid ?? ""),
+      stylePrompt,
+    });
+  }
   const colors = Array.isArray(row?.colors)
     ? row.colors
         .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
@@ -73,13 +96,14 @@ export async function loadBlogBrandContextAction(tenantId: string): Promise<Acti
       approved: row?.status === "approved",
       voice,
       hasVoice: voice.length >= 20,
-      hasVisual: stylePrompt.length >= 20 || tags.length > 0,
+      hasVisual: styles.length > 0 || stylePrompt.length >= 20 || tags.length > 0,
       visual: {
         tags,
         do: String(visualRaw.do ?? ""),
         avoid: String(visualRaw.avoid ?? ""),
         stylePrompt,
       },
+      styles,
       colors,
       brandHref: `/klanten/${tenantId}/strategie/brand`,
     },
@@ -331,16 +355,21 @@ export async function applyBlogRewriteAction(
 export async function generateBlogVisualAction(
   conceptId: string,
   tweak?: string,
+  styleId?: string,
 ): Promise<ActionResult<BlogConcept>> {
   const loaded = await loadBlogConceptAction(conceptId);
   if (!loaded.ok || !loaded.data) return loaded;
   const concept = loaded.data;
-  const visual = concept.brandVisualSnapshot;
-  const hasVisual = Boolean(visual.stylePrompt && visual.stylePrompt.trim().length >= 20) || Boolean(visual.tags?.length);
-  if (!hasVisual) return { ok: false, error: "Beeldstijl ontbreekt. Vul die eerst aan bij Brand." };
 
   const brand = await loadBlogBrandContextAction(concept.tenantId);
   if (!brand.ok || !brand.data) return { ok: false, error: brand.ok ? "Merkcontext ontbreekt." : brand.error };
+  if (!brand.data.hasVisual || brand.data.styles.length === 0) {
+    return { ok: false, error: "Beeldstijl ontbreekt. Upload referentiebeelden of vul Brand → Beeldstijl aan." };
+  }
+
+  const selectedStyle =
+    brand.data.styles.find((style) => style.id === styleId) ??
+    brand.data.styles[0];
 
   const supabase = await authed();
   await supabase.schema("app").rpc("save_blog_concept", {
@@ -354,12 +383,13 @@ export async function generateBlogVisualAction(
     const image = await generateBlogImage({
       title: concept.title || concept.sourceText.slice(0, 120),
       summary,
-      stylePrompt: visual.stylePrompt || brand.data.visual.stylePrompt,
-      tags: visual.tags || brand.data.visual.tags,
-      doText: visual.do || brand.data.visual.do,
-      avoidText: visual.avoid || brand.data.visual.avoid,
+      stylePrompt: selectedStyle.stylePrompt,
+      tags: selectedStyle.tags,
+      doText: selectedStyle.do,
+      avoidText: selectedStyle.avoid,
       colors: brand.data.colors,
       brandName: brand.data.brandName || brand.data.tenantName,
+      styleName: selectedStyle.name,
       tweak,
     });
 

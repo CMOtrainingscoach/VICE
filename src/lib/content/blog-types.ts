@@ -57,6 +57,15 @@ export type BlogConceptSummary = {
   brandVersionNumber: number | null;
 };
 
+export type BrandVisualStyleOption = {
+  id: string;
+  name: string;
+  tags: string[];
+  do: string;
+  avoid: string;
+  stylePrompt: string;
+};
+
 export type BrandContext = {
   tenantName: string;
   brandName: string;
@@ -71,6 +80,7 @@ export type BrandContext = {
     avoid: string;
     stylePrompt: string;
   };
+  styles: BrandVisualStyleOption[];
   colors: { name: string; hex: string; role: string }[];
   brandHref: string;
 };

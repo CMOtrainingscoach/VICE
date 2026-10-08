@@ -12,11 +12,13 @@ import {
   TYPE_ROLE_LABELS,
   type BrandColor,
   type BrandPromptTemplate,
+  type BrandVisualStyle,
   type ClientBrand,
   type TypeRole,
   type TypeStyle,
 } from "@/lib/brand/types";
 import {
+  analyzeBrandVisualStylesAction,
   approveClientBrandAction,
   reopenClientBrandAction,
   saveClientBrandAction,
@@ -210,7 +212,17 @@ export function BrandWorkspace({
           <ColorEditor brand={brand} locked={locked} busy={busy} onSave={(colors) => void savePatch({ colors })} />
         )}
         {tab === "visual" && (
-          <VisualEditor brand={brand} locked={locked} busy={busy} onSave={(visual) => void savePatch({ visual })} />
+          <VisualEditor
+            tenantId={tenantId}
+            brand={brand}
+            locked={locked}
+            busy={busy}
+            onSave={(visual) => void savePatch({ visual })}
+            onAnalyzed={(next) => setBrand(next)}
+            setBusy={setBusy}
+            setError={setError}
+            setMessage={setMessage}
+          />
         )}
         {tab === "prompts" && (
           <PromptsEditor
@@ -508,65 +520,212 @@ function ColorEditor({
 }
 
 function VisualEditor({
+  tenantId,
   brand,
   locked,
   busy,
   onSave,
+  onAnalyzed,
+  setBusy,
+  setError,
+  setMessage,
 }: {
+  tenantId: string;
   brand: ClientBrand;
   locked: boolean;
   busy: boolean;
   onSave: (visual: ClientBrand["visual"]) => void;
+  onAnalyzed: (brand: ClientBrand) => void;
+  setBusy: (value: boolean) => void;
+  setError: (value: string) => void;
+  setMessage: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(brand.visual);
   const [tagInput, setTagInput] = useState("");
+  const [files, setFiles] = useState<FileList | null>(null);
   useEffect(() => setDraft(brand.visual), [brand.visual, brand.updatedAt]);
 
+  async function analyze() {
+    if (!files || files.length === 0) {
+      setError("Kies eerst referentiebeelden.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const form = new FormData();
+      Array.from(files).forEach((file) => form.append("files", file));
+      const result = await analyzeBrandVisualStylesAction(tenantId, brand.updatedAt, form);
+      if (!result.ok || !result.data) {
+        setError(result.ok ? "Analyse mislukt" : result.error);
+        return;
+      }
+      onAnalyzed(result.data);
+      setDraft(result.data.visual);
+      setFiles(null);
+      setMessage(
+        result.data.visual.styles.length > 1
+          ? `${result.data.visual.styles.length} stijlen toegevoegd. Activeer wat je wilt gebruiken bij blogvisuals.`
+          : "Beeldstijl bijgewerkt vanuit je referentiebeelden.",
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Analyse mislukt");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function updateStyle(styleId: string, patch: Partial<BrandVisualStyle>) {
+    setDraft((current) => ({
+      ...current,
+      styles: (current.styles ?? []).map((style) => (style.id === styleId ? { ...style, ...patch } : style)),
+    }));
+  }
+
+  function removeStyle(styleId: string) {
+    setDraft((current) => ({
+      ...current,
+      styles: (current.styles ?? []).filter((style) => style.id !== styleId),
+    }));
+  }
+
   return (
-    <section className="space-y-6 rounded-2xl border border-vice-border bg-vice-surface p-6">
-      <Field label="Tags (beeldstijl)">
-        <div className="flex flex-wrap gap-2">
-          {draft.tags.map((tag) => (
-            <span key={tag} className="inline-flex items-center gap-2 rounded-full border border-vice-border px-3 py-1 text-sm">
-              {tag}
-              {!locked ? (
-                <button type="button" aria-label={`Verwijder ${tag}`} onClick={() => setDraft((current) => ({ ...current, tags: current.tags.filter((item) => item !== tag) }))}>
-                  <X className="size-3" />
-                </button>
-              ) : null}
-            </span>
-          ))}
+    <div className="space-y-6">
+      <section className="space-y-4 rounded-2xl border border-vice-border bg-vice-surface p-6">
+        <div>
+          <h2 className="text-lg font-medium">Referentiebeelden</h2>
+          <p className="mt-1 text-sm text-vice-text-muted">
+            Upload voorbeelden. AI haalt er één of meerdere beeldstijlen uit. Bij bloggeneratie kies je welke stijl actief is.
+          </p>
         </div>
+        <Input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          multiple
+          disabled={locked || busy}
+          onChange={(event) => setFiles(event.target.files)}
+        />
         {!locked ? (
-          <div className="mt-3 flex gap-2">
-            <Input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="Natuurlijk licht" />
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={busy || !tagInput.trim()}
-              onClick={() => {
-                const next = tagInput.trim();
-                if (!next) return;
-                setDraft((current) => ({ ...current, tags: [...current.tags, next] }));
-                setTagInput("");
-              }}
-            >
-              Toevoegen
-            </Button>
+          <Button type="button" disabled={busy || !files?.length} onClick={() => void analyze()}>
+            Stijlen analyseren met AI
+          </Button>
+        ) : (
+          <p className="text-sm text-vice-text-muted">Zet het merk in bewerken om beelden te uploaden.</p>
+        )}
+      </section>
+
+      {(draft.styles ?? []).length > 0 ? (
+        <section className="space-y-4">
+          <h2 className="text-lg font-medium">Beeldstijlen</h2>
+          {draft.styles.map((style) => (
+            <div key={style.id} className="space-y-4 rounded-2xl border border-vice-border bg-vice-surface p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Input
+                  className="max-w-sm font-medium"
+                  disabled={locked || busy}
+                  value={style.name}
+                  onChange={(event) => updateStyle(style.id, { name: event.target.value })}
+                />
+                <div className="flex items-center gap-3">
+                  <label className="inline-flex items-center gap-2 text-sm text-vice-text-muted">
+                    <input
+                      type="checkbox"
+                      disabled={locked || busy}
+                      checked={style.active}
+                      onChange={(event) => updateStyle(style.id, { active: event.target.checked })}
+                    />
+                    Actief voor blog
+                  </label>
+                  {!locked ? (
+                    <Button type="button" variant="ghost" className="text-vice-danger" disabled={busy} onClick={() => removeStyle(style.id)}>
+                      <Trash2 className="size-4" />
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              {style.references.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {style.references.map((ref) => (
+                    <div key={ref.id} className="overflow-hidden rounded-lg border border-vice-border">
+                      {ref.url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={ref.url} alt={ref.name} className="aspect-square w-full object-cover" />
+                      ) : (
+                        <span className="flex aspect-square items-center justify-center text-[10px] text-vice-text-muted">{ref.name}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <Field label="Merkstijl-prompt">
+                <textarea
+                  className={`${fieldClass} min-h-28`}
+                  disabled={locked || busy}
+                  value={style.stylePrompt}
+                  onChange={(event) => updateStyle(style.id, { stylePrompt: event.target.value })}
+                />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Wel">
+                  <textarea className={`${fieldClass} min-h-20`} disabled={locked || busy} value={style.do} onChange={(event) => updateStyle(style.id, { do: event.target.value })} />
+                </Field>
+                <Field label="Vermijd">
+                  <textarea className={`${fieldClass} min-h-20`} disabled={locked || busy} value={style.avoid} onChange={(event) => updateStyle(style.id, { avoid: event.target.value })} />
+                </Field>
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
+      <section className="space-y-6 rounded-2xl border border-vice-border bg-vice-surface p-6">
+        <h2 className="text-lg font-medium">Basisbeeldstijl (handmatig)</h2>
+        <p className="text-sm text-vice-text-muted">Fallback als er geen actieve geanalyseerde stijlen zijn. Wordt ook bijgewerkt bij AI-analyse.</p>
+        <Field label="Tags (beeldstijl)">
+          <div className="flex flex-wrap gap-2">
+            {draft.tags.map((tag) => (
+              <span key={tag} className="inline-flex items-center gap-2 rounded-full border border-vice-border px-3 py-1 text-sm">
+                {tag}
+                {!locked ? (
+                  <button type="button" aria-label={`Verwijder ${tag}`} onClick={() => setDraft((current) => ({ ...current, tags: current.tags.filter((item) => item !== tag) }))}>
+                    <X className="size-3" />
+                  </button>
+                ) : null}
+              </span>
+            ))}
           </div>
-        ) : null}
-      </Field>
-      <Field label="Wel">
-        <textarea className={`${fieldClass} min-h-24`} disabled={locked || busy} value={draft.do} onChange={(event) => setDraft((current) => ({ ...current, do: event.target.value }))} />
-      </Field>
-      <Field label="Vermijd">
-        <textarea className={`${fieldClass} min-h-24`} disabled={locked || busy} value={draft.avoid} onChange={(event) => setDraft((current) => ({ ...current, avoid: event.target.value }))} />
-      </Field>
-      <Field label="Merkstijl voor prompts (vast onderdeel)">
-        <textarea className={`${fieldClass} min-h-32`} disabled={locked || busy} value={draft.stylePrompt} onChange={(event) => setDraft((current) => ({ ...current, stylePrompt: event.target.value }))} />
-      </Field>
-      {!locked ? <Button type="button" disabled={busy} onClick={() => onSave(draft)}>Beeldstijl opslaan</Button> : null}
-    </section>
+          {!locked ? (
+            <div className="mt-3 flex gap-2">
+              <Input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="Natuurlijk licht" />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy || !tagInput.trim()}
+                onClick={() => {
+                  const next = tagInput.trim();
+                  if (!next) return;
+                  setDraft((current) => ({ ...current, tags: [...current.tags, next] }));
+                  setTagInput("");
+                }}
+              >
+                Toevoegen
+              </Button>
+            </div>
+          ) : null}
+        </Field>
+        <Field label="Wel">
+          <textarea className={`${fieldClass} min-h-24`} disabled={locked || busy} value={draft.do} onChange={(event) => setDraft((current) => ({ ...current, do: event.target.value }))} />
+        </Field>
+        <Field label="Vermijd">
+          <textarea className={`${fieldClass} min-h-24`} disabled={locked || busy} value={draft.avoid} onChange={(event) => setDraft((current) => ({ ...current, avoid: event.target.value }))} />
+        </Field>
+        <Field label="Merkstijl voor prompts (vast onderdeel)">
+          <textarea className={`${fieldClass} min-h-32`} disabled={locked || busy} value={draft.stylePrompt} onChange={(event) => setDraft((current) => ({ ...current, stylePrompt: event.target.value }))} />
+        </Field>
+        {!locked ? <Button type="button" disabled={busy} onClick={() => onSave(draft)}>Beeldstijl opslaan</Button> : null}
+      </section>
+    </div>
   );
 }
 
