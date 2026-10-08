@@ -218,7 +218,7 @@ export function buildInlineVisualHtml(input: {
   const alt = escapeHtmlText(input.altText || "Blogvisual");
   const id = escapeHtmlText(input.visualId);
   const src = escapeHtmlText(input.url);
-  return `<figure class="blog-inline-visual" data-visual-id="${id}" contenteditable="false"><img data-visual-id="${id}" src="${src}" alt="${alt}" /></figure><p></p>`;
+  return `<figure class="blog-inline-visual" data-visual-id="${id}" contenteditable="false"><button type="button" class="blog-inline-visual-remove" data-remove-visual="true" contenteditable="false" aria-label="Afbeelding verwijderen" title="Verwijderen">×</button><img data-visual-id="${id}" src="${src}" alt="${alt}" /></figure>`;
 }
 
 export function hydrateInlineVisualUrls(

@@ -177,6 +177,7 @@ body {
 }
 
 .prose-vice .blog-inline-visual {
+  position: relative;
   margin: 1.25rem 0;
   padding: 0;
   border: 0;
@@ -190,6 +191,31 @@ body {
   object-fit: cover;
 }
 
+.prose-vice .blog-inline-visual-remove {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--vice-border);
+  border-radius: 999px;
+  background: var(--vice-surface);
+  color: var(--vice-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 12%);
+}
+
+.prose-vice .blog-inline-visual-remove:hover {
+  color: var(--vice-danger);
+  border-color: var(--vice-danger);
+}
+
 .prose-vice .blog-inline-visual-missing {
   display: block;
   padding: 1rem;
@@ -198,4 +224,11 @@ body {
   color: var(--vice-text-muted);
   font-size: 0.875rem;
   text-align: center;
+}
+
+.prose-vice.is-placing-visual {
+  cursor: copy;
+  outline: 2px dashed var(--vice-gold);
+  outline-offset: 4px;
+  border-radius: 0.5rem;
 }

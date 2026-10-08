@@ -53,6 +53,7 @@ export function BlogWorkspace({
   const [forceEditor, setForceEditor] = useState(Boolean(initial && (initial.title || initial.bodyHtml)));
   const [conceptList, setConceptList] = useState(concepts);
   const [deletingId, setDeletingId] = useState("");
+  const [pendingVisual, setPendingVisual] = useState<{ id: string; url: string; altText: string } | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const dirtyRef = useRef(false);
   const savedRangeRef = useRef<Range | null>(null);
@@ -68,32 +69,6 @@ export function BlogWorkspace({
     }
   }
 
-  function insertHtmlAtCursor(html: string) {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.focus();
-    const selection = window.getSelection();
-    if (savedRangeRef.current && selection) {
-      selection.removeAllRanges();
-      selection.addRange(savedRangeRef.current);
-    }
-    const inserted = document.execCommand("insertHTML", false, html);
-    if (!inserted) {
-      editor.insertAdjacentHTML("beforeend", html);
-    }
-    dirtyRef.current = true;
-    const next = editor.innerHTML;
-    setBodyHtml(next);
-    setTitle(extractTitleClient(next) || title);
-    setSaveState("idle");
-    rememberEditorSelection();
-  }
-
-  function insertMoreBreak() {
-    insertHtmlAtCursor(BLOG_MORE_BREAK_HTML);
-    requestAnimationFrame(() => enhanceMoreBreaks(editorRef.current));
-  }
-
   function syncEditorFromDom() {
     const editor = editorRef.current;
     if (!editor) return;
@@ -104,8 +79,68 @@ export function BlogWorkspace({
     setSaveState("idle");
   }
 
-  function removeMoreBreak(node: Element) {
-    const parent = node.closest("[data-blog-more]") ?? node;
+  function insertHtmlAtRange(html: string, range: Range) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const holder = document.createElement("div");
+    holder.innerHTML = html;
+    const fragment = document.createDocumentFragment();
+    let lastNode: ChildNode | null = null;
+    while (holder.firstChild) {
+      lastNode = fragment.appendChild(holder.firstChild);
+    }
+    range.deleteContents();
+    range.insertNode(fragment);
+
+    if (lastNode) {
+      const after = document.createRange();
+      after.setStartAfter(lastNode);
+      after.collapse(true);
+      selection?.removeAllRanges();
+      selection?.addRange(after);
+      savedRangeRef.current = after.cloneRange();
+    }
+
+    enhanceEditorWidgets(editor);
+    syncEditorFromDom();
+  }
+
+  function insertHtmlAtCursor(html: string) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const selection = window.getSelection();
+    let range: Range | null = null;
+    if (savedRangeRef.current) {
+      try {
+        range = savedRangeRef.current.cloneRange();
+      } catch {
+        range = null;
+      }
+    }
+    if (!range && selection && selection.rangeCount > 0) {
+      const current = selection.getRangeAt(0);
+      if (editor.contains(current.commonAncestorContainer)) range = current;
+    }
+    if (!range) {
+      range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+    }
+    insertHtmlAtRange(html, range);
+  }
+
+  function insertMoreBreak() {
+    insertHtmlAtCursor(BLOG_MORE_BREAK_HTML);
+  }
+
+  function removeEditorWidget(node: Element, selector: string) {
+    const parent = node.closest(selector) ?? node;
     parent.remove();
     syncEditorFromDom();
     rememberEditorSelection();
@@ -114,26 +149,50 @@ export function BlogWorkspace({
   function setEditorHtml(html: string) {
     if (!editorRef.current) return;
     editorRef.current.innerHTML = html;
-    requestAnimationFrame(() => enhanceMoreBreaks(editorRef.current));
+    requestAnimationFrame(() => enhanceEditorWidgets(editorRef.current));
   }
 
-  function insertVisualInArticle(visual: { id: string; url: string | null; altText: string }) {
+  function beginVisualPlacement(visual: { id: string; url: string | null; altText: string }) {
     if (!visual.url) {
       setError("Dit beeld heeft geen downloadbare URL. Genereer opnieuw of herlaad de pagina.");
       return;
     }
-    insertHtmlAtCursor(
+    setError("");
+    setPendingVisual({ id: visual.id, url: visual.url, altText: visual.altText });
+    editorRef.current?.focus();
+  }
+
+  function cancelVisualPlacement() {
+    setPendingVisual(null);
+  }
+
+  function placeVisualAtPoint(clientX: number, clientY: number) {
+    if (!pendingVisual || !editorRef.current) return;
+    const range = caretRangeFromPoint(clientX, clientY, editorRef.current);
+    if (!range) return;
+    insertHtmlAtRange(
       buildInlineVisualHtmlClient({
-        visualId: visual.id,
-        url: visual.url,
-        altText: visual.altText,
+        visualId: pendingVisual.id,
+        url: pendingVisual.url,
+        altText: pendingVisual.altText,
       }),
+      range,
     );
+    setPendingVisual(null);
   }
 
   useEffect(() => {
     setConceptList(concepts);
   }, [concepts]);
+
+  useEffect(() => {
+    if (!pendingVisual) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setPendingVisual(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pendingVisual]);
 
   useEffect(() => {
     setConcept(initial);
@@ -149,7 +208,7 @@ export function BlogWorkspace({
       if (editorRef.current && editorRef.current.innerHTML !== documentHtml) {
         setEditorHtml(documentHtml);
       } else {
-        requestAnimationFrame(() => enhanceMoreBreaks(editorRef.current));
+        requestAnimationFrame(() => enhanceEditorWidgets(editorRef.current));
       }
     } else {
       setForceEditor(false);
@@ -511,9 +570,17 @@ export function BlogWorkspace({
               editorRef={editorRef}
               onInsertMore={() => insertMoreBreak()}
             />
+            {pendingVisual ? (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-vice-gold/40 bg-vice-gold/10 px-3 py-2 text-sm">
+                <span>Klik in het artikel waar de foto moet komen.</span>
+                <Button type="button" variant="ghost" className="h-8 px-2" onClick={cancelVisualPlacement}>
+                  Annuleren
+                </Button>
+              </div>
+            ) : null}
             <div
               ref={editorRef}
-              className="prose-vice mt-4 min-h-80 rounded-md border border-transparent px-1 py-2 outline-none focus:border-vice-border"
+              className={`prose-vice mt-4 min-h-80 rounded-md border border-transparent px-1 py-2 outline-none focus:border-vice-border ${pendingVisual ? "is-placing-visual" : ""}`}
               contentEditable
               suppressContentEditableWarning
               onMouseUp={rememberEditorSelection}
@@ -522,27 +589,53 @@ export function BlogWorkspace({
               onClick={(event) => {
                 const target = event.target as HTMLElement | null;
                 if (!target) return;
-                const removeBtn = target.closest("[data-remove-more]");
+
+                const removeMore = target.closest("[data-remove-more]");
                 const more = target.closest("[data-blog-more]");
-                if (removeBtn && more) {
+                if (removeMore && more) {
                   event.preventDefault();
                   event.stopPropagation();
-                  removeMoreBreak(more);
+                  removeEditorWidget(more, "[data-blog-more]");
+                  return;
+                }
+
+                const removeVisual = target.closest("[data-remove-visual]");
+                const figure = target.closest("figure.blog-inline-visual, figure[data-visual-id]");
+                if (removeVisual && figure) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  removeEditorWidget(figure, "figure[data-visual-id]");
+                  return;
+                }
+
+                if (pendingVisual) {
+                  event.preventDefault();
+                  placeVisualAtPoint(event.clientX, event.clientY);
                 }
               }}
               onKeyDown={(event) => {
+                if (event.key === "Escape" && pendingVisual) {
+                  event.preventDefault();
+                  cancelVisualPlacement();
+                  return;
+                }
                 if (event.key !== "Backspace" && event.key !== "Delete") return;
                 const editor = editorRef.current;
                 const selection = window.getSelection();
                 if (!editor || !selection || !selection.isCollapsed || selection.rangeCount === 0) return;
                 const range = selection.getRangeAt(0);
-                const adjacent =
-                  event.key === "Backspace"
-                    ? findAdjacentMoreBreak(range, "before")
-                    : findAdjacentMoreBreak(range, "after");
-                if (!adjacent) return;
-                event.preventDefault();
-                removeMoreBreak(adjacent);
+                const side = event.key === "Backspace" ? "before" : "after";
+                const adjacentMore = findAdjacentWidget(range, side, "[data-blog-more]");
+                if (adjacentMore) {
+                  event.preventDefault();
+                  removeEditorWidget(adjacentMore, "[data-blog-more]");
+                  return;
+                }
+                const adjacentVisual = findAdjacentWidget(range, side, "figure[data-visual-id]");
+                if (adjacentVisual) {
+                  event.preventDefault();
+                  removeEditorWidget(adjacentVisual, "figure[data-visual-id]");
+                }
               }}
               onInput={() => {
                 dirtyRef.current = true;
@@ -551,7 +644,7 @@ export function BlogWorkspace({
                 setTitle(extractTitleClient(html) || title);
                 setSaveState("idle");
                 rememberEditorSelection();
-                enhanceMoreBreaks(editorRef.current);
+                enhanceEditorWidgets(editorRef.current);
               }}
             />
             <p className="mt-3 text-xs text-vice-text-muted">{concept?.wordCount ?? 0} woorden</p>
@@ -606,7 +699,9 @@ export function BlogWorkspace({
               });
             }}
             onAlt={(visualId, alt) => void updateBlogVisualAltAction(visualId, alt)}
-            onInsert={(visual) => insertVisualInArticle(visual)}
+            onInsert={(visual) => beginVisualPlacement(visual)}
+            placing={Boolean(pendingVisual)}
+            onCancelPlace={cancelVisualPlacement}
           />
         </div>
       )}
@@ -713,6 +808,8 @@ function VisualCard({
   onSelect,
   onAlt,
   onInsert,
+  placing,
+  onCancelPlace,
   disabledReason,
 }: {
   brand: BrandContext;
@@ -724,6 +821,8 @@ function VisualCard({
   onSelect?: (id: string) => void;
   onAlt?: (id: string, alt: string) => void;
   onInsert?: (visual: { id: string; url: string | null; altText: string }) => void;
+  placing?: boolean;
+  onCancelPlace?: () => void;
   disabledReason?: string;
 }) {
   const selected = concept?.selectedVisual;
@@ -741,6 +840,15 @@ function VisualCard({
             Beeldstijl: {selected.styleSummary || "merkbeeldstijl"}
             {selected.brandVersionNumber != null ? ` · Brand v${selected.brandVersionNumber}` : ""}
           </p>
+          {placing ? (
+            <p className="rounded-lg border border-vice-gold/40 bg-vice-gold/10 px-3 py-2 text-xs">
+              Klik nu in het artikel op de gewenste plaats. Esc of Annuleren om te stoppen.
+            </p>
+          ) : (
+            <p className="text-xs text-vice-text-muted">
+              Klik “In artikel invoegen” en daarna op de plek in de tekst.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="secondary" disabled={!canGenerate || busy} onClick={onGenerate}>
               {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
@@ -749,15 +857,22 @@ function VisualCard({
             <Button type="button" variant="secondary" disabled={!canGenerate || busy} onClick={onTweak}>
               Pas beeld aan
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={!onInsert || !selected.url}
-              title="Plaats de cursor in het artikel, klik daarna hier"
-              onClick={() => onInsert?.(selected)}
-            >
-              In artikel invoegen
-            </Button>
+            {placing ? (
+              <Button type="button" variant="secondary" onClick={onCancelPlace}>
+                Annuleren
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!onInsert || !selected.url}
+                title="Klik daarna in het artikel waar de foto moet staan"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => onInsert?.(selected)}
+              >
+                In artikel invoegen
+              </Button>
+            )}
             <a className="inline-flex h-10 items-center rounded-md border border-vice-border px-4 text-sm" href={selected.url} download>
               Download
             </a>
@@ -894,7 +1009,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const BLOG_MORE_BREAK_HTML =
   '<div class="blog-more-break" data-blog-more="true" contenteditable="false"><span>Meer lezen — korte versie stopt hier</span><button type="button" class="blog-more-break-remove" data-remove-more="true" contenteditable="false" aria-label="Meer-lezen verwijderen" title="Verwijderen">×</button></div>';
 
-function enhanceMoreBreaks(root: HTMLElement | null) {
+function enhanceEditorWidgets(root: HTMLElement | null) {
   if (!root) return;
   root.querySelectorAll<HTMLElement>("[data-blog-more]").forEach((node) => {
     if (node.querySelector("[data-remove-more]")) return;
@@ -908,9 +1023,22 @@ function enhanceMoreBreaks(root: HTMLElement | null) {
     button.textContent = "×";
     node.appendChild(button);
   });
+  root.querySelectorAll<HTMLElement>("figure[data-visual-id]").forEach((node) => {
+    node.classList.add("blog-inline-visual");
+    if (node.querySelector("[data-remove-visual]")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "blog-inline-visual-remove";
+    button.setAttribute("data-remove-visual", "true");
+    button.setAttribute("contenteditable", "false");
+    button.setAttribute("aria-label", "Afbeelding verwijderen");
+    button.title = "Verwijderen";
+    button.textContent = "×";
+    node.prepend(button);
+  });
 }
 
-function findAdjacentMoreBreak(range: Range, side: "before" | "after"): Element | null {
+function findAdjacentWidget(range: Range, side: "before" | "after", selector: string): Element | null {
   const container = range.startContainer;
   const offset = range.startOffset;
 
@@ -918,7 +1046,8 @@ function findAdjacentMoreBreak(range: Range, side: "before" | "after"): Element 
     if (!node) return null;
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as Element;
-      return el.closest?.("[data-blog-more]") ?? (el.hasAttribute?.("data-blog-more") ? el : null);
+      if (el.matches?.(selector)) return el;
+      return el.closest?.(selector) ?? null;
     }
     return null;
   };
@@ -926,9 +1055,9 @@ function findAdjacentMoreBreak(range: Range, side: "before" | "after"): Element 
   const walk = (node: Node | null, direction: "previousSibling" | "nextSibling"): Element | null => {
     let current: Node | null = node;
     while (current) {
-      const hit = asElement(current) ?? (current.nodeType === Node.ELEMENT_NODE
-        ? (current as Element).querySelector?.("[data-blog-more]")
-        : null);
+      const hit =
+        asElement(current) ??
+        (current.nodeType === Node.ELEMENT_NODE ? (current as Element).querySelector?.(selector) : null);
       if (hit) return hit;
       current = (current as ChildNode)[direction];
     }
@@ -938,14 +1067,18 @@ function findAdjacentMoreBreak(range: Range, side: "before" | "after"): Element 
   if (container.nodeType === Node.TEXT_NODE) {
     const text = container.textContent ?? "";
     if (side === "before" && offset === 0) {
-      return walk(container.previousSibling, "previousSibling")
-        ?? asElement(container.parentElement?.previousSibling ?? null)
-        ?? walk(container.parentElement?.previousSibling ?? null, "previousSibling");
+      return (
+        walk(container.previousSibling, "previousSibling") ??
+        asElement(container.parentElement?.previousSibling ?? null) ??
+        walk(container.parentElement?.previousSibling ?? null, "previousSibling")
+      );
     }
     if (side === "after" && offset === text.length) {
-      return walk(container.nextSibling, "nextSibling")
-        ?? asElement(container.parentElement?.nextSibling ?? null)
-        ?? walk(container.parentElement?.nextSibling ?? null, "nextSibling");
+      return (
+        walk(container.nextSibling, "nextSibling") ??
+        asElement(container.parentElement?.nextSibling ?? null) ??
+        walk(container.parentElement?.nextSibling ?? null, "nextSibling")
+      );
     }
     return null;
   }
@@ -963,6 +1096,31 @@ function findAdjacentMoreBreak(range: Range, side: "before" | "after"): Element 
   return null;
 }
 
+function caretRangeFromPoint(clientX: number, clientY: number, editor: HTMLElement): Range | null {
+  const doc = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+  };
+  let range: Range | null = null;
+  if (typeof doc.caretRangeFromPoint === "function") {
+    range = doc.caretRangeFromPoint(clientX, clientY);
+  } else if (typeof doc.caretPositionFromPoint === "function") {
+    const pos = doc.caretPositionFromPoint(clientX, clientY);
+    if (pos) {
+      range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+    }
+  }
+  if (!range || !editor.contains(range.commonAncestorContainer)) {
+    // Fallback: einde van de editor
+    range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+  }
+  return range;
+}
+
 function escapeHtmlClient(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -975,7 +1133,7 @@ function buildInlineVisualHtmlClient(input: { visualId: string; url: string; alt
   const alt = escapeHtmlClient(input.altText || "Blogvisual");
   const id = escapeHtmlClient(input.visualId);
   const src = escapeHtmlClient(input.url);
-  return `<figure class="blog-inline-visual" data-visual-id="${id}" contenteditable="false"><img data-visual-id="${id}" src="${src}" alt="${alt}" /></figure><p></p>`;
+  return `<figure class="blog-inline-visual" data-visual-id="${id}" contenteditable="false"><button type="button" class="blog-inline-visual-remove" data-remove-visual="true" contenteditable="false" aria-label="Afbeelding verwijderen" title="Verwijderen">×</button><img data-visual-id="${id}" src="${src}" alt="${alt}" /></figure>`;
 }
 
 function toBlogExportHtmlClient(html: string): string {
