@@ -125,26 +125,27 @@ export async function extractVisualStylesFromImages(input: {
     {
       type: "text",
       text: [
-        `Analyseer deze referentiebeelden voor het merk "${input.brandName || "de klant"}".`,
-        "Doel: haal uitvoerbare beeldstijl(en) voor latere AI-beeldgeneratie.",
-        "Als de beelden één coherente stijl delen: geef exact 1 stijl.",
-        "Als er duidelijk verschillende stijlen/clusters zijn: maak aparte stijlen (max 4).",
-        "Elke stylePrompt moet een complete Engelse image-prompt-blok zijn (minstens 8 zinnen) over camera, licht, sfeer, locatie, materialen, kleur en verboden elementen.",
-        "Gebruik imageIndexes (0-based) om te markeren welke uploads bij welke stijl horen.",
-        'Antwoord UITSLUITEND als JSON-object met key "styles": array van { "name", "tags", "do", "avoid", "stylePrompt", "imageIndexes" }.',
-        "Geen markdown, geen uitleg buiten JSON.",
+        `Extract the PHOTOGRAPHIC / VISUAL STYLE from these reference images for brand "${input.brandName || "the client"}".`,
+        "CRITICAL: Ignore what is depicted (car, building, person, product, location). Do NOT describe subjects, objects, or scenes as the style.",
+        "ONLY extract how the image looks: medium (photo/film/illustration), realism level, color palette & grading, contrast, saturation, lighting quality/direction/time-of-day feel, shadows/highlights, sharpness/detail/grain/noise, depth of field, lens/camera character, composition mood, texture treatment, overall aesthetic tone.",
+        "If images share one look: return exactly 1 style. If clearly different looks: up to 4 separate styles.",
+        "name: short style label (e.g. 'Cool cinematic realism'), never a subject label (not 'Sports car' or 'Factory').",
+        "tags: style keywords only (e.g. photorealistic, teal-orange grade, soft key light) — no object names.",
+        "do / avoid: photographic/style instructions only, not subjects to include/exclude unless a visual treatment is forbidden (e.g. neon cyberpunk).",
+        "stylePrompt: English reusable LOOK block (8–16 sentences) that can wrap ANY future subject. Explicitly say the look must apply regardless of subject. No cars, buildings, people, or products named unless as texture/material references (steel, wet asphalt, wool).",
+        "imageIndexes: 0-based indexes of images belonging to that style.",
+        'Return ONLY JSON: { "styles": [{ "name", "tags", "do", "avoid", "stylePrompt", "imageIndexes" }] }.',
       ].join("\n"),
     },
   ];
 
-  // detail "low" is genoeg voor stijl en voorkomt truncated/ongeldige antwoorden bij grote foto's
   input.images.forEach((image, index) => {
     parts.push({ type: "text", text: `Image index ${index}: ${image.name}` });
     parts.push({
       type: "image_url",
       image_url: {
         url: `data:${image.mime};base64,${Buffer.from(image.bytes).toString("base64")}`,
-        detail: "low",
+        detail: "high",
       },
     });
   });
@@ -158,8 +159,13 @@ export async function extractVisualStylesFromImages(input: {
       messages: [
         {
           role: "system",
-          content:
-            "Je bent een art director die merkbeeldstijlen uit referentiefoto's destilleert tot herbruikbare image-generation prompts. Antwoord altijd met geldige JSON.",
+          content: [
+            "You are a photography art director specializing in visual style transfer briefs.",
+            "Your job is to describe HOW images look, never WHAT they show.",
+            "Forbidden in outputs: listing the main subject (car, factory, person, skyline) as the style definition.",
+            "Required: lighting, color grade, contrast, realism, grain/detail, lens character, mood of the look.",
+            "Output valid JSON only.",
+          ].join(" "),
         },
         { role: "user", content: parts },
       ],

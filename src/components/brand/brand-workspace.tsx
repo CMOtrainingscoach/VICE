@@ -596,7 +596,7 @@ function VisualEditor({
         <div>
           <h2 className="text-lg font-medium">Referentiebeelden</h2>
           <p className="mt-1 text-sm text-vice-text-muted">
-            Upload voorbeelden. AI haalt er één of meerdere beeldstijlen uit. Bij bloggeneratie kies je welke stijl actief is.
+            Upload voorbeelden. AI analyseert de fotografische stijl (licht, kleur, detail, sfeer) — niet wat er op de foto staat. Bij bloggeneratie kies je welke stijl actief is.
           </p>
         </div>
         <Input
