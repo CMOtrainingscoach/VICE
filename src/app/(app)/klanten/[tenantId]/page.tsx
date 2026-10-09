@@ -1,16 +1,22 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { TenantForm } from "@/components/clients/tenant-form";
-import { TenantAdminPanel } from "@/components/clients/tenant-admin-panel";
+import { TenantDetailTabs } from "@/components/clients/tenant-detail-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getUserAppContext } from "@/lib/auth/context";
+import { emptyBloggerStatus, parseBloggerPublic } from "@/lib/integrations/blogger";
 import { createClient } from "@/lib/supabase/server";
 import { TENANT_STATUS_LABELS, type TenantRow } from "@/lib/types/tenant";
 
 export default async function TenantDetailPage({
   params,
+  searchParams,
 }: PageProps<"/klanten/[tenantId]">) {
   const { tenantId } = await params;
+  const query = await searchParams;
+  const tabParam = typeof query.tab === "string" ? query.tab : "gegevens";
+  const tab = tabParam === "instellingen" ? "instellingen" : "gegevens";
+  const bloggerFlash = typeof query.blogger === "string" ? query.blogger : null;
+
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
 
@@ -28,6 +34,17 @@ export default async function TenantDetailPage({
 
   const tenant = data as TenantRow;
   const isAdmin = ctx.isPlatformAdmin;
+
+  let blogger = emptyBloggerStatus();
+  if (isAdmin) {
+    const status = await supabase.schema("app").rpc("get_tenant_integration_public", {
+      p_tenant_id: tenantId,
+      p_provider: "blogger",
+    });
+    if (!status.error) {
+      blogger = parseBloggerPublic(status.data);
+    }
+  }
 
   return (
     <div className="p-8">
@@ -78,13 +95,12 @@ export default async function TenantDetailPage({
               Neem een meeting op of upload het markdownbestand bij Strategische audit.
             </p>
           </section>
-          <div className="grid gap-8 lg:grid-cols-2">
-            <div>
-              <h2 className="mb-4 text-lg font-medium">Gegevens</h2>
-              <TenantForm mode="edit" tenant={tenant} />
-            </div>
-            <TenantAdminPanel tenant={tenant} />
-          </div>
+          <TenantDetailTabs
+            tenant={tenant}
+            tab={tab}
+            blogger={blogger}
+            bloggerFlash={bloggerFlash}
+          />
         </>
       ) : (
         <>

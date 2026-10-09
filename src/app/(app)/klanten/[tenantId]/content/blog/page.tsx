@@ -3,6 +3,7 @@ import { BlogWorkspace } from "@/components/content/blog-workspace";
 import { getUserAppContext } from "@/lib/auth/context";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
+import { parseBloggerPublic } from "@/lib/integrations/blogger";
 import {
   listBlogConceptsAction,
   loadBlogBrandContextAction,
@@ -43,6 +44,12 @@ export default async function BlogContentPage({
     );
   }
 
+  const bloggerStatus = await supabase.schema("app").rpc("get_tenant_integration_public", {
+    p_tenant_id: tenantId,
+    p_provider: "blogger",
+  });
+  const blogger = !bloggerStatus.error ? parseBloggerPublic(bloggerStatus.data) : null;
+
   return (
     <BlogWorkspace
       tenantId={tenantId}
@@ -50,6 +57,8 @@ export default async function BlogContentPage({
       brand={brand.data}
       initial={null}
       concepts={concepts.ok ? concepts.data ?? [] : []}
+      bloggerReady={Boolean(blogger?.connected && blogger.blogId)}
+      bloggerBlogName={blogger?.blogName ?? null}
     />
   );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Copy, ImageIcon, LoaderCircle, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { Check, Copy, ImageIcon, LoaderCircle, Pencil, Sparkles, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,7 @@ import {
   selectBlogVisualAction,
   updateBlogVisualAltAction,
 } from "@/modules/content/blog-actions";
+import { publishBlogConceptToBloggerAction } from "@/modules/integrations/blogger-actions";
 
 export function BlogWorkspace({
   tenantId,
@@ -27,12 +28,16 @@ export function BlogWorkspace({
   brand,
   initial,
   concepts,
+  bloggerReady = false,
+  bloggerBlogName = null,
 }: {
   tenantId: string;
   tenantName: string;
   brand: BrandContext;
   initial: BlogConcept | null;
   concepts: BlogConceptSummary[];
+  bloggerReady?: boolean;
+  bloggerBlogName?: string | null;
 }) {
   const router = useRouter();
   const [concept, setConcept] = useState<BlogConcept | null>(initial);
@@ -51,6 +56,7 @@ export function BlogWorkspace({
   const [visualTweak, setVisualTweak] = useState("");
   const [tweakOpen, setTweakOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [publishUrl, setPublishUrl] = useState<string | null>(null);
   const [forceEditor, setForceEditor] = useState(Boolean(initial && (initial.title || initial.bodyHtml)));
   const [conceptList, setConceptList] = useState(concepts);
   const [deletingId, setDeletingId] = useState("");
@@ -504,6 +510,53 @@ export function BlogWorkspace({
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function publishToBlogger(asDraft: boolean) {
+    if (!concept) return;
+    let conceptId = concept.id;
+    if (dirtyRef.current) {
+      setBusy("save");
+      setError("");
+      const html = editorRef.current?.innerHTML ?? bodyHtml;
+      const saved = await saveBlogConceptAction(concept.id, concept.updatedAt, {
+        title: extractTitleClient(html) || title,
+        bodyHtml: html,
+        mode,
+        language,
+        lengthKey,
+        sourceText,
+      }, { quiet: true });
+      setBusy("");
+      if (!saved.ok || !saved.data) {
+        setError(saved.ok ? "Opslaan voor publicatie mislukt" : saved.error);
+        return;
+      }
+      setConcept(saved.data);
+      conceptId = saved.data.id;
+      dirtyRef.current = false;
+      setSaveState("saved");
+    }
+    if (
+      !asDraft &&
+      !window.confirm(
+        bloggerBlogName
+          ? `Dit artikel live publiceren op «${bloggerBlogName}»?`
+          : "Dit artikel live publiceren op Blogger?",
+      )
+    ) {
+      return;
+    }
+    setBusy(asDraft ? "draft" : "publish");
+    setError("");
+    setPublishUrl(null);
+    const result = await publishBlogConceptToBloggerAction(conceptId, { asDraft });
+    setBusy("");
+    if (!result.ok || !result.data) {
+      setError(result.ok ? "Publiceren mislukt" : result.error);
+      return;
+    }
+    setPublishUrl(result.data.url || null);
+  }
+
   async function deleteConcept(itemId: string) {
     if (!window.confirm("Dit blogconcept permanent verwijderen? Tekst, revisies en visuals gaan mee weg.")) {
       return;
@@ -740,7 +793,43 @@ export function BlogWorkspace({
               <Button type="button" variant="secondary" onClick={() => void copyText()}>
                 <Copy className="size-4" /> {copied ? "Gekopieerd" : "Kopieer tekst"}
               </Button>
+              {bloggerReady ? (
+                <>
+                  <Button
+                    type="button"
+                    disabled={busy !== "" || !concept}
+                    onClick={() => void publishToBlogger(false)}
+                  >
+                    {busy === "publish" ? <LoaderCircle className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                    Publiceer op Blogger
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={busy !== "" || !concept}
+                    onClick={() => void publishToBlogger(true)}
+                  >
+                    {busy === "draft" ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                    Als concept op Blogger
+                  </Button>
+                </>
+              ) : (
+                <Link
+                  href={`/klanten/${tenantId}?tab=instellingen`}
+                  className="inline-flex items-center gap-2 rounded-md border border-vice-border bg-vice-surface px-4 py-2 text-sm font-medium text-vice-text-muted hover:text-vice-text"
+                >
+                  Koppel Blogger in Instellingen
+                </Link>
+              )}
             </div>
+            {publishUrl ? (
+              <p className="mt-3 text-sm text-emerald-800">
+                Gepubliceerd op Blogger:{" "}
+                <a href={publishUrl} target="_blank" rel="noreferrer" className="underline">
+                  {publishUrl}
+                </a>
+              </p>
+            ) : null}
             {rewriteOpen ? (
               <div className="mt-4 rounded-xl border border-vice-border p-4">
                 <p className="text-sm font-medium">Wat wil je aanpassen?</p>
