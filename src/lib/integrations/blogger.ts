@@ -39,12 +39,21 @@ function appUrl() {
   return (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 }
 
+/** Basis-URL voor OAuth: bij voorkeur het echte request-origin (Vercel/lokaal). */
+export function resolveAppBaseUrl(requestOrigin?: string | null) {
+  const fromRequest = (requestOrigin ?? "").replace(/\/$/, "");
+  if (fromRequest.startsWith("http://") || fromRequest.startsWith("https://")) {
+    return fromRequest;
+  }
+  return appUrl();
+}
+
 export function bloggerConfigured() {
   return Boolean(process.env.GOOGLE_CLIENT_ID?.trim() && process.env.GOOGLE_CLIENT_SECRET?.trim());
 }
 
-export function bloggerRedirectUri() {
-  return `${appUrl()}/api/integrations/blogger/callback`;
+export function bloggerRedirectUri(baseUrl?: string) {
+  return `${(baseUrl ?? appUrl()).replace(/\/$/, "")}/api/integrations/blogger/callback`;
 }
 
 export function createOAuthState(tenantId: string) {
@@ -73,26 +82,25 @@ export function parseOAuthState(state: string): { tenantId: string } | null {
   return { tenantId };
 }
 
-export function buildBloggerAuthUrl(state: string) {
+export function buildBloggerAuthUrl(state: string, redirectUri?: string) {
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID ?? "",
-    redirect_uri: bloggerRedirectUri(),
+    redirect_uri: redirectUri ?? bloggerRedirectUri(),
     response_type: "code",
     scope: SCOPES,
     access_type: "offline",
     prompt: "consent",
-    include_granted_scopes: "true",
     state,
   });
   return `${GOOGLE_AUTH}?${params.toString()}`;
 }
 
-export async function exchangeBloggerCode(code: string) {
+export async function exchangeBloggerCode(code: string, redirectUri?: string) {
   const body = new URLSearchParams({
     code,
     client_id: process.env.GOOGLE_CLIENT_ID ?? "",
     client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
-    redirect_uri: bloggerRedirectUri(),
+    redirect_uri: redirectUri ?? bloggerRedirectUri(),
     grant_type: "authorization_code",
   });
   const res = await fetch(GOOGLE_TOKEN, {

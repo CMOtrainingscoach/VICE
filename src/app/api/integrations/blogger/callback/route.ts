@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
+  bloggerRedirectUri,
   exchangeBloggerCode,
   fetchGoogleAccountEmail,
   parseOAuthState,
+  resolveAppBaseUrl,
 } from "@/lib/integrations/blogger";
 import { getSession, isPlatformAdmin } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
@@ -13,16 +15,20 @@ export async function GET(request: NextRequest) {
   const state = url.searchParams.get("state") ?? "";
   const oauthError = url.searchParams.get("error");
   const cookieState = request.cookies.get("vice_blogger_oauth")?.value ?? "";
+  const cookieRedirect = request.cookies.get("vice_blogger_redirect")?.value ?? "";
 
   const parsed = parseOAuthState(state);
   const tenantId = parsed?.tenantId;
+  const clearCookies = (response: NextResponse) => {
+    response.cookies.set("vice_blogger_oauth", "", { path: "/", maxAge: 0 });
+    response.cookies.set("vice_blogger_redirect", "", { path: "/", maxAge: 0 });
+    return response;
+  };
   const fail = (codeName: string) => {
     const target = tenantId
       ? `/klanten/${tenantId}?tab=instellingen&blogger=${codeName}`
       : `/klanten?blogger=${codeName}`;
-    const response = NextResponse.redirect(new URL(target, request.url));
-    response.cookies.set("vice_blogger_oauth", "", { path: "/", maxAge: 0 });
-    return response;
+    return clearCookies(NextResponse.redirect(new URL(target, request.url)));
   };
 
   if (oauthError) return fail("denied");
@@ -31,14 +37,17 @@ export async function GET(request: NextRequest) {
 
   const session = await getSession();
   if (!session) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return clearCookies(NextResponse.redirect(new URL("/login", request.url)));
   }
   if (!(await isPlatformAdmin(session.userId))) {
     return fail("forbidden");
   }
 
+  const redirectUri =
+    cookieRedirect || bloggerRedirectUri(resolveAppBaseUrl(request.nextUrl.origin));
+
   try {
-    const tokens = await exchangeBloggerCode(code);
+    const tokens = await exchangeBloggerCode(code, redirectUri);
     const email = await fetchGoogleAccountEmail(tokens.accessToken);
     const expires = new Date(Date.now() + tokens.expiresIn * 1000).toISOString();
     const supabase = await createClient();
@@ -56,11 +65,11 @@ export async function GET(request: NextRequest) {
       return fail("save");
     }
 
-    const response = NextResponse.redirect(
-      new URL(`/klanten/${tenantId}?tab=instellingen&blogger=connected`, request.url),
+    return clearCookies(
+      NextResponse.redirect(
+        new URL(`/klanten/${tenantId}?tab=instellingen&blogger=connected`, request.url),
+      ),
     );
-    response.cookies.set("vice_blogger_oauth", "", { path: "/", maxAge: 0 });
-    return response;
   } catch (error) {
     console.error("blogger callback", error);
     return fail("token");

@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   bloggerConfigured,
+  bloggerRedirectUri,
   buildBloggerAuthUrl,
   createOAuthState,
+  resolveAppBaseUrl,
 } from "@/lib/integrations/blogger";
 import { getSession, isPlatformAdmin } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
@@ -39,12 +41,31 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/mfa/verify", request.url));
   }
 
+  const baseUrl = resolveAppBaseUrl(request.nextUrl.origin);
+  const redirectUri = bloggerRedirectUri(baseUrl);
+  // Productie mag nooit een http-localhost callback naar Google sturen.
+  if (baseUrl.includes("vercel.app") || baseUrl.startsWith("https://")) {
+    if (redirectUri.startsWith("http://localhost") || redirectUri.startsWith("http://127.")) {
+      return NextResponse.redirect(
+        new URL(`/klanten/${tenantId}?tab=instellingen&blogger=not-configured`, request.url),
+      );
+    }
+  }
+
   const state = createOAuthState(tenantId);
-  const response = NextResponse.redirect(buildBloggerAuthUrl(state));
+  const response = NextResponse.redirect(buildBloggerAuthUrl(state, redirectUri));
+  const secure = baseUrl.startsWith("https://");
   response.cookies.set("vice_blogger_oauth", state, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure,
+    path: "/",
+    maxAge: 15 * 60,
+  });
+  response.cookies.set("vice_blogger_redirect", redirectUri, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure,
     path: "/",
     maxAge: 15 * 60,
   });
