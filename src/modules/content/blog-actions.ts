@@ -10,12 +10,17 @@ import {
   hydrateInlineVisualUrls,
   normalizeBlogDocument,
 } from "@/lib/content/blog-ai";
+import { extractBlogSourceText } from "@/lib/content/blog-source-extract";
 import {
   BLOG_MIGRATION,
+  type BlogAiSource,
   type BlogConcept,
   type BlogConceptSummary,
   type BlogLength,
   type BlogMode,
+  type BlogPendingDocument,
+  type BlogSourceInput,
+  type BlogSourceMeeting,
   type BlogVisual,
   type BrandContext,
   type JobStatus,
@@ -25,7 +30,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
-const MISSING = /list_blog_concepts|get_blog_concept|create_blog_concept|save_blog_concept|delete_blog_concept|delete_blog_visual|add_blog_|schema cache|does not exist|Could not find the function/i;
+const MISSING = /list_blog_concepts|get_blog_concept|create_blog_concept|save_blog_concept|delete_blog_concept|delete_blog_visual|add_blog_|list_blog_source|replace_blog_concept_sources|resolve_blog_concept_source|schema cache|does not exist|Could not find the function/i;
 
 function migration(message: string): string {
   return MISSING.test(message) ? BLOG_MIGRATION : message;
@@ -140,12 +145,66 @@ export async function loadBlogConceptAction(conceptId: string): Promise<ActionRe
   return { ok: true, data: mapped };
 }
 
+export async function listBlogSourceMeetingsAction(
+  tenantId: string,
+): Promise<ActionResult<BlogSourceMeeting[]>> {
+  const supabase = await authed();
+  const listed = await supabase.schema("app").rpc("list_blog_source_meetings", {
+    p_tenant_id: tenantId,
+  });
+  if (listed.error) return { ok: false, error: migration(listed.error.message) };
+  const rows = Array.isArray(listed.data) ? listed.data : [];
+  return {
+    ok: true,
+    data: rows
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+      .map((item) => ({
+        id: String(item.id ?? ""),
+        title: String(item.title ?? "Meeting"),
+        subject: String(item.subject ?? ""),
+        createdAt: String(item.createdAt ?? ""),
+        hasSummary: Boolean(item.hasSummary),
+        transcriptChars: Number(item.transcriptChars) || 0,
+      }))
+      .filter((item) => item.id),
+  };
+}
+
+export async function extractBlogSourceDocumentAction(
+  formData: FormData,
+): Promise<ActionResult<BlogPendingDocument>> {
+  await authed();
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { ok: false, error: "Geen bestand gekozen." };
+  if (file.size > 8 * 1024 * 1024) return { ok: false, error: "Bestand is groter dan 8 MB." };
+
+  try {
+    const extracted = await extractBlogSourceText({
+      bytes: await file.arrayBuffer(),
+      fileName: file.name,
+      mimeType: file.type,
+    });
+    return {
+      ok: true,
+      data: {
+        key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: extracted.label,
+        excerpt: extracted.excerpt,
+        mimeType: extracted.mimeType,
+      },
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Document lezen mislukt" };
+  }
+}
+
 export async function createBlogConceptAction(input: {
   tenantId: string;
   mode: BlogMode;
   language: string;
   lengthKey: BlogLength;
   sourceText: string;
+  sources?: BlogSourceInput[];
 }): Promise<ActionResult<BlogConcept>> {
   const text = input.sourceText.trim();
   if (text.length < 8) return { ok: false, error: "Beschrijf eerst een onderwerp of plak tekst." };
@@ -171,8 +230,49 @@ export async function createBlogConceptAction(input: {
   if (created.error || !created.data) return { ok: false, error: migration(created.error?.message ?? "Concept aanmaken mislukt") };
   const mapped = await mapConcept(created.data);
   if (!mapped) return { ok: false, error: "Concept aanmaken mislukt" };
+
+  if (input.sources && input.sources.length > 0) {
+    const savedSources = await supabase.schema("app").rpc("replace_blog_concept_sources", {
+      p_concept_id: mapped.id,
+      p_sources: input.sources,
+    });
+    if (savedSources.error) {
+      return { ok: false, error: migration(savedSources.error.message) };
+    }
+  }
+
   revalidateBlog(input.tenantId, mapped.id);
   return { ok: true, data: mapped };
+}
+
+export async function replaceBlogConceptSourcesAction(
+  conceptId: string,
+  sources: BlogSourceInput[],
+): Promise<ActionResult> {
+  const supabase = await authed();
+  const saved = await supabase.schema("app").rpc("replace_blog_concept_sources", {
+    p_concept_id: conceptId,
+    p_sources: sources,
+  });
+  if (saved.error) return { ok: false, error: migration(saved.error.message) };
+  return { ok: true };
+}
+
+async function loadResolvedBlogSources(conceptId: string): Promise<BlogAiSource[]> {
+  const supabase = await authed();
+  const resolved = await supabase.schema("app").rpc("resolve_blog_concept_source_texts", {
+    p_concept_id: conceptId,
+  });
+  if (resolved.error || !Array.isArray(resolved.data)) return [];
+  return resolved.data
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    .map((item) => ({
+      kind: String(item.kind ?? ""),
+      label: String(item.label ?? ""),
+      text: String(item.text ?? "").trim(),
+    }))
+    .filter((item) => item.text.length > 0)
+    .slice(0, 8);
 }
 
 export async function saveBlogConceptAction(
@@ -234,12 +334,14 @@ export async function generateBlogTextAction(conceptId: string): Promise<ActionR
   });
 
   try {
+    const sources = await loadResolvedBlogSources(conceptId);
     const generated = await generateBlogText({
       mode: concept.mode,
       sourceText: concept.sourceText,
       language: concept.language,
       lengthKey: concept.lengthKey,
       voice: concept.brandVoiceSnapshot,
+      sources,
     });
     const document = normalizeBlogDocument(generated.title, generated.bodyHtml);
     const plain = htmlToPlain(document.bodyHtml);

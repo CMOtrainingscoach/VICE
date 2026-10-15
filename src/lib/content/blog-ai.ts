@@ -73,6 +73,7 @@ export async function generateBlogText(input: {
   lengthKey: BlogLength;
   voice: string;
   positioning?: string;
+  sources?: { kind: string; label: string; text: string }[];
   instruction?: string;
   currentTitle?: string;
   currentBodyHtml?: string;
@@ -101,6 +102,17 @@ export async function generateBlogText(input: {
     );
     userParts.push("Alleen een CTA wanneer die past en onderbouwd is vanuit de invoer.");
     userParts.push(`Onderwerp:\n${input.sourceText}`);
+  }
+  if (input.sources && input.sources.length > 0) {
+    userParts.push(
+      [
+        "Extra bronnen (gebruik alleen deze feiten; verzin niets erbuiten; citeer geen interne bronlabels in de tekst):",
+        ...input.sources.map((source, index) => {
+          const kindLabel = source.kind === "meeting" ? "Meeting" : "Document";
+          return `### Bron ${index + 1} — ${kindLabel}: ${source.label || "Naamloos"}\n${source.text}`;
+        }),
+      ].join("\n\n"),
+    );
   }
   userParts.push("Zet altijd H1, H2 (en H3 waar nuttig) en paragraaftekst in bodyHtml — geen platte tekst zonder koppen.");
   userParts.push(

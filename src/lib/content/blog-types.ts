@@ -57,6 +57,36 @@ export type BlogConceptSummary = {
   brandVersionNumber: number | null;
 };
 
+export type BlogSourceMeeting = {
+  id: string;
+  title: string;
+  subject: string;
+  createdAt: string;
+  hasSummary: boolean;
+  transcriptChars: number;
+};
+
+export type BlogPendingDocument = {
+  key: string;
+  label: string;
+  excerpt: string;
+  mimeType: string;
+};
+
+export type BlogSourceInput = {
+  kind: "meeting" | "document";
+  meetingRecordingId?: string;
+  label?: string;
+  excerpt?: string;
+  mimeType?: string;
+};
+
+export type BlogAiSource = {
+  kind: string;
+  label: string;
+  text: string;
+};
+
 export type BrandVisualStyleOption = {
   id: string;
   name: string;
@@ -86,7 +116,7 @@ export type BrandContext = {
 };
 
 export const BLOG_MIGRATION =
-  "Pas migratie 20260330134800 toe in de Supabase SQL-editor, na 20260330134700. Voor concept verwijderen: 20260330134900. Voor visual verwijderen: 20260330135000.";
+  "Pas migratie 20260330134800 toe in de Supabase SQL-editor, na 20260330134700. Voor concept verwijderen: 20260330134900. Voor visual verwijderen: 20260330135000. Voor blogbronnen: 20260330135200.";
 
 export const LENGTH_LABELS: Record<BlogLength, string> = {
   short: "Kort",

@@ -6,6 +6,7 @@ import type { TenantRow } from "@/lib/types/tenant";
 import { parseBloggerPublic } from "@/lib/integrations/blogger";
 import {
   listBlogConceptsAction,
+  listBlogSourceMeetingsAction,
   loadBlogBrandContextAction,
 } from "@/modules/content/blog-actions";
 
@@ -30,9 +31,10 @@ export default async function BlogContentPage({
     .maybeSingle();
   if (!tenantData) notFound();
 
-  const [brand, concepts] = await Promise.all([
+  const [brand, concepts, meetings] = await Promise.all([
     loadBlogBrandContextAction(tenantId),
     listBlogConceptsAction(tenantId),
+    listBlogSourceMeetingsAction(tenantId),
   ]);
 
   if (!brand.ok || !brand.data) {
@@ -57,6 +59,7 @@ export default async function BlogContentPage({
       brand={brand.data}
       initial={null}
       concepts={concepts.ok ? concepts.data ?? [] : []}
+      sourceMeetings={meetings.ok ? meetings.data ?? [] : []}
       bloggerReady={Boolean(blogger?.connected && blogger.blogId)}
       bloggerBlogName={blogger?.blogName ?? null}
     />

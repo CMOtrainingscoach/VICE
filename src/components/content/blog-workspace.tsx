@@ -3,18 +3,29 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Copy, ImageIcon, LoaderCircle, Pencil, Sparkles, Trash2, Upload } from "lucide-react";
+import { Check, Copy, FileText, ImageIcon, LoaderCircle, Pencil, Sparkles, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LENGTH_LABELS, type BlogConcept, type BlogConceptSummary, type BlogLength, type BlogMode, type BrandContext } from "@/lib/content/blog-types";
+import {
+  LENGTH_LABELS,
+  type BlogConcept,
+  type BlogConceptSummary,
+  type BlogLength,
+  type BlogMode,
+  type BlogPendingDocument,
+  type BlogSourceMeeting,
+  type BrandContext,
+} from "@/lib/content/blog-types";
 import {
   applyBlogRewriteAction,
   createBlogConceptAction,
   deleteBlogConceptAction,
   deleteBlogVisualAction,
+  extractBlogSourceDocumentAction,
   generateBlogTextAction,
   generateBlogVisualAction,
+  replaceBlogConceptSourcesAction,
   rewriteBlogTextAction,
   saveBlogConceptAction,
   selectBlogVisualAction,
@@ -28,6 +39,7 @@ export function BlogWorkspace({
   brand,
   initial,
   concepts,
+  sourceMeetings = [],
   bloggerReady = false,
   bloggerBlogName = null,
 }: {
@@ -36,6 +48,7 @@ export function BlogWorkspace({
   brand: BrandContext;
   initial: BlogConcept | null;
   concepts: BlogConceptSummary[];
+  sourceMeetings?: BlogSourceMeeting[];
   bloggerReady?: boolean;
   bloggerBlogName?: string | null;
 }) {
@@ -45,10 +58,13 @@ export function BlogWorkspace({
   const [language, setLanguage] = useState(initial?.language ?? "nl");
   const [lengthKey, setLengthKey] = useState<BlogLength>(initial?.lengthKey ?? "medium");
   const [sourceText, setSourceText] = useState(initial?.sourceText ?? "");
+  const [selectedMeetingIds, setSelectedMeetingIds] = useState<string[]>([]);
+  const [pendingDocuments, setPendingDocuments] = useState<BlogPendingDocument[]>([]);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [bodyHtml, setBodyHtml] = useState(initial?.bodyHtml ?? "");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [proposal, setProposal] = useState<{ title: string; bodyHtml: string; instruction: string } | null>(null);
   const [rewriteOpen, setRewriteOpen] = useState(false);
@@ -329,8 +345,45 @@ export function BlogWorkspace({
     Boolean(concept?.brandVersionNumber != null && brand.versionNumber != null) &&
     concept!.brandVersionNumber !== brand.versionNumber;
 
+  function buildSourcePayload() {
+    return [
+      ...selectedMeetingIds.map((id) => ({
+        kind: "meeting" as const,
+        meetingRecordingId: id,
+      })),
+      ...pendingDocuments.map((doc) => ({
+        kind: "document" as const,
+        label: doc.label,
+        excerpt: doc.excerpt,
+        mimeType: doc.mimeType,
+      })),
+    ];
+  }
+
+  function toggleMeeting(id: string) {
+    setSelectedMeetingIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
+  }
+
+  async function onPickDocument(fileList: FileList | null) {
+    const file = fileList?.[0];
+    if (!file) return;
+    setBusy("source-file");
+    setError("");
+    const formData = new FormData();
+    formData.set("file", file);
+    const result = await extractBlogSourceDocumentAction(formData);
+    setBusy("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!result.ok || !result.data) {
+      setError(result.ok ? "Document lezen mislukt" : result.error);
+      return;
+    }
+    setPendingDocuments((prev) => [...prev, result.data!]);
+  }
+
   async function ensureConcept() {
     let current = concept;
+    const sources = buildSourcePayload();
     if (!current) {
       const created = await createBlogConceptAction({
         tenantId,
@@ -338,6 +391,7 @@ export function BlogWorkspace({
         language,
         lengthKey,
         sourceText,
+        sources,
       });
       if (!created.ok || !created.data) {
         setError(created.ok ? "Concept aanmaken mislukt" : created.error);
@@ -357,6 +411,13 @@ export function BlogWorkspace({
     if (!saved.ok || !saved.data) {
       setError(saved.ok ? "Opslaan mislukt" : saved.error);
       return null;
+    }
+    if (sources.length > 0) {
+      const replaced = await replaceBlogConceptSourcesAction(saved.data.id, sources);
+      if (!replaced.ok) {
+        setError(replaced.error);
+        return null;
+      }
     }
     setConcept(saved.data);
     return saved.data;
@@ -641,6 +702,91 @@ export function BlogWorkspace({
             <p className="mt-2 text-xs text-vice-text-muted">
               Beschrijf je idee of plak tekst die je wilt laten herschrijven.
             </p>
+
+            <div className="mt-6">
+              <Label className="block text-sm">Bronnen (optioneel)</Label>
+              <p className="mt-1 text-xs text-vice-text-muted">
+                Koppel meetingtranscripten of upload PDF/Word. De AI gebruikt alleen deze feiten.
+              </p>
+
+              {sourceMeetings.length > 0 ? (
+                <ul className="mt-3 max-h-48 space-y-2 overflow-auto rounded-md border border-vice-border p-2">
+                  {sourceMeetings.map((meeting) => {
+                    const checked = selectedMeetingIds.includes(meeting.id);
+                    return (
+                      <li key={meeting.id}>
+                        <label className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-vice-bg">
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={checked}
+                            onChange={() => toggleMeeting(meeting.id)}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm text-vice-text">{meeting.title}</span>
+                            <span className="block text-xs text-vice-text-muted">
+                              {meeting.createdAt
+                                ? new Date(meeting.createdAt).toLocaleDateString("nl-BE")
+                                : ""}
+                              {meeting.transcriptChars
+                                ? ` · ${Math.round(meeting.transcriptChars / 1000)}k tekens`
+                                : ""}
+                            </span>
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="mt-3 text-xs text-vice-text-muted">
+                  Nog geen meetings met klaar transcript. Neem eerst een meeting op.
+                </p>
+              )}
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  className="hidden"
+                  onChange={(event) => void onPickDocument(event.target.files)}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy !== ""}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {busy === "source-file" ? <LoaderCircle className="size-4 animate-spin" /> : <FileText className="size-4" />}
+                  Upload PDF of Word
+                </Button>
+              </div>
+
+              {pendingDocuments.length > 0 ? (
+                <ul className="mt-3 space-y-2">
+                  {pendingDocuments.map((doc) => (
+                    <li
+                      key={doc.key}
+                      className="flex items-center justify-between gap-3 rounded-md border border-vice-border px-3 py-2 text-sm"
+                    >
+                      <span className="truncate">{doc.label}</span>
+                      <button
+                        type="button"
+                        className="text-vice-text-muted hover:text-vice-text"
+                        aria-label="Document verwijderen"
+                        onClick={() =>
+                          setPendingDocuments((prev) => prev.filter((item) => item.key !== doc.key))
+                        }
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Field label="Taal">
                 <select className={fieldClass} value={language} onChange={(event) => setLanguage(event.target.value)}>
