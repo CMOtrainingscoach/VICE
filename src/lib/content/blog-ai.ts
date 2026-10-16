@@ -152,6 +152,8 @@ export async function generateBlogImage(input: {
   colors: { name: string; hex: string; role: string }[];
   brandName: string;
   styleName?: string;
+  /** Optionele foto-inhoud; leeg = afleiden uit artikel. Stijl blijft altijd gelden. */
+  subject?: string;
   tweak?: string;
 }): Promise<{ bytes: Uint8Array; mime: string; prompt: string; styleSummary: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -171,14 +173,22 @@ export async function generateBlogImage(input: {
     input.tags.length ? `Tags: ${input.tags.join(", ")}` : "",
   ].filter(Boolean).join(" · ").slice(0, 220) || `Beeldstijl van ${input.brandName}`;
 
+  const subject = input.subject?.trim();
   const prompt = [
     "LOCKED BRAND VISUAL STYLE — follow this block strictly; do not invent another aesthetic:",
     input.stylePrompt || `Brand look of ${input.brandName}`,
     "",
     `Editorial blog visual for ${input.brandName}, wide 16:9 composition.`,
     input.styleName ? `Active style variant: ${input.styleName}` : "",
-    `Subject: ${input.title || input.summary}`,
-    input.summary ? `Article context (content only, not style): ${input.summary.slice(0, 400)}` : "",
+    subject
+      ? `Photo subject (primary — depict this, keep brand style): ${subject}`
+      : `Subject: ${input.title || input.summary}`,
+    !subject && input.summary
+      ? `Article context (content only, not style): ${input.summary.slice(0, 400)}`
+      : "",
+    subject && (input.title || input.summary)
+      ? `Article context (secondary only; do not replace the photo subject): ${(input.title || input.summary).slice(0, 280)}`
+      : "",
     input.tags.length ? `Mood tags: ${input.tags.join(", ")}` : "",
     input.doText ? `Do: ${input.doText}` : "",
     input.avoidText ? `Avoid: ${input.avoidText}` : "",

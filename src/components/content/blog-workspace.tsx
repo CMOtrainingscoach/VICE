@@ -70,6 +70,7 @@ export function BlogWorkspace({
   const [rewriteOpen, setRewriteOpen] = useState(false);
   const [rewriteInstruction, setRewriteInstruction] = useState("");
   const [visualTweak, setVisualTweak] = useState("");
+  const [visualSubject, setVisualSubject] = useState("");
   const [tweakOpen, setTweakOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [publishUrl, setPublishUrl] = useState<string | null>(null);
@@ -539,7 +540,11 @@ export function BlogWorkspace({
     try {
       const current = await ensureConcept();
       if (!current) return;
-      const result = await generateBlogVisualAction(current.id, tweak, selectedStyleId || undefined);
+      const result = await generateBlogVisualAction(current.id, {
+        tweak,
+        styleId: selectedStyleId || undefined,
+        subject: visualSubject.trim() || undefined,
+      });
       if (!result.ok || !result.data) {
         setError(result.ok ? "Visual genereren mislukt" : result.error);
         return;
@@ -835,6 +840,8 @@ export function BlogWorkspace({
             onGenerate={() => void runVisual()}
             selectedStyleId={selectedStyleId}
             onStyleChange={setSelectedStyleId}
+            visualSubject={visualSubject}
+            onVisualSubjectChange={setVisualSubject}
             disabledReason={
               !brand.hasVisual
                 ? "Beeldstijl ontbreekt"
@@ -1014,6 +1021,8 @@ export function BlogWorkspace({
             onTweak={() => setTweakOpen(true)}
             selectedStyleId={selectedStyleId}
             onStyleChange={setSelectedStyleId}
+            visualSubject={visualSubject}
+            onVisualSubjectChange={setVisualSubject}
             onSelect={(visualId) => {
               if (!concept) return;
               void selectBlogVisualAction(concept.id, concept.updatedAt, visualId).then((result) => {
@@ -1138,6 +1147,8 @@ function VisualCard({
   deletingVisual,
   selectedStyleId,
   onStyleChange,
+  visualSubject = "",
+  onVisualSubjectChange,
   disabledReason,
 }: {
   brand: BrandContext;
@@ -1155,6 +1166,8 @@ function VisualCard({
   deletingVisual?: boolean;
   selectedStyleId?: string;
   onStyleChange?: (styleId: string) => void;
+  visualSubject?: string;
+  onVisualSubjectChange?: (value: string) => void;
   disabledReason?: string;
 }) {
   const selected = concept?.selectedVisual;
@@ -1183,6 +1196,22 @@ function VisualCard({
           </p>
         </div>
       ) : null}
+      <div className="mt-4">
+        <Label htmlFor="visual-subject" className="mb-1.5 block text-xs text-vice-text-muted">
+          Waarover gaat de foto? (optioneel)
+        </Label>
+        <textarea
+          id="visual-subject"
+          className="min-h-20 w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm"
+          value={visualSubject}
+          disabled={busy || deletingVisual}
+          onChange={(event) => onVisualSubjectChange?.(event.target.value)}
+          placeholder="bv. Twee ondernemers die netwerken op een netwerkevent"
+        />
+        <p className="mt-1 text-xs text-vice-text-muted">
+          Leeg = AI kiest op basis van het artikel. Ingevuld = dit onderwerp, altijd in de gekozen beeldstijl.
+        </p>
+      </div>
       {selected?.url ? (
         <div className="mt-4 space-y-3">
           <div className="relative">

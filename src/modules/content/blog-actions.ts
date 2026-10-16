@@ -456,8 +456,7 @@ export async function applyBlogRewriteAction(
 
 export async function generateBlogVisualAction(
   conceptId: string,
-  tweak?: string,
-  styleId?: string,
+  options?: { tweak?: string; styleId?: string; subject?: string },
 ): Promise<ActionResult<BlogConcept>> {
   const loaded = await loadBlogConceptAction(conceptId);
   if (!loaded.ok || !loaded.data) return loaded;
@@ -470,7 +469,7 @@ export async function generateBlogVisualAction(
   }
 
   const selectedStyle =
-    brand.data.styles.find((style) => style.id === styleId) ??
+    brand.data.styles.find((style) => style.id === options?.styleId) ??
     brand.data.styles[0];
 
   const supabase = await authed();
@@ -492,7 +491,8 @@ export async function generateBlogVisualAction(
       colors: brand.data.colors,
       brandName: brand.data.brandName || brand.data.tenantName,
       styleName: selectedStyle.name,
-      tweak,
+      subject: options?.subject,
+      tweak: options?.tweak,
     });
 
     const ext = image.mime.includes("jpeg") ? "jpg" : image.mime.includes("webp") ? "webp" : "png";
