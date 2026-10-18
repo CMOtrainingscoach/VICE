@@ -8,6 +8,7 @@ import {
   publishBloggerPost,
   refreshBloggerAccessToken,
   toBloggerHtml,
+  uploadBloggerPhoto,
   type BloggerBlog,
   type BloggerPublicStatus,
 } from "@/lib/integrations/blogger";
@@ -116,47 +117,70 @@ export async function publishBlogConceptToBloggerAction(
   }
 
   const visuals = Array.isArray(row.visuals) ? row.visuals : [];
-  const mappedVisuals = await Promise.all(
-    visuals.map(async (item) => {
-      if (!item || typeof item !== "object") return null;
-      const visual = item as Record<string, unknown>;
-      if (!visual.id || !visual.storagePath) return null;
-      let url: string | null = null;
-      try {
-        const admin = createAdminClient();
-        const signed = await admin.storage
-          .from("content-assets")
-          .createSignedUrl(String(visual.storagePath), 60 * 60 * 24 * 7);
-        url = signed.data?.signedUrl ?? null;
-      } catch {
-        url = null;
-      }
-      return {
-        id: String(visual.id),
-        url,
-        altText: String(visual.altText ?? ""),
-      };
-    }),
-  );
-  const withUrls = mappedVisuals.filter((item): item is { id: string; url: string | null; altText: string } => Boolean(item));
-  const document = normalizeBlogDocument(title, rawBody);
-  let body = hydrateInlineVisualUrls(document.bodyHtml, withUrls);
-
-  const selectedId = row.selectedVisualId ? String(row.selectedVisualId) : null;
-  if (selectedId && !body.includes(`data-visual-id="${selectedId}"`) && !body.includes(`data-visual-id='${selectedId}'`)) {
-    const selected = withUrls.find((item) => item.id === selectedId);
-    if (selected?.url) {
-      body = `<p><img src="${selected.url}" alt="${selected.altText.replace(/"/g, "&quot;")}" /></p>${body}`;
-    }
-  }
+  const visualRows = visuals
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    .filter((item) => item.id && item.storagePath)
+    .map((item) => ({
+      id: String(item.id),
+      storagePath: String(item.storagePath),
+      mimeType: String(item.mimeType ?? "image/png"),
+      altText: String(item.altText ?? ""),
+    }));
 
   try {
     const accessToken = await ensureBloggerAccessToken(tenantId);
+    const admin = createAdminClient();
+
+    // Upload elke visual naar Blogger-foto-opslag (zelfde plek als handmatige upload in de editor).
+    const bloggerUrls = new Map<string, string>();
+    for (const visual of visualRows) {
+      const downloaded = await admin.storage.from("content-assets").download(visual.storagePath);
+      if (downloaded.error || !downloaded.data) {
+        throw new Error(`Visual kon niet worden gelezen: ${visual.id}`);
+      }
+      const bytes = new Uint8Array(await downloaded.data.arrayBuffer());
+      const ext = visual.mimeType.includes("jpeg") || visual.mimeType.includes("jpg")
+        ? "jpg"
+        : visual.mimeType.includes("webp")
+          ? "webp"
+          : "png";
+      const hosted = await uploadBloggerPhoto({
+        accessToken,
+        bytes,
+        mimeType: visual.mimeType || "image/png",
+        fileName: `vice-${visual.id}.${ext}`,
+      });
+      bloggerUrls.set(visual.id, hosted);
+    }
+
+    const withUrls = visualRows.map((visual) => ({
+      id: visual.id,
+      url: bloggerUrls.get(visual.id) ?? null,
+      altText: visual.altText,
+    }));
+
+    const document = normalizeBlogDocument(title, rawBody);
+    let body = hydrateInlineVisualUrls(document.bodyHtml, withUrls);
+
+    const selectedId = row.selectedVisualId ? String(row.selectedVisualId) : null;
+    if (
+      selectedId &&
+      !body.includes(`data-visual-id="${selectedId}"`) &&
+      !body.includes(`data-visual-id='${selectedId}'`)
+    ) {
+      const selected = withUrls.find((item) => item.id === selectedId);
+      if (selected?.url) {
+        body = `<p><img src="${selected.url}" alt="${selected.altText.replace(/"/g, "&quot;")}" /></p>${body}`;
+      }
+    }
+
+    const content = toBloggerHtml(body);
+
     const published = await publishBloggerPost({
       accessToken,
       blogId: status.blogId,
       title: document.title,
-      content: toBloggerHtml(body),
+      content,
       isDraft: options?.asDraft ?? false,
     });
     return { ok: true, data: published };

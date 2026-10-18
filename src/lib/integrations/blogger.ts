@@ -214,6 +214,128 @@ export async function publishBloggerPost(input: {
   };
 }
 
+/**
+ * Upload naar dezelfde Blogger-foto-opslag als de web-editor
+ * (resulteert in permanente *.googleusercontent.com / *.bp.blogspot.com URLs).
+ * Dit endpoint is wat Blogger UI gebruikt; niet gedocumenteerd in Blogger API v3.
+ */
+export async function uploadBloggerPhoto(input: {
+  accessToken: string;
+  bytes: Uint8Array;
+  mimeType: string;
+  fileName: string;
+}): Promise<string> {
+  const size = input.bytes.byteLength;
+  if (size <= 0) throw new Error("Lege afbeelding kan niet naar Blogger.");
+  const mime = input.mimeType || "image/png";
+  const fileName = input.fileName.replace(/[^\w.\-]+/g, "_") || `vice-${Date.now()}.png`;
+
+  const sessionBody = {
+    protocolVersion: "0.8",
+    createSessionRequest: {
+      fields: [
+        { external: { name: "file", filename: fileName, put: {}, size } },
+        { inlined: { name: "title", content: fileName, contentType: "text/plain" } },
+        { inlined: { name: "addtime", content: String(Date.now()), contentType: "text/plain" } },
+        { inlined: { name: "onepick_version", content: "v2", contentType: "text/plain" } },
+        { inlined: { name: "onepick_host_id", content: "10", contentType: "text/plain" } },
+        { inlined: { name: "onepick_host_usecase", content: "RichEditor", contentType: "text/plain" } },
+        { inlined: { name: "album_mode", content: "permanent", contentType: "text/plain" } },
+        { inlined: { name: "silo_id", content: "3", contentType: "text/plain" } },
+      ],
+    },
+  };
+
+  const startRes = await fetch("https://docs.google.com/upload/blogger/photos/resumable?authuser=0", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(size),
+      "X-Goog-Upload-Header-Content-Type": mime,
+      "X-Goog-Upload-Protocol": "resumable",
+    },
+    body: JSON.stringify(sessionBody),
+  });
+
+  const startText = await startRes.text();
+  if (!startRes.ok || startText.includes("AUTH_REQUIRED")) {
+    throw new Error("Blogger-foto-upload starten mislukt. Koppel Google Blogger opnieuw.");
+  }
+
+  const uploadUrl = startRes.headers.get("x-goog-upload-url") || startRes.headers.get("X-Goog-Upload-URL");
+  if (!uploadUrl) {
+    throw new Error("Blogger gaf geen upload-URL terug voor de afbeelding.");
+  }
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": mime,
+      "X-Goog-Upload-Command": "upload, finalize",
+      "X-Goog-Upload-Offset": "0",
+      Origin: "https://docs.google.com",
+      Referer: "https://docs.google.com/",
+    },
+    body: Buffer.from(input.bytes),
+  });
+
+  if (!uploadRes.ok) {
+    throw new Error(`Blogger-foto-upload mislukt (${uploadRes.status}).`);
+  }
+
+  const json = (await uploadRes.json()) as {
+    sessionStatus?: {
+      additionalInfo?: {
+        "uploader_service.GoogleRupioAdditionalInfo"?: {
+          completionInfo?: {
+            customerSpecificInfo?: { url?: string };
+          };
+        };
+      };
+    };
+  };
+
+  const rawUrl =
+    json.sessionStatus?.additionalInfo?.["uploader_service.GoogleRupioAdditionalInfo"]
+      ?.completionInfo?.customerSpecificInfo?.url;
+  if (!rawUrl) {
+    throw new Error("Blogger gaf geen permanente foto-URL terug.");
+  }
+
+  return toFullResolutionBloggerImageUrl(rawUrl);
+}
+
+/** Zet Blogger-upload-URL om naar full-resolution (s0), zoals de editor vaak doet. */
+export function toFullResolutionBloggerImageUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length === 0) return url;
+    const file = parts.pop();
+    if (!file) return url;
+    if (parts.length > 0 && (/^s\d+$/i.test(parts[parts.length - 1]) || /^w\d+/i.test(parts[parts.length - 1]))) {
+      parts.pop();
+    }
+    parts.push("s0", file);
+    parsed.pathname = `/${parts.join("/")}`;
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/** Vervang img-src URLs in HTML (exacter match op src="..."). */
+export function rewriteHtmlImageSources(html: string, replacements: Map<string, string>): string {
+  if (replacements.size === 0) return html;
+  return html.replace(/(<img\b[^>]*\bsrc=["'])([^"']+)(["'][^>]*>)/gi, (full, pre, src, post) => {
+    const next = replacements.get(src) ?? replacements.get(decodeURIComponent(src));
+    if (!next) return full;
+    return `${pre}${next}${post}`;
+  });
+}
+
 /** Zet VICE-editor-HTML om naar Blogger-vriendelijke content. */
 export function toBloggerHtml(bodyHtml: string): string {
   let html = bodyHtml;
