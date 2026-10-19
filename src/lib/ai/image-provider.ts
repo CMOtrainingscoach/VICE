@@ -93,40 +93,47 @@ async function generateWithOpenAi(prompt: string, aspect: ImageAspectRatio): Pro
   throw new Error("OpenAI gaf geen bruikbaar beeldresultaat.");
 }
 
-function extractGeminiImage(payload: unknown): { data: string; mime: string } | null {
+type GeminiImageHit = { data: string; mime: string } | { uri: string; mime: string };
+
+function extractGeminiImage(payload: unknown): GeminiImageHit | null {
   if (!payload || typeof payload !== "object") return null;
   const root = payload as Record<string, unknown>;
 
-  const tryBlock = (block: unknown): { data: string; mime: string } | null => {
+  const tryBlock = (block: unknown): GeminiImageHit | null => {
     if (!block || typeof block !== "object") return null;
     const row = block as Record<string, unknown>;
+    const mime = String(row.mime_type ?? row.mimeType ?? "image/jpeg");
     const data = row.data ?? row.b64_json ?? row.bytes;
-    if (typeof data !== "string" || !data) return null;
-    const mime = String(row.mime_type ?? row.mimeType ?? "image/png");
-    return { data, mime };
+    if (typeof data === "string" && data) return { data, mime };
+    const uri = row.uri ?? row.url;
+    if (typeof uri === "string" && uri) return { uri, mime };
+    return null;
+  };
+
+  const scanContentList = (list: unknown): GeminiImageHit | null => {
+    if (!Array.isArray(list)) return null;
+    for (const part of list) {
+      if (!part || typeof part !== "object") continue;
+      const row = part as Record<string, unknown>;
+      const hit = tryBlock(row) || tryBlock(row.image) || tryBlock(row.content);
+      if (hit) return hit;
+      if (Array.isArray(row.content)) {
+        const nested = scanContentList(row.content);
+        if (nested) return nested;
+      }
+    }
+    return null;
   };
 
   const direct = tryBlock(root.output_image) || tryBlock(root.outputImage);
   if (direct) return direct;
 
-  const outputs = root.outputs ?? root.output;
-  if (Array.isArray(outputs)) {
-    for (const item of outputs) {
-      if (!item || typeof item !== "object") continue;
-      const row = item as Record<string, unknown>;
-      const nested =
-        tryBlock(row)
-        || tryBlock(row.image)
-        || tryBlock(row.content);
-      if (nested) return nested;
-      if (Array.isArray(row.content)) {
-        for (const part of row.content) {
-          const fromPart = tryBlock(part) || tryBlock((part as { image?: unknown })?.image);
-          if (fromPart) return fromPart;
-        }
-      }
-    }
-  }
+  // Current Interactions API: image lives in steps[].content[]
+  const fromSteps = scanContentList(root.steps);
+  if (fromSteps) return fromSteps;
+
+  const fromOutputs = scanContentList(root.outputs ?? root.output);
+  if (fromOutputs) return fromOutputs;
 
   // generateContent-style fallback
   const candidates = root.candidates;
@@ -146,7 +153,7 @@ function extractGeminiImage(payload: unknown): { data: string; mime: string } | 
             mime:
               ("mimeType" in inline && inline.mimeType)
               || ("mime_type" in inline && inline.mime_type)
-              || "image/png",
+              || "image/jpeg",
           };
         }
       }
@@ -154,6 +161,28 @@ function extractGeminiImage(payload: unknown): { data: string; mime: string } | 
   }
 
   return null;
+}
+
+function geminiFailureHint(payload: Record<string, unknown>): string {
+  const status = typeof payload.status === "string" ? payload.status : null;
+  if (status && status !== "completed") {
+    return `Gemini-status: ${status}.`;
+  }
+  const steps = payload.steps;
+  if (Array.isArray(steps)) {
+    for (const step of steps) {
+      if (!step || typeof step !== "object") continue;
+      const content = (step as { content?: unknown }).content;
+      if (!Array.isArray(content)) continue;
+      for (const part of content) {
+        const text = (part as { type?: string; text?: string })?.text;
+        if (typeof text === "string" && text.trim()) {
+          return text.trim().slice(0, 240);
+        }
+      }
+    }
+  }
+  return "Controleer modeltoegang tot Nano Banana.";
 }
 
 async function generateWithGemini(prompt: string, aspect: ImageAspectRatio): Promise<GeneratedImage> {
@@ -182,6 +211,7 @@ async function generateWithGemini(prompt: string, aspect: ImageAspectRatio): Pro
         mime_type: "image/jpeg",
         aspect_ratio: aspect,
         image_size: imageSize,
+        delivery: "inline",
       },
     }),
   });
@@ -197,7 +227,20 @@ async function generateWithGemini(prompt: string, aspect: ImageAspectRatio): Pro
 
   const extracted = extractGeminiImage(json);
   if (!extracted) {
-    throw new Error("Gemini gaf geen afbeelding terug. Controleer modeltoegang tot Nano Banana.");
+    throw new Error(`Gemini gaf geen afbeelding terug. ${geminiFailureHint(json)}`);
+  }
+
+  if ("uri" in extracted) {
+    const imageRes = await fetch(extracted.uri);
+    if (!imageRes.ok) {
+      throw new Error("Gemini-beeld-URI kon niet worden gedownload.");
+    }
+    return {
+      bytes: new Uint8Array(await imageRes.arrayBuffer()),
+      mime: imageRes.headers.get("content-type") || extracted.mime || "image/jpeg",
+      provider: "gemini",
+      model,
+    };
   }
 
   return {
