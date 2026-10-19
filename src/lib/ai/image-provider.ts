@@ -178,7 +178,8 @@ async function generateWithGemini(prompt: string, aspect: ImageAspectRatio): Pro
       input: [{ type: "text", text: prompt }],
       response_format: {
         type: "image",
-        mime_type: "image/png",
+        // Nano Banana accepteert hier alleen JPEG (niet PNG).
+        mime_type: "image/jpeg",
         aspect_ratio: aspect,
         image_size: imageSize,
       },
@@ -201,7 +202,7 @@ async function generateWithGemini(prompt: string, aspect: ImageAspectRatio): Pro
 
   return {
     bytes: new Uint8Array(Buffer.from(extracted.data, "base64")),
-    mime: extracted.mime || "image/png",
+    mime: extracted.mime || "image/jpeg",
     provider: "gemini",
     model,
   };
