@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ImageIcon, LoaderCircle, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
+import { SocialPostMockup } from "@/components/content/social-post-mockup";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import type { BlogConceptSummary, BlogSourceMeeting, BrandContext } from "@/lib/content/blog-types";
@@ -796,6 +797,17 @@ export function SocialWorkspace({
           ) : null}
         </section>
       </div>
+
+      {concept && concept.assets.length > 0 ? (
+        <SocialPostMockup
+          brandName={brand.brandName || brand.tenantName || tenantName}
+          channels={channels}
+          format={format}
+          caption={caption}
+          hashtags={hashtags}
+          assets={concept.assets}
+        />
+      ) : null}
 
       {conceptList.length > 0 ? (
         <section className="mt-10">
