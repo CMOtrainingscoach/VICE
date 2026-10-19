@@ -3,13 +3,14 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ImageIcon, LoaderCircle, Pencil, Sparkles, Trash2, Upload } from "lucide-react";
+import { ImageIcon, LoaderCircle, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import type { BlogConceptSummary, BlogSourceMeeting, BrandContext } from "@/lib/content/blog-types";
 import {
   SOCIAL_CHANNELS,
   SOCIAL_FORMATS,
+  type SocialCarouselSlide,
   type SocialChannel,
   type SocialFormat,
   type SocialPostConcept,
@@ -22,6 +23,7 @@ import {
   deleteSocialPostConceptAction,
   generateSocialCaptionAction,
   generateSocialVisualAction,
+  planSocialCarouselOutlineAction,
   saveSocialPostConceptAction,
   selectSocialAssetAction,
   uploadSocialAssetAction,
@@ -60,6 +62,14 @@ export function SocialWorkspace({
   const [caption, setCaption] = useState(initial?.caption ?? "");
   const [hashtags, setHashtags] = useState(initial?.hashtags ?? "");
   const [visualSubject, setVisualSubject] = useState("");
+  const [carouselSlides, setCarouselSlides] = useState<SocialCarouselSlide[]>(() => {
+    if (initial?.format !== "carousel" || initial.assets.length === 0) return [];
+    return initial.assets.map((asset, index) => ({
+      id: crypto.randomUUID(),
+      title: asset.altText?.trim() || `Slide ${index + 1}`,
+      subject: asset.altText?.trim() || "",
+    }));
+  });
   const [selectedStyleId, setSelectedStyleId] = useState(brand.styles[0]?.id ?? "");
   const [conceptList, setConceptList] = useState(concepts);
   const [busy, setBusy] = useState("");
@@ -146,6 +156,21 @@ export function SocialWorkspace({
     }
   }
 
+  async function planCarouselOutline(
+    conceptId: string,
+    captionOverride?: string,
+  ): Promise<SocialCarouselSlide[] | null> {
+    const result = await planSocialCarouselOutlineAction(conceptId, {
+      caption: captionOverride,
+    });
+    if (!result.ok || !result.data) {
+      setError(result.ok ? "Outline maken mislukt" : result.error);
+      return null;
+    }
+    setCarouselSlides(result.data);
+    return result.data;
+  }
+
   async function generateCaption() {
     setBusy("caption");
     setError("");
@@ -161,6 +186,10 @@ export function SocialWorkspace({
       setCaption(result.data.caption);
       setHashtags(result.data.hashtags);
       setSaveState("saved");
+      if (format === "carousel") {
+        setBusy("outline");
+        await planCarouselOutline(result.data.id, result.data.caption);
+      }
     } finally {
       setBusy("");
     }
@@ -172,6 +201,32 @@ export function SocialWorkspace({
     try {
       const current = await ensureConcept();
       if (!current) return;
+
+      if (format === "carousel") {
+        let slides = carouselSlides.filter((slide) => slide.subject.trim());
+        if (slides.length < 2) {
+          setBusy("outline");
+          const planned = await planCarouselOutline(current.id, caption);
+          if (!planned || planned.length < 2) {
+            if (planned && planned.length < 2) setError("Outline heeft minstens 2 slides nodig.");
+            return;
+          }
+          slides = planned;
+          setBusy("image");
+        }
+        const result = await generateSocialVisualAction(current.id, {
+          styleId: selectedStyleId || undefined,
+          slides,
+        });
+        if (!result.ok || !result.data) {
+          setError(result.ok ? "Visuals genereren mislukt" : result.error);
+          return;
+        }
+        setConcept(result.data);
+        setSaveState("saved");
+        return;
+      }
+
       const result = await generateSocialVisualAction(current.id, {
         styleId: selectedStyleId || undefined,
         subject: visualSubject.trim() || undefined,
@@ -182,6 +237,32 @@ export function SocialWorkspace({
       }
       setConcept(result.data);
       setSaveState("saved");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function refreshCarouselOutline() {
+    setBusy("outline");
+    setError("");
+    try {
+      const current = await ensureConcept();
+      if (!current) return;
+      await planCarouselOutline(current.id, caption);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function chooseFormat(next: SocialFormat) {
+    setFormat(next);
+    if (next !== "carousel" || carouselSlides.length > 0 || !caption.trim()) return;
+    setBusy("outline");
+    setError("");
+    try {
+      const current = await ensureConcept();
+      if (!current) return;
+      await planCarouselOutline(current.id, caption);
     } finally {
       setBusy("");
     }
@@ -312,7 +393,7 @@ export function SocialWorkspace({
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setFormat(item.id)}
+                    onClick={() => void chooseFormat(item.id)}
                     className={
                       active
                         ? "rounded-xl border border-vice-gold bg-vice-gold/10 px-3 py-3 text-left"
@@ -454,7 +535,9 @@ export function SocialWorkspace({
         <section className="rounded-2xl border border-vice-border bg-vice-surface p-6">
           <h2 className="text-lg font-medium">Beeld</h2>
           <p className="mt-1 text-xs text-vice-text-muted">
-            Upload eigen beelden of genereer met de merkstijl. Publiceren naar kanalen volgt later.
+            {format === "carousel"
+              ? "Na de caption verschijnt hier een slide-outline. Upload per slide of genereer alle visuals in één keer."
+              : "Upload eigen beelden of genereer met de merkstijl. Publiceren naar kanalen volgt later."}
           </p>
 
           {brand.styles.length > 0 ? (
@@ -475,30 +558,159 @@ export function SocialWorkspace({
             </div>
           ) : null}
 
-          <div className="mt-4">
-            <Label className="mb-1.5 block text-xs text-vice-text-muted">
-              Waarover gaat de foto? (optioneel)
-            </Label>
-            <textarea
-              className={`${fieldClass} min-h-16`}
-              value={visualSubject}
-              disabled={busy !== ""}
-              onChange={(event) => setVisualSubject(event.target.value)}
-              placeholder="Leeg = op basis van onderwerp/caption"
-            />
-          </div>
-
-          <div className={`mt-4 overflow-hidden rounded-xl border border-vice-border bg-vice-bg ${previewAspect}`}>
-            {selected?.url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={selected.url} alt={selected.altText || "Social visual"} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2 text-vice-text-muted">
-                <ImageIcon className="size-8" />
-                <span className="text-xs">Nog geen beeld</span>
+          {format === "carousel" ? (
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label className="text-xs text-vice-text-muted">Slide-outline</Label>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy !== "" || !caption.trim()}
+                  onClick={() => void refreshCarouselOutline()}
+                >
+                  {busy === "outline" ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-4" />
+                  )}
+                  {carouselSlides.length > 0 ? "Vernieuw outline" : "Maak outline uit caption"}
+                </Button>
               </div>
-            )}
-          </div>
+              {!caption.trim() ? (
+                <p className="rounded-md border border-dashed border-vice-border px-3 py-3 text-xs text-vice-text-muted">
+                  Genereer eerst een caption — die wordt hier omgezet naar een outline voor de carrouselbeelden.
+                </p>
+              ) : null}
+              {topicMode === "blog" ? (
+                <p className="text-xs text-vice-text-muted">
+                  Bij een blogartikel gebruikt de outline bij voorkeur elke h2 als aparte slide.
+                </p>
+              ) : null}
+              {carouselSlides.length > 0 ? (
+                <ol className="space-y-3">
+                  {carouselSlides.map((slide, index) => {
+                    const asset = concept?.assets[index] ?? null;
+                    return (
+                      <li
+                        key={slide.id}
+                        className="rounded-xl border border-vice-border bg-vice-bg/60 p-3"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="size-14 shrink-0 overflow-hidden rounded-md border border-vice-border bg-vice-bg">
+                            {asset?.url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={asset.url}
+                                alt=""
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full items-center justify-center text-xs text-vice-text-muted">
+                                {index + 1}
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-14 shrink-0 text-xs font-medium text-vice-text-muted">
+                                Slide {index + 1}
+                              </span>
+                              <input
+                                className={`${fieldClass} min-w-0 flex-1 py-1.5`}
+                                value={slide.title}
+                                disabled={busy !== ""}
+                                onChange={(event) => {
+                                  const title = event.target.value;
+                                  setCarouselSlides((prev) =>
+                                    prev.map((item) =>
+                                      item.id === slide.id ? { ...item, title } : item,
+                                    ),
+                                  );
+                                }}
+                                placeholder="Slide-titel"
+                              />
+                              <button
+                                type="button"
+                                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-vice-text-muted hover:text-vice-danger"
+                                disabled={busy !== "" || carouselSlides.length <= 2}
+                                title="Slide verwijderen"
+                                onClick={() =>
+                                  setCarouselSlides((prev) => prev.filter((item) => item.id !== slide.id))
+                                }
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
+                            <textarea
+                              className={`${fieldClass} min-h-14`}
+                              value={slide.subject}
+                              disabled={busy !== ""}
+                              onChange={(event) => {
+                                const subject = event.target.value;
+                                setCarouselSlides((prev) =>
+                                  prev.map((item) =>
+                                    item.id === slide.id ? { ...item, subject } : item,
+                                  ),
+                                );
+                              }}
+                              placeholder="Waarover gaat dit beeld?"
+                            />
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              ) : null}
+              {carouselSlides.length > 0 && carouselSlides.length < 8 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy !== ""}
+                  onClick={() =>
+                    setCarouselSlides((prev) => [
+                      ...prev,
+                      {
+                        id: crypto.randomUUID(),
+                        title: `Slide ${prev.length + 1}`,
+                        subject: "",
+                      },
+                    ])
+                  }
+                >
+                  <Plus className="size-4" />
+                  Slide toevoegen
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mt-4">
+              <Label className="mb-1.5 block text-xs text-vice-text-muted">
+                Waarover gaat de foto? (optioneel)
+              </Label>
+              <textarea
+                className={`${fieldClass} min-h-16`}
+                value={visualSubject}
+                disabled={busy !== ""}
+                onChange={(event) => setVisualSubject(event.target.value)}
+                placeholder="Leeg = op basis van onderwerp/caption"
+              />
+            </div>
+          )}
+
+          {format !== "carousel" ? (
+            <div className={`mt-4 overflow-hidden rounded-xl border border-vice-border bg-vice-bg ${previewAspect}`}>
+              {selected?.url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={selected.url} alt={selected.altText || "Social visual"} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2 text-vice-text-muted">
+                  <ImageIcon className="size-8" />
+                  <span className="text-xs">Nog geen beeld</span>
+                </div>
+              )}
+            </div>
+          ) : null}
 
           {format === "carousel" && concept && concept.assets.length > 0 ? (
             <ul className="mt-3 flex gap-2 overflow-x-auto pb-1">
@@ -543,14 +755,24 @@ export function SocialWorkspace({
             </Button>
             <Button
               type="button"
-              disabled={busy !== "" || !brand.hasVisual}
+              disabled={
+                busy !== ""
+                || !brand.hasVisual
+                || (format === "carousel" && !caption.trim() && carouselSlides.length < 2)
+              }
               title={!brand.hasVisual ? "Beeldstijl ontbreekt" : undefined}
               onClick={() => void generateVisual()}
             >
-              {busy === "image" ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-              Genereer visual
+              {busy === "image" || busy === "outline" ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <Sparkles className="size-4" />
+              )}
+              {format === "carousel"
+                ? `Genereer ${carouselSlides.length > 0 ? `${carouselSlides.length} visuals` : "visuals"}`
+                : "Genereer visual"}
             </Button>
-            {selected ? (
+            {selected && format !== "carousel" ? (
               <Button
                 type="button"
                 variant="ghost"
@@ -565,6 +787,11 @@ export function SocialWorkspace({
           {format === "reel" ? (
             <p className="mt-3 text-xs text-vice-text-muted">
               Reel gebruikt voorlopig een verticaal beeld. Video-upload volgt later.
+            </p>
+          ) : null}
+          {format === "carousel" ? (
+            <p className="mt-3 text-xs text-vice-text-muted">
+              Tip: pas de outline aan vóór je genereert. Elke slide wordt een apart beeld in de merkstijl.
             </p>
           ) : null}
         </section>

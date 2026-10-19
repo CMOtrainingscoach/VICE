@@ -3,6 +3,13 @@ export type SocialFormat = "single" | "carousel" | "reel";
 export type SocialTopicMode = "manual" | "blog" | "meeting";
 export type JobStatus = "idle" | "queued" | "running" | "ready" | "failed";
 
+/** Slide plan for carousel visual generation (client + action payload). */
+export type SocialCarouselSlide = {
+  id: string;
+  title: string;
+  subject: string;
+};
+
 export type SocialPostAsset = {
   id: string;
   storagePath: string;

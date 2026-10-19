@@ -5,7 +5,11 @@ import {
   modelSupportsCustomTemperature,
   resolveBlogTextModel,
 } from "@/lib/openai/models";
-import type { SocialChannel, SocialFormat } from "@/lib/content/social-types";
+import type {
+  SocialCarouselSlide,
+  SocialChannel,
+  SocialFormat,
+} from "@/lib/content/social-types";
 
 const captionSchema = z.object({
   caption: z.string().min(1),
@@ -13,6 +17,18 @@ const captionSchema = z.object({
 });
 
 export type SocialCaptionResult = z.infer<typeof captionSchema>;
+
+const outlineSchema = z.object({
+  slides: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        subject: z.string().min(1),
+      }),
+    )
+    .min(3)
+    .max(8),
+});
 
 const CHANNEL_HINT: Record<SocialChannel, string> = {
   instagram: "Instagram: visueel, warm, korte alinea's, emoji spaarzaam",
@@ -24,9 +40,110 @@ const CHANNEL_HINT: Record<SocialChannel, string> = {
 
 const FORMAT_HINT: Record<SocialFormat, string> = {
   single: "Formaat: single image post.",
-  carousel: "Formaat: carrousel — caption mag slides aankondigen zonder slide-per-slide opsomming.",
+  carousel:
+    "Formaat: carrousel — schrijf één caption voor de hele carrousel (hook + kern + CTA). Geen genummerde slide-opsomming in de caption.",
   reel: "Formaat: reel/vertical video — caption als hook + korte context; video zelf volgt later.",
 };
+
+function newSlideId() {
+  return crypto.randomUUID();
+}
+
+/** Prefer blog h2 sections as carousel slides when available. */
+export function slidesFromBlogHtml(html: string): SocialCarouselSlide[] {
+  if (!html.trim()) return [];
+  const chunks = html.split(/<h2\b[^>]*>/i).slice(1);
+  const slides: SocialCarouselSlide[] = [];
+  for (const chunk of chunks) {
+    const close = chunk.indexOf("</h2>");
+    if (close < 0) continue;
+    const title = chunk
+      .slice(0, close)
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const body = chunk
+      .slice(close + 5)
+      .split(/<h2\b/i)[0]
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 280);
+    if (!title) continue;
+    slides.push({
+      id: newSlideId(),
+      title: title.slice(0, 80),
+      subject: body || title,
+    });
+  }
+  return slides.slice(0, 8);
+}
+
+export async function generateCarouselOutline(input: {
+  topic: string;
+  caption: string;
+  language: string;
+  sourceContext?: string;
+  preferredSlides?: SocialCarouselSlide[];
+}): Promise<SocialCarouselSlide[]> {
+  if (input.preferredSlides && input.preferredSlides.length >= 2) {
+    return input.preferredSlides.slice(0, 8).map((slide) => ({
+      ...slide,
+      id: slide.id || newSlideId(),
+      title: slide.title.trim().slice(0, 80) || "Slide",
+      subject: slide.subject.trim().slice(0, 400) || slide.title.trim(),
+    }));
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY ontbreekt.");
+
+  const openai = new OpenAI({ apiKey });
+  const model = resolveBlogTextModel();
+  const isDutch = input.language !== "en";
+
+  const completion = await openai.chat.completions.create({
+    model,
+    ...(modelSupportsCustomTemperature(model) ? { temperature: 0.4 } : {}),
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: [
+          "Je plant beeldslides voor een socialmediacarrousel in VICE.",
+          isDutch
+            ? "Schrijf titels en foto-onderwerpen in Belgisch Nederlands."
+            : "Write titles and photo subjects in natural English.",
+          "Elke slide = één fotografeerbaar beeld (geen tekstslides, geen UI, geen logo).",
+          "3 tot 6 slides: hook → kernpunten → afsluiter/CTA-beeld.",
+          "subject = concrete fotografische beschrijving (wie/wat/waar/sfeer), max ~40 woorden.",
+          "Antwoord als JSON: { slides: [{ title, subject }] }.",
+        ].join("\n\n"),
+      },
+      {
+        role: "user",
+        content: [
+          `Onderwerp:\n${input.topic}`,
+          input.caption ? `Caption:\n${input.caption.slice(0, 1200)}` : "",
+          input.sourceContext ? `Broncontext:\n${input.sourceContext.slice(0, 5000)}` : "",
+          "Maak een beeldoutline voor de carrousel.",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content;
+  if (!raw) throw new Error("Geen carrousel-outline van het model ontvangen.");
+  const parsed = outlineSchema.safeParse(JSON.parse(raw));
+  if (!parsed.success) throw new Error("Ongeldige carrousel-outline van AI.");
+  return parsed.data.slides.map((slide) => ({
+    id: newSlideId(),
+    title: slide.title.trim().slice(0, 80),
+    subject: slide.subject.trim().slice(0, 400),
+  }));
+}
 
 export async function generateSocialCaption(input: {
   topic: string;
@@ -106,6 +223,9 @@ export async function generateSocialImage(input: {
   brandName: string;
   styleName?: string;
   subject?: string;
+  slideTitle?: string;
+  slideIndex?: number;
+  slideCount?: number;
 }): Promise<{ bytes: Uint8Array; mime: string; prompt: string; styleSummary: string; width: number; height: number }> {
   const aspect = socialImageAspect(input.format);
   const width = aspect === "9:16" ? 1024 : 1024;
@@ -126,12 +246,18 @@ export async function generateSocialImage(input: {
     .slice(0, 220) || `Beeldstijl van ${input.brandName}`;
 
   const subject = input.subject?.trim() || input.topic;
+  const slideLine =
+    input.format === "carousel" && input.slideIndex != null && input.slideCount
+      ? `Carousel slide ${input.slideIndex + 1} of ${input.slideCount}${input.slideTitle ? `: ${input.slideTitle}` : ""}. Distinct composition from other slides.`
+      : "";
+
   const prompt = [
     "LOCKED BRAND VISUAL STYLE — follow this block strictly; do not invent another aesthetic:",
     input.stylePrompt || `Brand look of ${input.brandName}`,
     "",
     `Social media visual for ${input.brandName}.`,
     input.format === "reel" ? "Vertical 9:16 composition for Reels/TikTok." : "Square 1:1 composition for a feed post.",
+    slideLine,
     input.styleName ? `Active style variant: ${input.styleName}` : "",
     `Photo subject: ${subject}`,
     input.caption ? `Caption context (content only): ${input.caption.slice(0, 280)}` : "",

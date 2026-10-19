@@ -2,9 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
-import { generateSocialCaption, generateSocialImage } from "@/lib/content/social-ai";
+import {
+  generateCarouselOutline,
+  generateSocialCaption,
+  generateSocialImage,
+  slidesFromBlogHtml,
+} from "@/lib/content/social-ai";
 import {
   SOCIAL_MIGRATION,
+  type SocialCarouselSlide,
   type SocialChannel,
   type SocialFormat,
   type SocialPostAsset,
@@ -224,16 +230,20 @@ export async function saveSocialPostConceptAction(
   return { ok: true, data: mapped };
 }
 
-async function resolveTopicContext(concept: SocialPostConcept): Promise<{ topic: string; sourceContext: string }> {
+async function resolveTopicContext(
+  concept: SocialPostConcept,
+): Promise<{ topic: string; sourceContext: string; blogHtml: string }> {
   const supabase = await authed();
   let topic = concept.topicText.trim();
   let sourceContext = "";
+  let blogHtml = "";
 
   if (concept.topicMode === "blog" && concept.blogConceptId) {
     const blog = await supabase.schema("app").rpc("get_blog_concept", { p_concept_id: concept.blogConceptId });
     if (!blog.error && blog.data && typeof blog.data === "object") {
       const row = blog.data as Record<string, unknown>;
       topic = topic || String(row.title ?? row.sourceText ?? "Blogartikel");
+      blogHtml = String(row.bodyHtml ?? "");
       sourceContext = [String(row.title ?? ""), String(row.bodyPlain ?? row.sourceText ?? "")]
         .filter(Boolean)
         .join("\n\n");
@@ -257,7 +267,26 @@ async function resolveTopicContext(concept: SocialPostConcept): Promise<{ topic:
     }
   }
 
-  return { topic: topic || "Socialmediapost", sourceContext };
+  return { topic: topic || "Socialmediapost", sourceContext, blogHtml };
+}
+
+function normalizeCarouselSlides(raw: unknown): SocialCarouselSlide[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const row = item as Record<string, unknown>;
+      const title = String(row.title ?? "").trim();
+      const subject = String(row.subject ?? "").trim();
+      if (!title && !subject) return null;
+      return {
+        id: String(row.id ?? crypto.randomUUID()),
+        title: (title || subject).slice(0, 80),
+        subject: (subject || title).slice(0, 400),
+      } satisfies SocialCarouselSlide;
+    })
+    .filter((item): item is SocialCarouselSlide => Boolean(item))
+    .slice(0, 8);
 }
 
 export async function generateSocialCaptionAction(
@@ -317,9 +346,42 @@ export async function generateSocialCaptionAction(
   }
 }
 
+export async function planSocialCarouselOutlineAction(
+  conceptId: string,
+  options?: { caption?: string },
+): Promise<ActionResult<SocialCarouselSlide[]>> {
+  const loaded = await loadSocialPostConceptAction(conceptId);
+  if (!loaded.ok || !loaded.data) return loaded;
+  const concept = loaded.data;
+  if (concept.format !== "carousel") {
+    return { ok: false, error: "Outline is alleen voor carrousel." };
+  }
+
+  const caption = (options?.caption ?? concept.caption).trim();
+  if (!caption && !concept.topicText.trim() && concept.topicMode === "manual") {
+    return { ok: false, error: "Genereer eerst een caption of vul een onderwerp in." };
+  }
+
+  try {
+    const { topic, sourceContext, blogHtml } = await resolveTopicContext(concept);
+    const fromBlog = concept.topicMode === "blog" ? slidesFromBlogHtml(blogHtml) : [];
+    const slides = await generateCarouselOutline({
+      topic,
+      caption: caption || topic,
+      language: concept.language,
+      sourceContext,
+      preferredSlides: fromBlog.length >= 2 ? fromBlog : undefined,
+    });
+    return { ok: true, data: slides };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Outline maken mislukt";
+    return { ok: false, error: message };
+  }
+}
+
 export async function generateSocialVisualAction(
   conceptId: string,
-  options?: { styleId?: string; subject?: string },
+  options?: { styleId?: string; subject?: string; slides?: SocialCarouselSlide[] },
 ): Promise<ActionResult<SocialPostConcept>> {
   const loaded = await loadSocialPostConceptAction(conceptId);
   if (!loaded.ok || !loaded.data) return loaded;
@@ -343,47 +405,79 @@ export async function generateSocialVisualAction(
 
   try {
     const { topic } = await resolveTopicContext(concept);
-    const image = await generateSocialImage({
-      topic,
-      caption: concept.caption,
-      format: concept.format,
-      stylePrompt: selectedStyle.stylePrompt,
-      tags: selectedStyle.tags,
-      doText: selectedStyle.do,
-      avoidText: selectedStyle.avoid,
-      colors: brand.data.colors,
-      brandName: brand.data.brandName || brand.data.tenantName,
-      styleName: selectedStyle.name,
-      subject: options?.subject,
-    });
-
-    const ext = image.mime.includes("jpeg") ? "jpg" : image.mime.includes("webp") ? "webp" : "png";
-    const path = `${concept.tenantId}/social/${conceptId}/${crypto.randomUUID()}.${ext}`;
     const admin = createAdminClient();
-    const uploaded = await admin.storage.from("content-assets").upload(path, image.bytes, {
-      contentType: image.mime,
-      upsert: false,
-    });
-    if (uploaded.error) {
-      throw new Error(/bucket|mime/i.test(uploaded.error.message) ? SOCIAL_MIGRATION : uploaded.error.message);
+
+    const carouselSlides =
+      concept.format === "carousel" ? normalizeCarouselSlides(options?.slides) : [];
+
+    if (concept.format === "carousel" && carouselSlides.length < 2) {
+      throw new Error("Maak eerst een carrousel-outline (minstens 2 slides) in Beeld.");
     }
 
-    const added = await supabase.schema("app").rpc("add_social_post_asset", {
-      p_concept_id: conceptId,
-      p_path: path,
-      p_mime: image.mime,
-      p_width: image.width,
-      p_height: image.height,
-      p_kind: "ai",
-      p_prompt: image.prompt,
-      p_style_summary: image.styleSummary,
-      p_alt_text: topic.slice(0, 120) || "Social visual",
-      p_select: true,
-    });
-    if (added.error || !added.data) {
-      throw new Error(migration(added.error?.message ?? "Visual opslaan mislukt"));
+    const jobs: { subject: string; slideTitle?: string; slideIndex?: number; slideCount?: number }[] =
+      concept.format === "carousel"
+        ? carouselSlides.map((slide, index) => ({
+            subject: slide.subject,
+            slideTitle: slide.title,
+            slideIndex: index,
+            slideCount: carouselSlides.length,
+          }))
+        : [{ subject: options?.subject?.trim() || topic }];
+
+    let mapped: SocialPostConcept | null = null;
+    for (const [index, job] of jobs.entries()) {
+      const image = await generateSocialImage({
+        topic,
+        caption: concept.caption,
+        format: concept.format,
+        stylePrompt: selectedStyle.stylePrompt,
+        tags: selectedStyle.tags,
+        doText: selectedStyle.do,
+        avoidText: selectedStyle.avoid,
+        colors: brand.data.colors,
+        brandName: brand.data.brandName || brand.data.tenantName,
+        styleName: selectedStyle.name,
+        subject: job.subject,
+        slideTitle: job.slideTitle,
+        slideIndex: job.slideIndex,
+        slideCount: job.slideCount,
+      });
+
+      const ext = image.mime.includes("jpeg") ? "jpg" : image.mime.includes("webp") ? "webp" : "png";
+      const path = `${concept.tenantId}/social/${conceptId}/${crypto.randomUUID()}.${ext}`;
+      const uploaded = await admin.storage.from("content-assets").upload(path, image.bytes, {
+        contentType: image.mime,
+        upsert: false,
+      });
+      if (uploaded.error) {
+        throw new Error(/bucket|mime/i.test(uploaded.error.message) ? SOCIAL_MIGRATION : uploaded.error.message);
+      }
+
+      const alt =
+        job.slideTitle?.slice(0, 120)
+        || job.subject.slice(0, 120)
+        || topic.slice(0, 120)
+        || "Social visual";
+
+      const added = await supabase.schema("app").rpc("add_social_post_asset", {
+        p_concept_id: conceptId,
+        p_path: path,
+        p_mime: image.mime,
+        p_width: image.width,
+        p_height: image.height,
+        p_kind: "ai",
+        p_prompt: image.prompt,
+        p_style_summary: image.styleSummary,
+        p_alt_text: alt,
+        p_select: index === 0,
+      });
+      if (added.error || !added.data) {
+        throw new Error(migration(added.error?.message ?? "Visual opslaan mislukt"));
+      }
+      mapped = await mapConcept(added.data);
+      if (!mapped) throw new Error("Visual opslaan mislukt");
     }
-    const mapped = await mapConcept(added.data);
+
     if (!mapped) throw new Error("Visual opslaan mislukt");
     revalidateSocial(mapped.tenantId, mapped.id);
     return { ok: true, data: mapped };
