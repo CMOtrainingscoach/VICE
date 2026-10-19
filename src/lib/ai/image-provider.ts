@@ -211,7 +211,6 @@ async function generateWithGemini(prompt: string, aspect: ImageAspectRatio): Pro
         mime_type: "image/jpeg",
         aspect_ratio: aspect,
         image_size: imageSize,
-        delivery: "inline",
       },
     }),
   });
