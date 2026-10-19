@@ -1,8 +1,8 @@
 import OpenAI from "openai";
 import { z } from "zod";
+import { generateProviderImage } from "@/lib/ai/image-provider";
 import {
   modelSupportsCustomTemperature,
-  resolveBlogImageModel,
   resolveBlogTextModel,
 } from "@/lib/openai/models";
 import type { BlogLength, BlogMode } from "@/lib/content/blog-types";
@@ -156,12 +156,6 @@ export async function generateBlogImage(input: {
   subject?: string;
   tweak?: string;
 }): Promise<{ bytes: Uint8Array; mime: string; prompt: string; styleSummary: string }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY ontbreekt. Vraag een beheerder om de configuratie.");
-
-  const openai = new OpenAI({ apiKey });
-  const model = resolveBlogImageModel();
-
   const colorLine = input.colors
     .slice(0, 4)
     .map((color) => `${color.name || color.role} ${color.hex}`)
@@ -197,28 +191,8 @@ export async function generateBlogImage(input: {
     "Photorealistic, no logos, no readable text, no watermarks, no UI mockups, no generic stock look.",
   ].filter(Boolean).join("\n");
 
-  const result = await openai.images.generate({
-    model,
-    prompt,
-    size: "1536x1024",
-    quality: "high",
-  });
-
-  const item = result.data?.[0];
-  if (!item) throw new Error("Geen beeld van de provider ontvangen.");
-
-  if (item.b64_json) {
-    const binary = Buffer.from(item.b64_json, "base64");
-    return { bytes: new Uint8Array(binary), mime: "image/png", prompt, styleSummary };
-  }
-  if (item.url) {
-    const response = await fetch(item.url);
-    if (!response.ok) throw new Error("Het gegenereerde beeld kon niet worden gedownload.");
-    const buffer = new Uint8Array(await response.arrayBuffer());
-    const mime = response.headers.get("content-type") || "image/png";
-    return { bytes: buffer, mime, prompt, styleSummary };
-  }
-  throw new Error("De beeldprovider gaf geen bruikbaar resultaat.");
+  const image = await generateProviderImage({ prompt, aspectRatio: "16:9" });
+  return { bytes: image.bytes, mime: image.mime, prompt, styleSummary };
 }
 
 export const BLOG_MORE_BREAK_HTML =

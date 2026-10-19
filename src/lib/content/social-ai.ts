@@ -1,8 +1,8 @@
 import OpenAI from "openai";
 import { z } from "zod";
+import { generateProviderImage, type ImageAspectRatio } from "@/lib/ai/image-provider";
 import {
   modelSupportsCustomTemperature,
-  resolveBlogImageModel,
   resolveBlogTextModel,
 } from "@/lib/openai/models";
 import type { SocialChannel, SocialFormat } from "@/lib/content/social-types";
@@ -89,9 +89,9 @@ export async function generateSocialCaption(input: {
   };
 }
 
-export function socialImageSize(format: SocialFormat): "1024x1024" | "1024x1536" | "1536x1024" {
-  if (format === "reel") return "1024x1536";
-  return "1024x1024";
+export function socialImageAspect(format: SocialFormat): ImageAspectRatio {
+  if (format === "reel") return "9:16";
+  return "1:1";
 }
 
 export async function generateSocialImage(input: {
@@ -107,13 +107,9 @@ export async function generateSocialImage(input: {
   styleName?: string;
   subject?: string;
 }): Promise<{ bytes: Uint8Array; mime: string; prompt: string; styleSummary: string; width: number; height: number }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY ontbreekt.");
-
-  const openai = new OpenAI({ apiKey });
-  const model = resolveBlogImageModel();
-  const size = socialImageSize(input.format);
-  const [width, height] = size.split("x").map(Number) as [number, number];
+  const aspect = socialImageAspect(input.format);
+  const width = aspect === "9:16" ? 1024 : 1024;
+  const height = aspect === "9:16" ? 1536 : 1024;
 
   const colorLine = input.colors
     .slice(0, 4)
@@ -148,26 +144,13 @@ export async function generateSocialImage(input: {
     .filter(Boolean)
     .join("\n");
 
-  const result = await openai.images.generate({
-    model,
+  const image = await generateProviderImage({ prompt, aspectRatio: aspect });
+  return {
+    bytes: image.bytes,
+    mime: image.mime,
     prompt,
-    size,
-    quality: "high",
-  });
-
-  const item = result.data?.[0];
-  if (!item) throw new Error("Geen beeld van de provider ontvangen.");
-
-  if (item.b64_json) {
-    const binary = Buffer.from(item.b64_json, "base64");
-    return { bytes: new Uint8Array(binary), mime: "image/png", prompt, styleSummary, width, height };
-  }
-  if (item.url) {
-    const response = await fetch(item.url);
-    if (!response.ok) throw new Error("Het gegenereerde beeld kon niet worden gedownload.");
-    const buffer = new Uint8Array(await response.arrayBuffer());
-    const mime = response.headers.get("content-type") || "image/png";
-    return { bytes: buffer, mime, prompt, styleSummary, width, height };
-  }
-  throw new Error("De beeldprovider gaf geen bruikbaar resultaat.");
+    styleSummary,
+    width: image.width ?? width,
+    height: image.height ?? height,
+  };
 }
