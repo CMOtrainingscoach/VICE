@@ -351,7 +351,9 @@ export async function planSocialCarouselOutlineAction(
   options?: { caption?: string },
 ): Promise<ActionResult<SocialCarouselSlide[]>> {
   const loaded = await loadSocialPostConceptAction(conceptId);
-  if (!loaded.ok || !loaded.data) return loaded;
+  if (!loaded.ok || !loaded.data) {
+    return { ok: false, error: loaded.ok ? "Concept laden mislukt" : loaded.error };
+  }
   const concept = loaded.data;
   if (concept.format !== "carousel") {
     return { ok: false, error: "Outline is alleen voor carrousel." };
