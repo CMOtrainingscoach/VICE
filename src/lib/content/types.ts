@@ -13,7 +13,7 @@ export function contentTypes(tenantId: string): ContentType[] {
     {
       id: "social",
       title: "Socialmediapost",
-      description: "Bereid een post voor je sociale kanalen voor.",
+      description: "Bereid een single, carrousel of reel voor je kanalen voor.",
       href: `${base}/social`,
     },
     {
