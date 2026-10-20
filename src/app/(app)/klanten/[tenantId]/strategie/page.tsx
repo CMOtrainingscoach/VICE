@@ -11,6 +11,8 @@ import { loadBlogBrandContextAction } from "@/modules/content/blog-actions";
 import { loadTenantMetricsAction } from "@/modules/metrics/actions";
 import { loadStrategyDocumentAction } from "@/modules/strategy/actions";
 
+export const maxDuration = 300;
+
 function parseTab(raw: string | undefined): StrategyAuditTab {
   return raw === "cijfers" ? "cijfers" : "document";
 }

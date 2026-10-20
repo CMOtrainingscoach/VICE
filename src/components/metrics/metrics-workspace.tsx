@@ -18,6 +18,7 @@ import type { GscPageRow, GscQueryRow, MetricDailyRow, PeriodRows, TenantMetrics
 import {
   generateMonthlyReportAction,
   listMonthlyReportsAction,
+  loadTenantMetricsAction,
   refreshTenantMetricsAction,
 } from "@/modules/metrics/actions";
 
@@ -39,8 +40,9 @@ export function MetricsWorkspace({
   googleAnalytics: GoogleAnalyticsPublicStatus;
 }) {
   const router = useRouter();
-  const bundle = initial;
+  const [bundle, setBundle] = useState(initial);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [reportMonth, setReportMonth] = useState(defaultReportMonth());
@@ -68,13 +70,8 @@ export function MetricsWorkspace({
   }, [tenantId]);
 
   useEffect(() => {
-    if (!bundle?.lastFetchedAt || busy === "refresh") return;
-    const ageMs = Date.now() - new Date(bundle.lastFetchedAt).getTime();
-    if (ageMs > 24 * 60 * 60 * 1000 && anyReady) {
-      void refresh(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- auto-refresh once when stale
-  }, []);
+    setBundle(initial);
+  }, [initial]);
 
   const snapshots = bundle?.snapshots ?? [];
   const daily = bundle?.daily ?? [];
@@ -95,16 +92,33 @@ export function MetricsWorkspace({
 
   const trendPoints = useMemo(() => buildTrend(daily), [daily]);
 
-  async function refresh(manual: boolean) {
-    if (manual) setBusy("refresh");
+  async function refresh() {
+    setBusy("refresh");
     setError("");
-    const result = await refreshTenantMetricsAction(tenantId);
-    if (manual) setBusy("");
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    setNotice("");
+    try {
+      const result = await refreshTenantMetricsAction(tenantId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const loaded = await loadTenantMetricsAction(tenantId);
+      if (!loaded.ok) {
+        setError(loaded.error);
+        return;
+      }
+      if (loaded.data) setBundle(loaded.data);
+      setNotice("Cijfers bijgewerkt.");
+      router.refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Sync mislukt. Controleer of SUPABASE_SERVICE_ROLE_KEY op de server staat.",
+      );
+    } finally {
+      setBusy("");
     }
-    router.refresh();
   }
 
   async function generateReport() {
@@ -160,11 +174,13 @@ export function MetricsWorkspace({
             <Link href={`/klanten/${tenantId}?tab=instellingen`}>Naar instellingen</Link>
           </Button>
         ) : (
-          <Button type="button" disabled={busy !== ""} onClick={() => void refresh(true)}>
-            {busy === "refresh" ? "Bezig…" : "Vernieuw cijfers"}
+          <Button type="button" disabled={busy !== ""} onClick={() => void refresh()}>
+            {busy === "refresh" ? "Synchroniseren…" : "Vernieuw cijfers"}
           </Button>
         )}
       </div>
+
+      {notice ? <p className="mt-4 text-sm text-emerald-800 dark:text-emerald-300">{notice}</p> : null}
 
       {error ? (
         <p className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300" role="alert">

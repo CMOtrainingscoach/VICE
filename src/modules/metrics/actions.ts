@@ -103,10 +103,29 @@ export async function loadTenantMetricsAction(
   };
 }
 
+function integrationMetaForSync(
+  rows: { provider: string; metadata: Record<string, unknown> | null; refresh_token: string }[],
+) {
+  return rows
+    .filter((row) => String(row.refresh_token ?? ""))
+    .filter((row) => {
+      const meta = row.metadata ?? {};
+      if (row.provider === "search_console") return Boolean(meta.siteUrl);
+      if (row.provider === "google_analytics") return Boolean(meta.propertyId);
+      return false;
+    })
+    .map((row) => ({
+      provider: row.provider,
+      metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    }));
+}
+
 export async function refreshTenantMetricsAction(tenantId: string): Promise<ActionResult> {
   try {
+    await authed();
+
     const admin = createAdminClient();
-    const { data: integrations } = await admin
+    const { data: integrations, error: loadError } = await admin
       .schema("app")
       .from("tenant_integrations")
       .select("provider, metadata, status, refresh_token")
@@ -114,15 +133,25 @@ export async function refreshTenantMetricsAction(tenantId: string): Promise<Acti
       .in("provider", ["search_console", "google_analytics"])
       .eq("status", "connected");
 
-    const list = (integrations ?? [])
-      .filter((row) => String((row as { refresh_token?: string }).refresh_token ?? ""))
-      .map((row) => ({
-        provider: String((row as { provider: string }).provider),
-        metadata: ((row as { metadata?: Record<string, unknown> }).metadata ?? {}) as Record<
-          string,
-          unknown
-        >,
-      }));
+    if (loadError) {
+      return { ok: false, error: migration(loadError.message) };
+    }
+
+    const list = integrationMetaForSync(
+      (integrations ?? []) as {
+        provider: string;
+        metadata: Record<string, unknown> | null;
+        refresh_token: string;
+      }[],
+    );
+
+    if (list.length === 0) {
+      return {
+        ok: false,
+        error:
+          "Geen Search Console-site of GA4-property geselecteerd. Stel dit in onder Instellingen.",
+      };
+    }
 
     const result = await syncTenantMetrics(admin, tenantId, list);
     revalidatePath(`/klanten/${tenantId}/strategie`);
