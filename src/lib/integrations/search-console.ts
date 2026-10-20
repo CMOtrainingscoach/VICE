@@ -99,3 +99,97 @@ export function parseSearchConsoleSecrets(raw: unknown): GoogleIntegrationSecret
 export const SEARCH_CONSOLE_OAUTH_COOKIE = "vice_gsc_oauth";
 export const SEARCH_CONSOLE_REDIRECT_COOKIE = "vice_gsc_redirect";
 export const SEARCH_CONSOLE_CONNECT_PATH = CONNECT_PATH;
+
+export type GscAnalyticsRow = {
+  keys: string[];
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+};
+
+function encodeSiteUrl(siteUrl: string) {
+  return encodeURIComponent(siteUrl);
+}
+
+export async function querySearchAnalytics(
+  accessToken: string,
+  siteUrl: string,
+  input: {
+    startDate: string;
+    endDate: string;
+    dimensions: string[];
+    rowLimit?: number;
+  },
+): Promise<GscAnalyticsRow[]> {
+  const res = await fetch(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodeSiteUrl(siteUrl)}/searchAnalytics/query`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        dimensions: input.dimensions,
+        rowLimit: input.rowLimit ?? 1000,
+      }),
+    },
+  );
+  const json = (await res.json()) as {
+    rows?: {
+      keys?: string[];
+      clicks?: number;
+      impressions?: number;
+      ctr?: number;
+      position?: number;
+    }[];
+    error?: { message?: string };
+  };
+  if (!res.ok) {
+    throw new Error(json.error?.message || "Search Console-analytics ophalen mislukt");
+  }
+  return (json.rows ?? []).map((row) => ({
+    keys: row.keys ?? [],
+    clicks: Number(row.clicks ?? 0),
+    impressions: Number(row.impressions ?? 0),
+    ctr: Number(row.ctr ?? 0),
+    position: Number(row.position ?? 0),
+  }));
+}
+
+export async function inspectSearchConsoleUrl(
+  accessToken: string,
+  siteUrl: string,
+  inspectionUrl: string,
+): Promise<{ verdict: string; coverageState: string; indexingState: string }> {
+  const res = await fetch("https://searchconsole.googleapis.com/v1/urlInspection/index:inspect", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ inspectionUrl, siteUrl }),
+  });
+  const json = (await res.json()) as {
+    inspectionResult?: {
+      indexStatusResult?: {
+        verdict?: string;
+        coverageState?: string;
+        indexingState?: string;
+      };
+    };
+    error?: { message?: string };
+  };
+  if (!res.ok) {
+    throw new Error(json.error?.message || "URL-inspectie mislukt");
+  }
+  const status = json.inspectionResult?.indexStatusResult;
+  return {
+    verdict: String(status?.verdict ?? "UNKNOWN"),
+    coverageState: String(status?.coverageState ?? ""),
+    indexingState: String(status?.indexingState ?? ""),
+  };
+}

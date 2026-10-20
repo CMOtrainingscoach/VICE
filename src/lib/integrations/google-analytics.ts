@@ -125,3 +125,48 @@ export function parseGoogleAnalyticsSecrets(raw: unknown): GoogleIntegrationSecr
 export const GOOGLE_ANALYTICS_OAUTH_COOKIE = "vice_ga_oauth";
 export const GOOGLE_ANALYTICS_REDIRECT_COOKIE = "vice_ga_redirect";
 export const GOOGLE_ANALYTICS_CONNECT_PATH = CONNECT_PATH;
+
+export type GaReportRequest = {
+  dateRanges: { startDate: string; endDate: string; name?: string }[];
+  dimensions?: { name: string }[];
+  metrics: { name: string }[];
+  limit?: number;
+  orderBys?: { metric?: { metricName: string }; desc?: boolean }[];
+};
+
+export type GaReportRow = {
+  dimensionValues: string[];
+  metricValues: number[];
+};
+
+export async function runGaReport(
+  accessToken: string,
+  propertyId: string,
+  body: GaReportRequest,
+): Promise<GaReportRow[]> {
+  const res = await fetch(
+    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  const json = (await res.json()) as {
+    rows?: {
+      dimensionValues?: { value?: string }[];
+      metricValues?: { value?: string }[];
+    }[];
+    error?: { message?: string };
+  };
+  if (!res.ok) {
+    throw new Error(json.error?.message || "GA4-rapport ophalen mislukt");
+  }
+  return (json.rows ?? []).map((row) => ({
+    dimensionValues: (row.dimensionValues ?? []).map((d) => String(d.value ?? "")),
+    metricValues: (row.metricValues ?? []).map((m) => Number(m.value ?? 0)),
+  }));
+}

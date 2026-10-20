@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getUserAppContext } from "@/lib/auth/context";
+import { buildMetricAlerts, tenant28dSummary } from "@/lib/metrics/signals";
 import { createClient } from "@/lib/supabase/server";
 import { TENANT_STATUS_LABELS, type TenantRow } from "@/lib/types/tenant";
+import { loadMetricOverviewAction } from "@/modules/metrics/actions";
 import { Button } from "@/components/ui/button";
 
 export default async function VandaagPage() {
@@ -10,10 +12,7 @@ export default async function VandaagPage() {
   if (!ctx?.isPlatformAdmin) {
     return (
       <div className="p-8">
-        <EmptyState
-          title="Welkom"
-          description="Je klantomgeving opent via het menu."
-        />
+        <EmptyState title="Welkom" description="Je klantomgeving opent via het menu." />
       </div>
     );
   }
@@ -27,6 +26,12 @@ export default async function VandaagPage() {
     .limit(8);
 
   const rows = (tenants ?? []) as TenantRow[];
+  const overview = await loadMetricOverviewAction();
+  const metricByTenant = new Map(
+    overview.ok && overview.data ? overview.data.map((t) => [t.tenantId, t]) : [],
+  );
+  const alerts =
+    overview.ok && overview.data ? overview.data.flatMap((t) => buildMetricAlerts(t)) : [];
 
   return (
     <div className="p-8">
@@ -42,6 +47,36 @@ export default async function VandaagPage() {
         </Button>
       </header>
 
+      {alerts.length > 0 ? (
+        <section className="mb-8">
+          <h2 className="text-sm font-medium text-vice-text">Signalen</h2>
+          <ul className="mt-3 divide-y divide-vice-border rounded-lg border border-vice-border bg-vice-surface">
+            {alerts.slice(0, 12).map((alert, index) => (
+              <li key={`${alert.tenantId}-${index}`}>
+                <Link
+                  href={alert.href}
+                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 hover:bg-vice-surface-muted/60"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-vice-text">{alert.tenantName}</p>
+                    <p
+                      className={
+                        alert.severity === "error"
+                          ? "text-sm text-red-700 dark:text-red-300"
+                          : "text-sm text-amber-800 dark:text-amber-300"
+                      }
+                    >
+                      {alert.message}
+                    </p>
+                  </div>
+                  <span className="text-sm text-vice-gold">Bekijken →</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {rows.length === 0 ? (
         <EmptyState
           title="Nog geen klanten"
@@ -54,22 +89,33 @@ export default async function VandaagPage() {
         />
       ) : (
         <ul className="divide-y divide-vice-border rounded-lg border border-vice-border bg-vice-surface">
-          {rows.map((t) => (
-            <li key={t.id}>
-              <Link
-                href={`/klanten/${t.id}`}
-                className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-vice-surface-muted/60"
-              >
-                <div>
-                  <p className="font-medium text-vice-text">{t.name}</p>
-                  <p className="text-sm text-vice-text-muted">
-                    {TENANT_STATUS_LABELS[t.status]}
-                  </p>
-                </div>
-                <span className="text-sm text-vice-gold">Openen →</span>
-              </Link>
-            </li>
-          ))}
+          {rows.map((t) => {
+            const metric = metricByTenant.get(t.id);
+            const summary = metric ? tenant28dSummary(metric.daily) : null;
+            return (
+              <li key={t.id}>
+                <Link
+                  href={`/klanten/${t.id}`}
+                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-vice-surface-muted/60"
+                >
+                  <div>
+                    <p className="font-medium text-vice-text">{t.name}</p>
+                    <p className="text-sm text-vice-text-muted">{TENANT_STATUS_LABELS[t.status]}</p>
+                    {summary && (summary.gscClicks > 0 || summary.gaSessions > 0) ? (
+                      <p className="mt-1 text-xs text-vice-text-muted">
+                        28d: {summary.gscClicks.toLocaleString("nl-BE")} clicks
+                        {summary.clicksDelta != null ? ` (${summary.clicksDelta >= 0 ? "+" : ""}${Math.round(summary.clicksDelta)}%)` : ""}
+                        {" · "}
+                        {summary.gaSessions.toLocaleString("nl-BE")} sessies
+                        {summary.sessionsDelta != null ? ` (${summary.sessionsDelta >= 0 ? "+" : ""}${Math.round(summary.sessionsDelta)}%)` : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                  <span className="text-sm text-vice-gold">Openen →</span>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

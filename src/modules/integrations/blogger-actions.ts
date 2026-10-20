@@ -183,6 +183,18 @@ export async function publishBlogConceptToBloggerAction(
       content,
       isDraft: options?.asDraft ?? false,
     });
+
+    if (!(options?.asDraft ?? false)) {
+      const marked = await supabase.schema("app").rpc("mark_blog_concept_published", {
+        p_concept_id: conceptId,
+        p_url: published.url,
+        p_post_id: published.postId,
+      });
+      if (marked.error) {
+        return { ok: false, error: migration(marked.error.message) };
+      }
+    }
+
     return { ok: true, data: published };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Publiceren mislukt" };

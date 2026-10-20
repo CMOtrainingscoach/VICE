@@ -15,10 +15,13 @@ export const maxDuration = 300;
 
 export default async function BlogConceptPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantId: string; conceptId: string }>;
+  searchParams: Promise<{ rewrite?: string }>;
 }) {
   const { tenantId, conceptId } = await params;
+  const { rewrite } = await searchParams;
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
   if (!ctx.isPlatformAdmin) redirect(`/klanten/${tenantId}`);
@@ -78,6 +81,7 @@ export default async function BlogConceptPage({
       sourceMeetings={meetings.ok ? meetings.data ?? [] : []}
       bloggerReady={bloggerReady}
       bloggerBlogName={blogger?.blogName ?? null}
+      openRewrite={rewrite === "1"}
     />
   );
 }

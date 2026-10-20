@@ -32,6 +32,11 @@ import {
   updateBlogVisualAltAction,
 } from "@/modules/content/blog-actions";
 import { publishBlogConceptToBloggerAction } from "@/modules/integrations/blogger-actions";
+import {
+  getContentPerformanceAction,
+  type ContentPerformanceItem,
+  type SearchOpportunity,
+} from "@/modules/metrics/actions";
 
 export function BlogWorkspace({
   tenantId,
@@ -42,6 +47,7 @@ export function BlogWorkspace({
   sourceMeetings = [],
   bloggerReady = false,
   bloggerBlogName = null,
+  openRewrite = false,
 }: {
   tenantId: string;
   tenantName: string;
@@ -51,10 +57,13 @@ export function BlogWorkspace({
   sourceMeetings?: BlogSourceMeeting[];
   bloggerReady?: boolean;
   bloggerBlogName?: string | null;
+  openRewrite?: boolean;
 }) {
   const router = useRouter();
   const [concept, setConcept] = useState<BlogConcept | null>(initial);
-  const [mode, setMode] = useState<BlogMode>(initial?.mode ?? "new");
+  const [mode, setMode] = useState<BlogMode>(
+    openRewrite ? "rewrite" : (initial?.mode ?? "new"),
+  );
   const [language, setLanguage] = useState(initial?.language ?? "nl");
   const [lengthKey, setLengthKey] = useState<BlogLength>(initial?.lengthKey ?? "medium");
   const [sourceText, setSourceText] = useState(initial?.sourceText ?? "");
@@ -74,7 +83,9 @@ export function BlogWorkspace({
   const [tweakOpen, setTweakOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [publishUrl, setPublishUrl] = useState<string | null>(null);
-  const [forceEditor, setForceEditor] = useState(Boolean(initial && (initial.title || initial.bodyHtml)));
+  const [forceEditor, setForceEditor] = useState(
+    openRewrite || Boolean(initial && (initial.title || initial.bodyHtml)),
+  );
   const [conceptList, setConceptList] = useState(concepts);
   const [deletingId, setDeletingId] = useState("");
   const [pendingVisual, setPendingVisual] = useState<{ id: string; url: string; altText: string } | null>(null);
@@ -87,7 +98,18 @@ export function BlogWorkspace({
   const savingRef = useRef(false);
   conceptRef.current = concept;
 
+  const [searchOpportunities, setSearchOpportunities] = useState<SearchOpportunity[]>([]);
+  const [postPerformance, setPostPerformance] = useState<Map<string, ContentPerformanceItem>>(new Map());
+
   const AUTOSAVE_IDLE_MS = 5000;
+
+  useEffect(() => {
+    void getContentPerformanceAction(tenantId).then((result) => {
+      if (!result.ok || !result.data) return;
+      setSearchOpportunities(result.data.opportunities);
+      setPostPerformance(new Map(result.data.posts.map((post) => [post.conceptId, post])));
+    });
+  }, [tenantId]);
 
   function rememberEditorSelection() {
     const selection = window.getSelection();
@@ -365,6 +387,28 @@ export function BlogWorkspace({
     setSelectedMeetingIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
   }
 
+  function applySearchOpportunity(opp: SearchOpportunity) {
+    setMode("new");
+    setSourceText(opp.query);
+    const excerpt = [
+      `Zoekopdracht: ${opp.query}`,
+      `Clicks (28d): ${opp.clicks}`,
+      `Vertoningen: ${opp.impressions}`,
+      `CTR: ${(opp.ctr * 100).toFixed(1)}%`,
+      `Gem. positie: ${opp.position.toFixed(1)}`,
+      opp.kind === "striking" ? "Kans: striking distance (positie 8–20)." : "Kans: lage CTR bij volume.",
+    ].join("\n");
+    setPendingDocuments((prev) => [
+      ...prev.filter((doc) => !doc.label.startsWith("Search Console:")),
+      {
+        key: `gsc-${opp.query}`,
+        label: `Search Console: ${opp.query}`,
+        excerpt,
+        mimeType: "text/plain",
+      },
+    ]);
+  }
+
   async function onPickDocument(fileList: FileList | null) {
     const file = fileList?.[0];
     if (!file) return;
@@ -621,6 +665,14 @@ export function BlogWorkspace({
       return;
     }
     setPublishUrl(result.data.url || null);
+    if (!asDraft) {
+      void getContentPerformanceAction(tenantId).then((perf) => {
+        if (!perf.ok || !perf.data) return;
+        setSearchOpportunities(perf.data.opportunities);
+        setPostPerformance(new Map(perf.data.posts.map((post) => [post.conceptId, post])));
+      });
+      router.refresh();
+    }
   }
 
   async function deleteConcept(itemId: string) {
@@ -1055,20 +1107,57 @@ export function BlogWorkspace({
         </div>
       ) : null}
 
+      {searchOpportunities.length > 0 ? (
+        <section className="mt-10">
+          <h2 className="text-sm font-medium text-vice-text">Zoekkansen</h2>
+          <p className="mt-1 text-xs text-vice-text-muted">Op basis van opgeslagen Search Console-data (28 dagen).</p>
+          <ul className="mt-3 divide-y divide-vice-border rounded-xl border border-vice-border bg-vice-surface">
+            {searchOpportunities.slice(0, 12).map((opp) => (
+              <li key={`${opp.kind}-${opp.query}`} className="flex flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
+                <div className="min-w-0 flex-1 py-1 text-sm">
+                  <span className="font-medium">{opp.query}</span>
+                  <span className="mt-0.5 block text-xs text-vice-text-muted">
+                    {opp.kind === "striking" ? "Striking distance" : "Lage CTR"} · {opp.clicks} clicks · pos.{" "}
+                    {opp.position.toFixed(1)}
+                  </span>
+                </div>
+                <Button type="button" variant="secondary" onClick={() => applySearchOpportunity(opp)}>
+                  Gebruik als onderwerp
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {conceptList.length > 0 ? (
         <section className="mt-10">
           <h2 className="text-sm font-medium text-vice-text">Mijn blogconcepten</h2>
           <ul className="mt-3 divide-y divide-vice-border rounded-xl border border-vice-border bg-vice-surface">
-            {conceptList.map((item) => (
+            {conceptList.map((item) => {
+              const perf = postPerformance.get(item.id);
+              return (
               <li key={item.id} className="flex items-center gap-2 px-3 py-2 sm:px-4">
                 <Link
-                  href={`/klanten/${tenantId}/content/blog/${item.id}`}
+                  href={`/klanten/${tenantId}/content/blog/${item.id}${perf?.declining ? "?rewrite=1" : ""}`}
                   className="min-w-0 flex-1 rounded-md px-1 py-2 text-sm hover:bg-vice-surface-muted/60"
                 >
                   <span className="block truncate">{item.title || item.sourceText || "Naamloos concept"}</span>
                   <span className="mt-0.5 block text-xs text-vice-text-muted">
                     {new Date(item.updatedAt).toLocaleString("nl-BE", { timeZone: "Europe/Brussels" })}
+                    {perf ? (
+                      <>
+                        {" · "}
+                        {perf.gscClicks} clicks · pos. {perf.gscPosition.toFixed(1)} · {perf.gaSessions} sessies
+                        {perf.indexVerdict && perf.indexVerdict !== "UNKNOWN" ? ` · index: ${perf.indexVerdict}` : ""}
+                      </>
+                    ) : null}
                   </span>
+                  {perf?.declining ? (
+                    <span className="mt-1 inline-block rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-900 dark:text-amber-200">
+                      Daalt — herschrijven?
+                    </span>
+                  ) : null}
                 </Link>
                 <div className="flex shrink-0 items-center gap-1">
                   <Link
@@ -1096,7 +1185,8 @@ export function BlogWorkspace({
                   </Button>
                 </div>
               </li>
-            ))}
+            );
+            })}
           </ul>
         </section>
       ) : null}

@@ -131,6 +131,9 @@ export async function listBlogConceptsAction(tenantId: string): Promise<ActionRe
         updatedAt: String(row.updatedAt ?? ""),
         wordCount: Number(row.wordCount) || 0,
         brandVersionNumber: row.brandVersionNumber != null ? Number(row.brandVersionNumber) : null,
+        publishedUrl: row.publishedUrl ? String(row.publishedUrl) : null,
+        publishedPostId: row.publishedPostId ? String(row.publishedPostId) : null,
+        publishedAt: row.publishedAt ? String(row.publishedAt) : null,
       };
     }),
   };
@@ -662,6 +665,9 @@ async function mapConcept(raw: unknown): Promise<BlogConcept | null> {
     textJobError: String(row.textJobError ?? ""),
     imageJobStatus: asJob(row.imageJobStatus),
     imageJobError: String(row.imageJobError ?? ""),
+    publishedUrl: row.publishedUrl ? String(row.publishedUrl) : null,
+    publishedPostId: row.publishedPostId ? String(row.publishedPostId) : null,
+    publishedAt: row.publishedAt ? String(row.publishedAt) : null,
     createdAt: String(row.createdAt ?? ""),
     updatedAt: String(row.updatedAt ?? ""),
   };

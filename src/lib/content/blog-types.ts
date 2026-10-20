@@ -44,6 +44,9 @@ export type BlogConcept = {
   textJobError: string;
   imageJobStatus: JobStatus;
   imageJobError: string;
+  publishedUrl: string | null;
+  publishedPostId: string | null;
+  publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -55,6 +58,9 @@ export type BlogConceptSummary = {
   updatedAt: string;
   wordCount: number;
   brandVersionNumber: number | null;
+  publishedUrl: string | null;
+  publishedPostId: string | null;
+  publishedAt: string | null;
 };
 
 export type BlogSourceMeeting = {
