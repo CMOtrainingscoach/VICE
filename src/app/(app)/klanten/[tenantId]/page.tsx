@@ -4,6 +4,14 @@ import { TenantDetailTabs } from "@/components/clients/tenant-detail-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getUserAppContext } from "@/lib/auth/context";
 import { emptyBloggerStatus, parseBloggerPublic } from "@/lib/integrations/blogger";
+import {
+  emptyGoogleAnalyticsStatus,
+  parseGoogleAnalyticsPublic,
+} from "@/lib/integrations/google-analytics";
+import {
+  emptySearchConsoleStatus,
+  parseSearchConsolePublic,
+} from "@/lib/integrations/search-console";
 import { createClient } from "@/lib/supabase/server";
 import { TENANT_STATUS_LABELS, type TenantRow } from "@/lib/types/tenant";
 
@@ -16,6 +24,8 @@ export default async function TenantDetailPage({
   const tabParam = typeof query.tab === "string" ? query.tab : "gegevens";
   const tab = tabParam === "instellingen" ? "instellingen" : "gegevens";
   const bloggerFlash = typeof query.blogger === "string" ? query.blogger : null;
+  const gscFlash = typeof query.gsc === "string" ? query.gsc : null;
+  const gaFlash = typeof query.ga === "string" ? query.ga : null;
 
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
@@ -36,13 +46,31 @@ export default async function TenantDetailPage({
   const isAdmin = ctx.isPlatformAdmin;
 
   let blogger = emptyBloggerStatus();
+  let searchConsole = emptySearchConsoleStatus();
+  let googleAnalytics = emptyGoogleAnalyticsStatus();
   if (isAdmin) {
-    const status = await supabase.schema("app").rpc("get_tenant_integration_public", {
-      p_tenant_id: tenantId,
-      p_provider: "blogger",
-    });
-    if (!status.error) {
-      blogger = parseBloggerPublic(status.data);
+    const [bloggerStatus, gscStatus, gaStatus] = await Promise.all([
+      supabase.schema("app").rpc("get_tenant_integration_public", {
+        p_tenant_id: tenantId,
+        p_provider: "blogger",
+      }),
+      supabase.schema("app").rpc("get_tenant_integration_public", {
+        p_tenant_id: tenantId,
+        p_provider: "search_console",
+      }),
+      supabase.schema("app").rpc("get_tenant_integration_public", {
+        p_tenant_id: tenantId,
+        p_provider: "google_analytics",
+      }),
+    ]);
+    if (!bloggerStatus.error) {
+      blogger = parseBloggerPublic(bloggerStatus.data);
+    }
+    if (!gscStatus.error) {
+      searchConsole = parseSearchConsolePublic(gscStatus.data);
+    }
+    if (!gaStatus.error) {
+      googleAnalytics = parseGoogleAnalyticsPublic(gaStatus.data);
     }
   }
 
@@ -99,7 +127,11 @@ export default async function TenantDetailPage({
             tenant={tenant}
             tab={tab}
             blogger={blogger}
+            searchConsole={searchConsole}
+            googleAnalytics={googleAnalytics}
             bloggerFlash={bloggerFlash}
+            gscFlash={gscFlash}
+            gaFlash={gaFlash}
           />
         </>
       ) : (

@@ -1,14 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { GoogleIntegrationSection } from "@/components/clients/google-integration-section";
 import type { BloggerBlog, BloggerPublicStatus } from "@/lib/integrations/blogger";
+import type { GoogleAnalyticsPublicStatus } from "@/lib/integrations/google-analytics";
+import type { SearchConsolePublicStatus } from "@/lib/integrations/search-console";
 import {
   disconnectBloggerAction,
   listTenantBloggerBlogsAction,
   selectBloggerBlogAction,
 } from "@/modules/integrations/blogger-actions";
+import {
+  disconnectGoogleAnalyticsAction,
+  listTenantGoogleAnalyticsPropertiesAction,
+  selectGoogleAnalyticsPropertyAction,
+} from "@/modules/integrations/google-analytics-actions";
+import {
+  disconnectSearchConsoleAction,
+  listTenantSearchConsoleSitesAction,
+  selectSearchConsoleSiteAction,
+} from "@/modules/integrations/search-console-actions";
 
 const BLOGGER_FLASH: Record<string, string> = {
   connected: "Google Blogger is gekoppeld. Kies hieronder welke blog je wilt gebruiken.",
@@ -21,17 +34,49 @@ const BLOGGER_FLASH: Record<string, string> = {
   forbidden: "Geen toegang tot deze koppeling.",
 };
 
+const GSC_FLASH: Record<string, string> = {
+  connected: "Google Search Console is gekoppeld. Kies hieronder welke site VICE mag gebruiken.",
+  denied: "Google-autorisatie geannuleerd.",
+  invalid: "Ongeldige OAuth-callback.",
+  state: "OAuth-sessie verlopen. Probeer opnieuw te koppelen.",
+  token: "Tokenuitwisseling met Google mislukt.",
+  save: "Koppeling opslaan mislukt. Controleer of migratie 20260330135400 is toegepast.",
+  "not-configured": "Zet GOOGLE_CLIENT_ID en GOOGLE_CLIENT_SECRET in de omgeving.",
+  forbidden: "Geen toegang tot deze koppeling.",
+};
+
+const GA_FLASH: Record<string, string> = {
+  connected: "Google Analytics is gekoppeld. Kies hieronder welke GA4-property VICE mag gebruiken.",
+  denied: "Google-autorisatie geannuleerd.",
+  invalid: "Ongeldige OAuth-callback.",
+  state: "OAuth-sessie verlopen. Probeer opnieuw te koppelen.",
+  token: "Tokenuitwisseling met Google mislukt.",
+  save: "Koppeling opslaan mislukt. Controleer of migratie 20260330135400 is toegepast.",
+  "not-configured": "Zet GOOGLE_CLIENT_ID en GOOGLE_CLIENT_SECRET in de omgeving.",
+  forbidden: "Geen toegang tot deze koppeling.",
+};
+
 export function TenantIntegrationsPanel({
   tenantId,
   initialBlogger,
+  initialSearchConsole,
+  initialGoogleAnalytics,
   bloggerFlash,
+  gscFlash,
+  gaFlash,
 }: {
   tenantId: string;
   initialBlogger: BloggerPublicStatus;
+  initialSearchConsole: SearchConsolePublicStatus;
+  initialGoogleAnalytics: GoogleAnalyticsPublicStatus;
   bloggerFlash?: string | null;
+  gscFlash?: string | null;
+  gaFlash?: string | null;
 }) {
   const router = useRouter();
   const [blogger, setBlogger] = useState(initialBlogger);
+  const [searchConsole, setSearchConsole] = useState(initialSearchConsole);
+  const [googleAnalytics, setGoogleAnalytics] = useState(initialGoogleAnalytics);
   const [blogs, setBlogs] = useState<BloggerBlog[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(
@@ -42,6 +87,14 @@ export function TenantIntegrationsPanel({
   useEffect(() => {
     setBlogger(initialBlogger);
   }, [initialBlogger]);
+
+  useEffect(() => {
+    setSearchConsole(initialSearchConsole);
+  }, [initialSearchConsole]);
+
+  useEffect(() => {
+    setGoogleAnalytics(initialGoogleAnalytics);
+  }, [initialGoogleAnalytics]);
 
   useEffect(() => {
     if (!blogger.connected) return;
@@ -58,7 +111,7 @@ export function TenantIntegrationsPanel({
     return () => {
       cancelled = true;
     };
-  }, [blogger.connected, tenantId]);
+  }, [blogger.connected, tenantId, blogger.updatedAt]);
 
   async function selectBlog(blog: BloggerBlog) {
     setBusy("select");
@@ -74,7 +127,7 @@ export function TenantIntegrationsPanel({
     router.refresh();
   }
 
-  async function disconnect() {
+  async function disconnectBlogger() {
     setBusy("disconnect");
     setError(null);
     const result = await disconnectBloggerAction(tenantId);
@@ -97,12 +150,39 @@ export function TenantIntegrationsPanel({
     router.refresh();
   }
 
+  const loadGscSites = useCallback(async () => {
+    const result = await listTenantSearchConsoleSitesAction(tenantId);
+    if (!result.ok) return { ok: false as const, error: result.error };
+    return {
+      ok: true as const,
+      data: (result.data ?? []).map((site) => ({
+        id: site.siteUrl,
+        title: site.siteUrl,
+        subtitle: site.permissionLevel || undefined,
+      })),
+    };
+  }, [tenantId]);
+
+  const loadGaProperties = useCallback(async () => {
+    const result = await listTenantGoogleAnalyticsPropertiesAction(tenantId);
+    if (!result.ok) return { ok: false as const, error: result.error };
+    return {
+      ok: true as const,
+      data: (result.data ?? []).map((property) => ({
+        id: property.propertyId,
+        title: property.propertyName,
+        subtitle: property.accountName ? `Account: ${property.accountName}` : undefined,
+      })),
+    };
+  }, [tenantId]);
+
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-vice-border bg-vice-surface p-6">
         <h2 className="text-lg font-medium text-vice-text">Sitekoppelingen</h2>
         <p className="mt-2 max-w-prose text-sm text-vice-text-muted">
-          Koppel externe sites van deze klant zodat gegenereerde content automatisch kan worden gepubliceerd.
+          Koppel externe sites en Google-diensten van deze klant voor publicatie en om later
+          zoek- en analyticsdata in VICE te gebruiken.
         </p>
       </section>
 
@@ -127,9 +207,7 @@ export function TenantIntegrationsPanel({
 
         {message ? <p className="mt-4 text-sm text-vice-text">{message}</p> : null}
         {error ? <p className="mt-4 text-sm text-red-700">{error}</p> : null}
-        {blogger.lastError ? (
-          <p className="mt-2 text-sm text-red-700">{blogger.lastError}</p>
-        ) : null}
+        {blogger.lastError ? <p className="mt-2 text-sm text-red-700">{blogger.lastError}</p> : null}
 
         {!blogger.connected ? (
           <div className="mt-5">
@@ -140,9 +218,7 @@ export function TenantIntegrationsPanel({
               Koppel Google Blogger
             </a>
             <p className="mt-3 text-xs text-vice-text-muted">
-              Je wordt doorgestuurd naar Google om toegang tot Blogger te geven. Redirect-URI:
-              {" "}
-              <code className="text-[11px]">/api/integrations/blogger/callback</code>
+              Redirect-URI: <code className="text-[11px]">/api/integrations/blogger/callback</code>
             </p>
           </div>
         ) : (
@@ -152,8 +228,7 @@ export function TenantIntegrationsPanel({
             </p>
             {blogger.blogId ? (
               <p className="text-sm text-vice-text">
-                Actieve blog:{" "}
-                <strong>{blogger.blogName ?? blogger.blogId}</strong>
+                Actieve blog: <strong>{blogger.blogName ?? blogger.blogId}</strong>
                 {blogger.blogUrl ? (
                   <>
                     {" "}
@@ -177,9 +252,7 @@ export function TenantIntegrationsPanel({
                     <li key={blog.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                       <div>
                         <p className="text-sm font-medium text-vice-text">{blog.name}</p>
-                        {blog.url ? (
-                          <p className="text-xs text-vice-text-muted">{blog.url}</p>
-                        ) : null}
+                        {blog.url ? <p className="text-xs text-vice-text-muted">{blog.url}</p> : null}
                       </div>
                       <Button
                         type="button"
@@ -197,17 +270,98 @@ export function TenantIntegrationsPanel({
               <p className="text-sm text-vice-text-muted">Geen blogs gevonden op dit Google-account.</p>
             )}
 
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={busy !== ""}
-              onClick={() => void disconnect()}
-            >
+            <Button type="button" variant="ghost" disabled={busy !== ""} onClick={() => void disconnectBlogger()}>
               {busy === "disconnect" ? "Bezig…" : "Ontkoppelen"}
             </Button>
           </div>
         )}
       </section>
+
+      <GoogleIntegrationSection
+        title="Google Search Console"
+        description="Koppel Search Console om later zoekprestaties van de klant in VICE te kunnen gebruiken."
+        connected={searchConsole.connected}
+        accountEmail={searchConsole.accountEmail}
+        selectedId={searchConsole.siteUrl}
+        selectedLabel={searchConsole.siteUrl}
+        lastError={searchConsole.lastError}
+        connectHref={`/api/integrations/search-console/connect?tenantId=${encodeURIComponent(tenantId)}`}
+        callbackPathLabel="/api/integrations/search-console/callback"
+        connectButtonLabel="Koppel Search Console"
+        emptyListMessage="Geen sites gevonden op dit Google-account."
+        selectPrompt="Kies hieronder welke site VICE mag gebruiken voor Search Console-data."
+        selectedMessage={(label) => `Actieve site: ${label}`}
+        disconnectedMessage="Google Search Console ontkoppeld."
+        initialFlash={gscFlash}
+        flashMessages={GSC_FLASH}
+        reloadKey={`${searchConsole.connected}-${searchConsole.updatedAt ?? ""}`}
+        onLoadList={loadGscSites}
+        onSelect={async (item) => {
+          const result = await selectSearchConsoleSiteAction(tenantId, {
+            siteUrl: item.id,
+            permissionLevel: item.subtitle ?? "",
+          });
+          if (result.ok && result.data) setSearchConsole(result.data);
+          return result.ok ? { ok: true } : { ok: false, error: result.error };
+        }}
+        onDisconnect={async () => {
+          const result = await disconnectSearchConsoleAction(tenantId);
+          if (result.ok) {
+            setSearchConsole({
+              connected: false,
+              status: "disconnected",
+              accountEmail: "",
+              siteUrl: null,
+              lastError: "",
+            });
+          }
+          return result.ok ? { ok: true } : { ok: false, error: result.error };
+        }}
+      />
+
+      <GoogleIntegrationSection
+        title="Google Analytics"
+        description="Koppel GA4 (read-only) om later bezoekersdata van de klant in VICE te kunnen gebruiken."
+        connected={googleAnalytics.connected}
+        accountEmail={googleAnalytics.accountEmail}
+        selectedId={googleAnalytics.propertyId}
+        selectedLabel={googleAnalytics.propertyName}
+        lastError={googleAnalytics.lastError}
+        connectHref={`/api/integrations/google-analytics/connect?tenantId=${encodeURIComponent(tenantId)}`}
+        callbackPathLabel="/api/integrations/google-analytics/callback"
+        connectButtonLabel="Koppel Google Analytics"
+        emptyListMessage="Geen GA4-properties gevonden op dit Google-account."
+        selectPrompt="Kies hieronder welke GA4-property VICE mag gebruiken."
+        selectedMessage={(label) => `Actieve property: ${label}`}
+        disconnectedMessage="Google Analytics ontkoppeld."
+        initialFlash={gaFlash}
+        flashMessages={GA_FLASH}
+        reloadKey={`${googleAnalytics.connected}-${googleAnalytics.updatedAt ?? ""}`}
+        onLoadList={loadGaProperties}
+        onSelect={async (item) => {
+          const list = await listTenantGoogleAnalyticsPropertiesAction(tenantId);
+          const match = list.ok ? list.data?.find((p) => p.propertyId === item.id) : undefined;
+          if (!match) return { ok: false, error: "Property niet gevonden" };
+          const result = await selectGoogleAnalyticsPropertyAction(tenantId, match);
+          if (result.ok && result.data) setGoogleAnalytics(result.data);
+          return result.ok ? { ok: true } : { ok: false, error: result.error };
+        }}
+        onDisconnect={async () => {
+          const result = await disconnectGoogleAnalyticsAction(tenantId);
+          if (result.ok) {
+            setGoogleAnalytics({
+              connected: false,
+              status: "disconnected",
+              accountEmail: "",
+              propertyId: null,
+              propertyName: null,
+              accountId: null,
+              lastError: "",
+            });
+          }
+          return result.ok ? { ok: true } : { ok: false, error: result.error };
+        }}
+      />
     </div>
   );
 }
