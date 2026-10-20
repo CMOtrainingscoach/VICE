@@ -152,6 +152,7 @@ export async function generateSocialCaption(input: {
   language: string;
   voice: string;
   sourceContext?: string;
+  contentLearnings?: string;
 }): Promise<SocialCaptionResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY ontbreekt.");
@@ -177,6 +178,9 @@ export async function generateSocialCaption(input: {
           "Antwoord als JSON: { caption: string, hashtags: string }.",
           "hashtags: spatiegescheiden, met #, max 8, optioneel.",
           input.voice ? `Tone of voice:\n${input.voice}` : "",
+          input.contentLearnings?.trim()
+            ? `Leerpunten uit eerdere redacties (volg deze voorkeuren):\n${input.contentLearnings.trim()}`
+            : "",
         ]
           .filter(Boolean)
           .join("\n\n"),

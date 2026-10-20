@@ -48,6 +48,7 @@ export type SocialPostConcept = {
   textJobError: string;
   imageJobStatus: JobStatus;
   imageJobError: string;
+  textAiBaseline: { caption?: string; hashtags?: string } | null;
   createdAt: string;
   updatedAt: string;
 };

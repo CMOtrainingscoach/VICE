@@ -20,7 +20,7 @@ const LENGTH_HINT: Record<BlogLength, string> = {
   long: "richtlijn: ongeveer 1200-1600 woorden",
 };
 
-function systemRules(voice: string, language: string): string {
+function systemRules(voice: string, language: string, contentLearnings?: string): string {
   const isDutch = language !== "en";
   return [
     "Je schrijft blogs voor VICE, een strategisch platform.",
@@ -63,6 +63,9 @@ function systemRules(voice: string, language: string): string {
     "Geen scripts, geen inline event handlers, geen externe scripts in HTML.",
     "Antwoord als JSON met keys: title (string), bodyHtml (string met alleen <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <a href>).",
     voice ? `Tone of voice van de klant:\n${voice}` : "",
+    contentLearnings?.trim()
+      ? `Leerpunten uit eerdere redacties (volg deze voorkeuren):\n${contentLearnings.trim()}`
+      : "",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -77,6 +80,7 @@ export async function generateBlogText(input: {
   instruction?: string;
   currentTitle?: string;
   currentBodyHtml?: string;
+  contentLearnings?: string;
 }): Promise<BlogAiResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY ontbreekt. Vraag een beheerder om de configuratie.");
@@ -126,7 +130,7 @@ export async function generateBlogText(input: {
     ...(modelSupportsCustomTemperature(model) ? { temperature: 0.4 } : {}),
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: systemRules(input.voice, input.language) },
+      { role: "system", content: systemRules(input.voice, input.language, input.contentLearnings) },
       { role: "user", content: userParts.join("\n\n") },
     ],
   });

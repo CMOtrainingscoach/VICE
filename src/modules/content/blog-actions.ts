@@ -10,6 +10,12 @@ import {
   hydrateInlineVisualUrls,
   normalizeBlogDocument,
 } from "@/lib/content/blog-ai";
+import {
+  blogSnapshotFromParts,
+  fetchContentLearningPromptBlock,
+  parseBaselineFromRow,
+  recordContentLearningIfNeeded,
+} from "@/lib/content/content-learning";
 import { extractBlogSourceText } from "@/lib/content/blog-source-extract";
 import {
   BLOG_MIGRATION,
@@ -317,6 +323,20 @@ export async function saveBlogConceptAction(
       p_instruction: "",
     });
   }
+  if (!quiet && (patch.bodyHtml != null || patch.title != null)) {
+    const baseline = parseBaselineFromRow("blog", mapped.textAiBaseline);
+    await recordContentLearningIfNeeded({
+      supabase,
+      tenantId: mapped.tenantId,
+      brandId: mapped.brandId,
+      contentKind: "blog",
+      conceptId: mapped.id,
+      trigger: "save",
+      baseline,
+      final: blogSnapshotFromParts(mapped.title, mapped.bodyPlain),
+      voiceSnippet: mapped.brandVoiceSnapshot,
+    });
+  }
   if (!quiet) revalidateBlog(mapped.tenantId, mapped.id);
   return { ok: true, data: mapped };
 }
@@ -338,6 +358,7 @@ export async function generateBlogTextAction(conceptId: string): Promise<ActionR
 
   try {
     const sources = await loadResolvedBlogSources(conceptId);
+    const contentLearnings = await fetchContentLearningPromptBlock(supabase, concept.tenantId);
     const generated = await generateBlogText({
       mode: concept.mode,
       sourceText: concept.sourceText,
@@ -345,9 +366,11 @@ export async function generateBlogTextAction(conceptId: string): Promise<ActionR
       lengthKey: concept.lengthKey,
       voice: concept.brandVoiceSnapshot,
       sources,
+      contentLearnings,
     });
     const document = normalizeBlogDocument(generated.title, generated.bodyHtml);
     const plain = htmlToPlain(document.bodyHtml);
+    const baseline = blogSnapshotFromParts(document.title, plain);
     const saved = await supabase.schema("app").rpc("save_blog_concept", {
       p_concept_id: conceptId,
       p_expected: null,
@@ -358,6 +381,7 @@ export async function generateBlogTextAction(conceptId: string): Promise<ActionR
         wordCount: countWords(plain),
         textJobStatus: "ready",
         textJobError: "",
+        textAiBaseline: baseline,
       },
     });
     if (saved.error || !saved.data) return { ok: false, error: migration(saved.error?.message ?? "Tekst opslaan mislukt") };
@@ -397,6 +421,8 @@ export async function rewriteBlogTextAction(
   if (!instruction.trim()) return { ok: false, error: "Beschrijf wat je wilt aanpassen." };
 
   try {
+    const supabase = await authed();
+    const contentLearnings = await fetchContentLearningPromptBlock(supabase, concept.tenantId);
     const generated = await generateBlogText({
       mode: "rewrite",
       sourceText: concept.sourceText,
@@ -406,6 +432,7 @@ export async function rewriteBlogTextAction(
       instruction: instruction.trim(),
       currentTitle: concept.title,
       currentBodyHtml: concept.bodyHtml,
+      contentLearnings,
     });
     const document = normalizeBlogDocument(generated.title, generated.bodyHtml);
     return {
@@ -430,6 +457,7 @@ export async function applyBlogRewriteAction(
   const document = normalizeBlogDocument(title, bodyHtml);
   const plain = htmlToPlain(document.bodyHtml);
   const supabase = await authed();
+  const baseline = blogSnapshotFromParts(document.title, plain);
   const saved = await supabase.schema("app").rpc("save_blog_concept", {
     p_concept_id: conceptId,
     p_expected: expectedUpdatedAt,
@@ -440,6 +468,7 @@ export async function applyBlogRewriteAction(
       wordCount: countWords(plain),
       textJobStatus: "ready",
       textJobError: "",
+      textAiBaseline: baseline,
     },
   });
   if (saved.error || !saved.data) return { ok: false, error: migration(saved.error?.message ?? "Voorstel toepassen mislukt") };
@@ -668,9 +697,31 @@ async function mapConcept(raw: unknown): Promise<BlogConcept | null> {
     publishedUrl: row.publishedUrl ? String(row.publishedUrl) : null,
     publishedPostId: row.publishedPostId ? String(row.publishedPostId) : null,
     publishedAt: row.publishedAt ? String(row.publishedAt) : null,
+    textAiBaseline:
+      row.textAiBaseline && typeof row.textAiBaseline === "object"
+        ? (row.textAiBaseline as BlogConcept["textAiBaseline"])
+        : null,
     createdAt: String(row.createdAt ?? ""),
     updatedAt: String(row.updatedAt ?? ""),
   };
+}
+
+export async function captureBlogContentLearningOnPublish(
+  supabase: Awaited<ReturnType<typeof authed>>,
+  concept: BlogConcept,
+): Promise<void> {
+  const baseline = parseBaselineFromRow("blog", concept.textAiBaseline);
+  await recordContentLearningIfNeeded({
+    supabase,
+    tenantId: concept.tenantId,
+    brandId: concept.brandId,
+    contentKind: "blog",
+    conceptId: concept.id,
+    trigger: "publish",
+    baseline,
+    final: blogSnapshotFromParts(concept.title, concept.bodyPlain),
+    voiceSnippet: concept.brandVoiceSnapshot,
+  });
 }
 
 async function mapVisual(raw: unknown): Promise<BlogVisual | null> {

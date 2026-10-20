@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check, Copy, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ContentLearningsPanel } from "@/components/brand/content-learnings-panel";
 import { Button } from "@/components/ui/button";
+import type { ContentLearningEvent } from "@/lib/content/content-learning-types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BRAND_FONTS, FONT_WEIGHTS, fontStack, googleFontsCssHref } from "@/lib/brand/fonts";
@@ -40,10 +42,12 @@ export function BrandWorkspace({
   tenantId,
   tenantName,
   initial,
+  initialLearnings = [],
 }: {
   tenantId: string;
   tenantName: string;
   initial: ClientBrand | null;
+  initialLearnings?: ContentLearningEvent[];
 }) {
   const [brand, setBrand] = useState<ClientBrand | null>(initial);
   const [tab, setTab] = useState<Tab>("overview");
@@ -225,13 +229,16 @@ export function BrandWorkspace({
           />
         )}
         {tab === "prompts" && (
-          <PromptsEditor
-            brand={brand}
-            locked={locked}
-            busy={busy}
-            onSaveVisual={(visual) => void savePatch({ visual })}
-            onSaveTemplates={(promptTemplates) => void savePatch({ promptTemplates })}
-          />
+          <>
+            <PromptsEditor
+              brand={brand}
+              locked={locked}
+              busy={busy}
+              onSaveVisual={(visual) => void savePatch({ visual })}
+              onSaveTemplates={(promptTemplates) => void savePatch({ promptTemplates })}
+            />
+            <ContentLearningsPanel tenantId={tenantId} initialEvents={initialLearnings} />
+          </>
         )}
       </div>
 

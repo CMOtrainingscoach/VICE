@@ -128,6 +128,17 @@ function humanizeGoogleAdsErrorMessage(raw: string): string {
       "en koppel opnieuw (zelfde GOOGLE_CLIENT_ID/SECRET als in Vercel)."
     );
   }
+  if (
+    lower.includes("explorer access") ||
+    lower.includes("keywordplanideaservice") ||
+    lower.includes("not allowed for use with explorer")
+  ) {
+    return (
+      "Keyword Planner vereist Google Ads API Basic (of Standard). Explorer-toegang mag KeywordPlanIdeaService niet gebruiken. " +
+      "In Google Cloud → Google Ads API → Overview: voltooi brand verification en vraag Basic access aan. " +
+      "Alternatief voor testen: gebruik een Google Ads testaccount als customer ID met Test-toegang."
+    );
+  }
   return raw;
 }
 

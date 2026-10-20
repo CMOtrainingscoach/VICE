@@ -47,6 +47,7 @@ export type BlogConcept = {
   publishedUrl: string | null;
   publishedPostId: string | null;
   publishedAt: string | null;
+  textAiBaseline: { title?: string; bodyPlain?: string } | null;
   createdAt: string;
   updatedAt: string;
 };

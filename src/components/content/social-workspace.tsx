@@ -84,16 +84,21 @@ export function SocialWorkspace({
 
   async function ensureConcept() {
     if (concept) {
-      const saved = await saveSocialPostConceptAction(concept.id, concept.updatedAt, {
-        channels,
-        format,
-        topicMode,
-        topicText,
-        blogConceptId: topicMode === "blog" ? blogConceptId || null : null,
-        meetingRecordingId: topicMode === "meeting" ? meetingRecordingId || null : null,
-        caption,
-        hashtags,
-      });
+      const saved = await saveSocialPostConceptAction(
+        concept.id,
+        concept.updatedAt,
+        {
+          channels,
+          format,
+          topicMode,
+          topicText,
+          blogConceptId: topicMode === "blog" ? blogConceptId || null : null,
+          meetingRecordingId: topicMode === "meeting" ? meetingRecordingId || null : null,
+          caption,
+          hashtags,
+        },
+        { quiet: true },
+      );
       if (!saved.ok || !saved.data) {
         setError(saved.ok ? "Opslaan mislukt" : saved.error);
         return null;

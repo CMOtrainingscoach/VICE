@@ -9,6 +9,12 @@ import {
   slidesFromBlogHtml,
 } from "@/lib/content/social-ai";
 import {
+  fetchContentLearningPromptBlock,
+  parseBaselineFromRow,
+  recordContentLearningIfNeeded,
+  socialSnapshotFromParts,
+} from "@/lib/content/content-learning";
+import {
   SOCIAL_MIGRATION,
   type SocialCarouselSlide,
   type SocialChannel,
@@ -122,6 +128,10 @@ async function mapConcept(raw: unknown): Promise<SocialPostConcept | null> {
     textJobError: String(row.textJobError ?? ""),
     imageJobStatus: asJob(row.imageJobStatus),
     imageJobError: String(row.imageJobError ?? ""),
+    textAiBaseline:
+      row.textAiBaseline && typeof row.textAiBaseline === "object"
+        ? (row.textAiBaseline as SocialPostConcept["textAiBaseline"])
+        : null,
     createdAt: String(row.createdAt ?? ""),
     updatedAt: String(row.updatedAt ?? ""),
   };
@@ -214,7 +224,9 @@ export async function saveSocialPostConceptAction(
   conceptId: string,
   expectedUpdatedAt: string,
   patch: Record<string, unknown>,
+  options?: { quiet?: boolean },
 ): Promise<ActionResult<SocialPostConcept>> {
+  const quiet = Boolean(options?.quiet);
   const supabase = await authed();
   const saved = await supabase.schema("app").rpc("save_social_post_concept", {
     p_concept_id: conceptId,
@@ -226,6 +238,20 @@ export async function saveSocialPostConceptAction(
   }
   const mapped = await mapConcept(saved.data);
   if (!mapped) return { ok: false, error: "Opslaan mislukt" };
+  if (!quiet && (patch.caption != null || patch.hashtags != null)) {
+    const baseline = parseBaselineFromRow("social", mapped.textAiBaseline);
+    await recordContentLearningIfNeeded({
+      supabase,
+      tenantId: mapped.tenantId,
+      brandId: mapped.brandId,
+      contentKind: "social",
+      conceptId: mapped.id,
+      trigger: "save",
+      baseline,
+      final: socialSnapshotFromParts(mapped.caption, mapped.hashtags),
+      voiceSnippet: mapped.brandVoiceSnapshot,
+    });
+  }
   revalidateSocial(mapped.tenantId, mapped.id);
   return { ok: true, data: mapped };
 }
@@ -309,6 +335,7 @@ export async function generateSocialCaptionAction(
 
   try {
     const { topic, sourceContext } = await resolveTopicContext(concept);
+    const contentLearnings = await fetchContentLearningPromptBlock(supabase, concept.tenantId);
     const generated = await generateSocialCaption({
       topic,
       channels: concept.channels,
@@ -316,7 +343,9 @@ export async function generateSocialCaptionAction(
       language: concept.language,
       voice: concept.brandVoiceSnapshot,
       sourceContext,
+      contentLearnings,
     });
+    const baseline = socialSnapshotFromParts(generated.caption, generated.hashtags);
     const saved = await supabase.schema("app").rpc("save_social_post_concept", {
       p_concept_id: conceptId,
       p_expected: null,
@@ -326,6 +355,7 @@ export async function generateSocialCaptionAction(
         topicText: concept.topicText.trim() || topic,
         textJobStatus: "ready",
         textJobError: "",
+        textAiBaseline: baseline,
       },
     });
     if (saved.error || !saved.data) {

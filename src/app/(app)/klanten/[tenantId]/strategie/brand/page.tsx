@@ -4,6 +4,8 @@ import { getUserAppContext } from "@/lib/auth/context";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
 import { loadClientBrandAction } from "@/modules/brand/actions";
+import { loadContentLearningsAction } from "@/modules/content/content-learning-actions";
+import type { ContentLearningEvent } from "@/lib/content/content-learning-types";
 
 export default async function ClientBrandPage({
   params,
@@ -24,7 +26,13 @@ export default async function ClientBrandPage({
     .maybeSingle();
   if (!tenantData) notFound();
 
-  const loaded = await loadClientBrandAction(tenantId);
+  const [loaded, learningsResult] = await Promise.all([
+    loadClientBrandAction(tenantId),
+    loadContentLearningsAction(tenantId, { limit: 40 }),
+  ]);
+  const initialLearnings: ContentLearningEvent[] =
+    learningsResult.ok && learningsResult.data ? learningsResult.data : [];
+
   if (!loaded.ok || !loaded.data) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-10 md:px-10">
@@ -41,6 +49,7 @@ export default async function ClientBrandPage({
       tenantId={tenantId}
       tenantName={(tenantData as Pick<TenantRow, "name">).name || loaded.data.tenantName}
       initial={loaded.data.brand}
+      initialLearnings={initialLearnings}
     />
   );
 }

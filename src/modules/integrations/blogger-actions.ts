@@ -13,6 +13,10 @@ import {
   type BloggerPublicStatus,
 } from "@/lib/integrations/blogger";
 import { hydrateInlineVisualUrls, normalizeBlogDocument } from "@/lib/content/blog-ai";
+import {
+  captureBlogContentLearningOnPublish,
+  loadBlogConceptAction,
+} from "@/modules/content/blog-actions";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -193,6 +197,11 @@ export async function publishBlogConceptToBloggerAction(
       if (marked.error) {
         return { ok: false, error: migration(marked.error.message) };
       }
+    }
+
+    const loadedConcept = await loadBlogConceptAction(conceptId);
+    if (loadedConcept.ok && loadedConcept.data) {
+      await captureBlogContentLearningOnPublish(supabase, loadedConcept.data);
     }
 
     return { ok: true, data: published };
