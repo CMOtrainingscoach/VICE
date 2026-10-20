@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { formatGoogleAdsError, googleAdsPublicStatus } from "@/lib/integrations/google-ads";
+import {
+  buildGoogleAdsUiStatus,
+  formatGoogleAdsError,
+  googleAdsPublicStatus,
+} from "@/lib/integrations/google-ads";
 
 const ENV_KEYS = [
   "GOOGLE_CLIENT_ID",
@@ -30,6 +34,24 @@ describe("googleAdsPublicStatus", () => {
     }
   });
 
+  it("is configured via platform integration without env refresh token", () => {
+    process.env.GOOGLE_CLIENT_ID = "cid";
+    process.env.GOOGLE_CLIENT_SECRET = "secret";
+    delete process.env.GOOGLE_ADS_REFRESH_TOKEN;
+    delete process.env.GOOGLE_ADS_CUSTOMER_ID;
+
+    const status = buildGoogleAdsUiStatus({
+      connected: true,
+      status: "connected",
+      accountEmail: "ads@example.com",
+      customerId: "1234567890",
+      loginCustomerId: "",
+      lastError: "",
+    });
+    expect(status.configured).toBe(true);
+    expect(status.refreshSource).toBe("platform");
+  });
+
   it("is configured without developer token when OAuth, customer and refresh are set", () => {
     process.env.GOOGLE_CLIENT_ID = "cid";
     process.env.GOOGLE_CLIENT_SECRET = "secret";
@@ -40,6 +62,11 @@ describe("googleAdsPublicStatus", () => {
     const status = googleAdsPublicStatus();
     expect(status.configured).toBe(true);
     expect(status.hasLegacyDeveloperToken).toBe(false);
+  });
+
+  it("explains invalid_grant OAuth failures", () => {
+    expect(formatGoogleAdsError(new Error("invalid_grant"))).toContain("invalid_grant");
+    expect(formatGoogleAdsError(new Error("invalid_grant"))).toContain("Instellingen");
   });
 
   it("formats Google Ads failure objects", () => {

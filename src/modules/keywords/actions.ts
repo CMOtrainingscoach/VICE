@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import {
   formatGoogleAdsError,
   generateKeywordIdeas,
-  googleAdsPublicStatus,
+  loadGoogleAdsRuntimeCredentials,
 } from "@/lib/integrations/google-ads";
 import { generateKeywordSeedTerms } from "@/lib/keywords/seed-ai";
 import type { KeywordResearchRow, KeywordResearchRun } from "@/lib/keywords/types";
@@ -127,11 +127,11 @@ export async function runKeywordResearchAction(
     const session = await requireSession();
     await requirePlatformAdminMfa(session);
 
-    if (!googleAdsPublicStatus().configured) {
+    if (!(await loadGoogleAdsRuntimeCredentials())) {
       return {
         ok: false,
         error:
-          "Google Ads is niet geconfigureerd. Zet GOOGLE_CLIENT_ID/SECRET, GOOGLE_ADS_CUSTOMER_ID en GOOGLE_ADS_REFRESH_TOKEN; schakel de Google Ads API in je Cloud-project in.",
+          "Google Ads is niet geconfigureerd. Ga naar Instellingen → Platform · Google Ads om te koppelen en een customer ID op te slaan.",
       };
     }
 

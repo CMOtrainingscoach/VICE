@@ -107,10 +107,12 @@ export function KeywordResearchWorkspace({
         <div className="mt-6 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
           <p className="font-medium">Google Ads nog niet geconfigureerd</p>
           <p className="mt-1">
-            In hetzelfde Google Cloud-project als GOOGLE_CLIENT_ID/SECRET: schakel de Google Ads API in en
-            stel Test- of Explorer-toegang in via Google Ads API → Overview in Cloud Console. Zet
-            GOOGLE_ADS_CUSTOMER_ID en GOOGLE_ADS_REFRESH_TOKEN (OAuth met adwords-scope). Geen aparte developer
-            token nodig — toegang loopt via je Cloud-project (GOOGLE_ADS_DEVELOPER_TOKEN is optioneel).
+            Platformbeheerder: ga naar{" "}
+            <a href="/instellingen" className="font-medium underline">
+              Instellingen
+            </a>{" "}
+            → <strong>Platform · Google Ads</strong>, koppel je account en sla het customer ID op. Schakel de
+            Google Ads API in je Cloud-project in (Test/Explorer via Cloud Console).
           </p>
         </div>
       ) : null}

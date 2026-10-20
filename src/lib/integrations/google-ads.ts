@@ -1,11 +1,16 @@
 import { GoogleAdsApi } from "google-ads-api";
 import { googleOAuthConfigured } from "@/lib/integrations/google-oauth";
 import {
+  normalizeAdsCustomerId,
+  type PlatformGoogleAdsPublicStatus,
+} from "@/lib/integrations/platform-google-ads";
+import {
   COUNTRY_GEO,
   LANGUAGE_CONSTANT,
   normalizeKeywordIdea,
   type NormalizedKeywordIdea,
 } from "@/lib/keywords/normalize";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export type GoogleAdsPublicStatus = {
   configured: boolean;
@@ -14,19 +19,91 @@ export type GoogleAdsPublicStatus = {
   hasCustomerId: boolean;
   hasRefreshToken: boolean;
   hasOAuthClient: boolean;
+  accountEmail: string;
+  refreshSource: "platform" | "env" | "none";
 };
 
-export function googleAdsPublicStatus(): GoogleAdsPublicStatus {
+export type GoogleAdsRuntimeCredentials = {
+  refreshToken: string;
+  customerId: string;
+  loginCustomerId?: string;
+};
+
+function envCustomerId(): string {
+  return normalizeAdsCustomerId(process.env.GOOGLE_ADS_CUSTOMER_ID ?? "");
+}
+
+function envLoginCustomerId(): string {
+  return normalizeAdsCustomerId(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? "");
+}
+
+export function buildGoogleAdsUiStatus(
+  platform: PlatformGoogleAdsPublicStatus | null,
+): GoogleAdsPublicStatus {
   const hasLegacyDeveloperToken = Boolean(process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim());
-  const hasCustomerId = Boolean(process.env.GOOGLE_ADS_CUSTOMER_ID?.trim());
-  const hasRefreshToken = Boolean(process.env.GOOGLE_ADS_REFRESH_TOKEN?.trim());
   const hasOAuthClient = googleOAuthConfigured();
+  const envRefresh = Boolean(process.env.GOOGLE_ADS_REFRESH_TOKEN?.trim());
+  const platformRefresh = Boolean(platform?.connected);
+  const hasRefreshToken = platformRefresh || envRefresh;
+
+  const platformCustomer = normalizeAdsCustomerId(platform?.customerId ?? "");
+  const envCustomer = envCustomerId();
+  const customerId = platformCustomer.length === 10 ? platformCustomer : envCustomer;
+  const hasCustomerId = customerId.length === 10;
+
+  let refreshSource: GoogleAdsPublicStatus["refreshSource"] = "none";
+  if (platformRefresh) refreshSource = "platform";
+  else if (envRefresh) refreshSource = "env";
+
   return {
-    configured: hasCustomerId && hasRefreshToken && hasOAuthClient,
+    configured: hasOAuthClient && hasRefreshToken && hasCustomerId,
     hasLegacyDeveloperToken,
     hasCustomerId,
     hasRefreshToken,
     hasOAuthClient,
+    accountEmail: platform?.accountEmail ?? "",
+    refreshSource,
+  };
+}
+
+/** @deprecated Prefer buildGoogleAdsUiStatus with platform integration status. */
+export function googleAdsPublicStatus(): GoogleAdsPublicStatus {
+  return buildGoogleAdsUiStatus(null);
+}
+
+export async function loadGoogleAdsRuntimeCredentials(): Promise<GoogleAdsRuntimeCredentials | null> {
+  if (!googleOAuthConfigured()) return null;
+
+  let refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN?.trim() ?? "";
+  let customerId = envCustomerId();
+  let loginCustomerId = envLoginCustomerId();
+
+  try {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .schema("app")
+      .from("platform_integrations")
+      .select("status, refresh_token, metadata")
+      .eq("provider", "google_ads")
+      .maybeSingle();
+
+    if (data?.status === "connected" && String(data.refresh_token ?? "").trim()) {
+      refreshToken = String(data.refresh_token).trim();
+      const meta = (data.metadata ?? {}) as Record<string, unknown>;
+      const fromDb = normalizeAdsCustomerId(String(meta.customerId ?? ""));
+      const loginFromDb = normalizeAdsCustomerId(String(meta.loginCustomerId ?? ""));
+      if (fromDb.length === 10) customerId = fromDb;
+      if (loginFromDb.length === 10) loginCustomerId = loginFromDb;
+    }
+  } catch {
+    /* env-only fallback when service role unavailable locally */
+  }
+
+  if (!refreshToken || customerId.length !== 10) return null;
+  return {
+    refreshToken,
+    customerId,
+    loginCustomerId: loginCustomerId.length === 10 ? loginCustomerId : undefined,
   };
 }
 
@@ -43,13 +120,24 @@ function googleAdsDeveloperTokenForClient(): string {
   return GOOGLE_ADS_DEVELOPER_TOKEN_PLACEHOLDER;
 }
 
+function humanizeGoogleAdsErrorMessage(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("invalid_grant")) {
+    return (
+      "Google OAuth refresh token is ongeldig (invalid_grant). Ga naar Instellingen → Platform · Google Ads " +
+      "en koppel opnieuw (zelfde GOOGLE_CLIENT_ID/SECRET als in Vercel)."
+    );
+  }
+  return raw;
+}
+
 /** google-ads-api / gRPC failures are often plain objects, not Error instances. */
 export function formatGoogleAdsError(error: unknown): string {
   if (error instanceof Error) {
     const msg = error.message.trim();
-    return msg || "Google Ads API-fout";
+    return humanizeGoogleAdsErrorMessage(msg || "Google Ads API-fout");
   }
-  if (typeof error === "string" && error.trim()) return error.trim();
+  if (typeof error === "string" && error.trim()) return humanizeGoogleAdsErrorMessage(error.trim());
   if (error && typeof error === "object") {
     const record = error as Record<string, unknown>;
     const errors = record.errors;
@@ -74,7 +162,7 @@ export function formatGoogleAdsError(error: unknown): string {
   }
   try {
     const json = JSON.stringify(error);
-    if (json && json !== "{}") return json;
+    if (json && json !== "{}") return humanizeGoogleAdsErrorMessage(json);
   } catch {
     /* ignore */
   }
@@ -82,10 +170,6 @@ export function formatGoogleAdsError(error: unknown): string {
 }
 
 function adsClient() {
-  const status = googleAdsPublicStatus();
-  if (!status.configured) {
-    throw new Error("Google Ads keyword planning is niet geconfigureerd in de omgeving.");
-  }
   return new GoogleAdsApi({
     client_id: process.env.GOOGLE_CLIENT_ID!.trim(),
     client_secret: process.env.GOOGLE_CLIENT_SECRET!.trim(),
@@ -93,20 +177,19 @@ function adsClient() {
   });
 }
 
-function adsCustomer() {
+function adsCustomer(creds: GoogleAdsRuntimeCredentials) {
   const client = adsClient();
-  const customerId = process.env.GOOGLE_ADS_CUSTOMER_ID!.replace(/-/g, "").trim();
-  const loginCustomerId = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID?.replace(/-/g, "").trim();
   return client.Customer({
-    customer_id: customerId,
-    refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN!.trim(),
-    login_customer_id: loginCustomerId || undefined,
+    customer_id: creds.customerId,
+    refresh_token: creds.refreshToken,
+    login_customer_id: creds.loginCustomerId,
   });
 }
 
 export async function resolveGeoTargetConstants(
   countryCode: string,
-  city?: string | null,
+  city: string | null | undefined,
+  creds: GoogleAdsRuntimeCredentials,
 ): Promise<string[]> {
   const country = countryCode.toUpperCase();
   const countryGeo = COUNTRY_GEO[country];
@@ -116,7 +199,7 @@ export async function resolveGeoTargetConstants(
   const cityName = city?.trim();
   if (!cityName) return targets;
 
-  const customer = adsCustomer();
+  const customer = adsCustomer(creds);
   const escaped = cityName.replace(/'/g, "\\'");
   const rows = await customer.query(`
     SELECT geo_target_constant.resource_name, geo_target_constant.name
@@ -147,14 +230,21 @@ export async function generateKeywordIdeas(input: {
   const seeds = [...new Set(input.seeds.map((s) => s.trim()).filter(Boolean))].slice(0, 15);
   if (seeds.length === 0) throw new Error("Voeg minstens één seed-term toe.");
 
-  const customer = adsCustomer();
-  const geoTargetConstants = await resolveGeoTargetConstants(input.countryCode, input.city);
+  const creds = await loadGoogleAdsRuntimeCredentials();
+  if (!creds) {
+    throw new Error(
+      "Google Ads is niet geconfigureerd. Koppel in Instellingen → Platform · Google Ads en vul een customer ID in.",
+    );
+  }
+
+  const customer = adsCustomer(creds);
+  const geoTargetConstants = await resolveGeoTargetConstants(input.countryCode, input.city, creds);
   const languageConstant =
     LANGUAGE_CONSTANT[input.language.slice(0, 2).toLowerCase()] ?? LANGUAGE_CONSTANT.nl;
 
   const siteUrl = input.siteUrl?.trim();
   const request = {
-    customer_id: process.env.GOOGLE_ADS_CUSTOMER_ID!.replace(/-/g, "").trim(),
+    customer_id: creds.customerId,
     language: languageConstant,
     geo_target_constants: geoTargetConstants,
     include_adult_keywords: false,

@@ -1,12 +1,24 @@
 import { redirect } from "next/navigation";
+import { PlatformGoogleAdsSection } from "@/components/instellingen/platform-google-ads-section";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { getUserAppContext } from "@/lib/auth/context";
+import {
+  PLATFORM_GOOGLE_ADS_PROVIDER,
+  googleAdsOAuthConfigured,
+  parsePlatformGoogleAdsPublic,
+} from "@/lib/integrations/platform-google-ads";
 import { createClient } from "@/lib/supabase/server";
 import { SignOutButton } from "./sign-out-button";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ads?: string }>;
+}) {
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
+  const query = await searchParams;
+  const adsFlash = typeof query.ads === "string" ? query.ads : null;
 
   const supabase = await createClient();
   const { data: profile } = await supabase
@@ -15,6 +27,16 @@ export default async function SettingsPage() {
     .select("theme_preference, locale")
     .eq("user_id", ctx.session.userId)
     .maybeSingle();
+
+  let platformAds = parsePlatformGoogleAdsPublic(null);
+  if (ctx.isPlatformAdmin) {
+    const adsRpc = await supabase.schema("app").rpc("get_platform_integration_public", {
+      p_provider: PLATFORM_GOOGLE_ADS_PROVIDER,
+    });
+    if (!adsRpc.error) {
+      platformAds = parsePlatformGoogleAdsPublic(adsRpc.data);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-2xl p-8">
@@ -44,6 +66,15 @@ export default async function SettingsPage() {
           </dd>
         </div>
       </dl>
+
+      {ctx.isPlatformAdmin ? (
+        <PlatformGoogleAdsSection
+          status={platformAds}
+          oauthReady={googleAdsOAuthConfigured()}
+          initialFlash={adsFlash}
+          envCustomerId={process.env.GOOGLE_ADS_CUSTOMER_ID ?? ""}
+        />
+      ) : null}
 
       <div className="mt-8">
         <SignOutButton />
