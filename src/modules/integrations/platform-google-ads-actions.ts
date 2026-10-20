@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  PLATFORM_GOOGLE_ADS_MIGRATION,
   PLATFORM_GOOGLE_ADS_PROVIDER,
   normalizeAdsCustomerId,
   parsePlatformGoogleAdsPublic,
@@ -10,13 +11,10 @@ import {
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 
-export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
+type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
 const MISSING =
   /platform_integrations|get_platform_integration|upsert_platform_integration|disconnect_platform_integration|schema cache|does not exist|Could not find the function/i;
-
-export const PLATFORM_GOOGLE_ADS_MIGRATION =
-  "Pas migratie 20260330135800_platform_google_ads.sql toe in de Supabase SQL-editor.";
 
 function migration(message: string) {
   return MISSING.test(message) ? PLATFORM_GOOGLE_ADS_MIGRATION : message;

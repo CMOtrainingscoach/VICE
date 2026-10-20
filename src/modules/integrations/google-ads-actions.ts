@@ -2,14 +2,14 @@
 
 import { buildGoogleAdsUiStatus, type GoogleAdsPublicStatus } from "@/lib/integrations/google-ads";
 import {
+  PLATFORM_GOOGLE_ADS_MIGRATION,
   PLATFORM_GOOGLE_ADS_PROVIDER,
   parsePlatformGoogleAdsPublic,
 } from "@/lib/integrations/platform-google-ads";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { PLATFORM_GOOGLE_ADS_MIGRATION } from "@/modules/integrations/platform-google-ads-actions";
 
-export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
+type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
 export async function getGoogleAdsStatusAction(): Promise<ActionResult<GoogleAdsPublicStatus>> {
   try {

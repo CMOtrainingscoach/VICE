@@ -8,6 +8,9 @@ import {
 export const PLATFORM_GOOGLE_ADS_PROVIDER = "google_ads";
 export const PLATFORM_OAUTH_STATE_ID = "platform";
 
+export const PLATFORM_GOOGLE_ADS_MIGRATION =
+  "Pas migratie 20260330135800_platform_google_ads.sql toe in de Supabase SQL-editor.";
+
 const SCOPES = [
   "https://www.googleapis.com/auth/adwords",
   "https://www.googleapis.com/auth/userinfo.email",
