@@ -30,9 +30,17 @@ export function googleAdsPublicStatus(): GoogleAdsPublicStatus {
   };
 }
 
-/** Passed to the Node client; Google Ads API no longer requires a developer token for new projects. */
+/**
+ * google-ads-api always sends a `developer-token` header. An empty value yields
+ * DEVELOPER_TOKEN_PARAMETER_MISSING. With Cloud-project access the token value is
+ * ignored; a placeholder satisfies the required header until client libraries omit it.
+ */
+const GOOGLE_ADS_DEVELOPER_TOKEN_PLACEHOLDER = "0000000000000000000000";
+
 function googleAdsDeveloperTokenForClient(): string {
-  return process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim() ?? "";
+  const fromEnv = process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+  return GOOGLE_ADS_DEVELOPER_TOKEN_PLACEHOLDER;
 }
 
 /** google-ads-api / gRPC failures are often plain objects, not Error instances. */

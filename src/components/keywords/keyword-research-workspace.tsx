@@ -109,8 +109,8 @@ export function KeywordResearchWorkspace({
           <p className="mt-1">
             In hetzelfde Google Cloud-project als GOOGLE_CLIENT_ID/SECRET: schakel de Google Ads API in en
             stel Test- of Explorer-toegang in via Google Ads API → Overview in Cloud Console. Zet
-            GOOGLE_ADS_CUSTOMER_ID en GOOGLE_ADS_REFRESH_TOKEN (OAuth met adwords-scope). Een developer token
-            is niet meer nodig; GOOGLE_ADS_DEVELOPER_TOKEN is optioneel (legacy).
+            GOOGLE_ADS_CUSTOMER_ID en GOOGLE_ADS_REFRESH_TOKEN (OAuth met adwords-scope). Geen aparte developer
+            token nodig — toegang loopt via je Cloud-project (GOOGLE_ADS_DEVELOPER_TOKEN is optioneel).
           </p>
         </div>
       ) : null}
