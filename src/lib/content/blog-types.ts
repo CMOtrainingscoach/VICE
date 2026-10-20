@@ -80,7 +80,7 @@ export type BlogPendingDocument = {
 };
 
 export type BlogSourceInput = {
-  kind: "meeting" | "document";
+  kind: "meeting" | "document" | "keyword";
   meetingRecordingId?: string;
   label?: string;
   excerpt?: string;

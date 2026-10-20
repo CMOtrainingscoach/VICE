@@ -32,11 +32,14 @@ import {
   updateBlogVisualAltAction,
 } from "@/modules/content/blog-actions";
 import { publishBlogConceptToBloggerAction } from "@/modules/integrations/blogger-actions";
+import { formatKeywordSourceExcerpt } from "@/lib/keywords/format";
+import type { KeywordResearchRow, KeywordResearchRun } from "@/lib/keywords/types";
 import {
   getContentPerformanceAction,
   type ContentPerformanceItem,
   type SearchOpportunity,
 } from "@/modules/metrics/actions";
+import { listKeywordResearchAction } from "@/modules/keywords/actions";
 
 export function BlogWorkspace({
   tenantId,
@@ -48,6 +51,7 @@ export function BlogWorkspace({
   bloggerReady = false,
   bloggerBlogName = null,
   openRewrite = false,
+  initialKeyword = null,
 }: {
   tenantId: string;
   tenantName: string;
@@ -58,6 +62,7 @@ export function BlogWorkspace({
   bloggerReady?: boolean;
   bloggerBlogName?: string | null;
   openRewrite?: boolean;
+  initialKeyword?: string | null;
 }) {
   const router = useRouter();
   const [concept, setConcept] = useState<BlogConcept | null>(initial);
@@ -100,6 +105,10 @@ export function BlogWorkspace({
 
   const [searchOpportunities, setSearchOpportunities] = useState<SearchOpportunity[]>([]);
   const [postPerformance, setPostPerformance] = useState<Map<string, ContentPerformanceItem>>(new Map());
+  const [keywordRun, setKeywordRun] = useState<KeywordResearchRun | null>(null);
+  const [keywordRows, setKeywordRows] = useState<KeywordResearchRow[]>([]);
+  const [keywordMinVolume, setKeywordMinVolume] = useState(50);
+  const [pendingKeywords, setPendingKeywords] = useState<BlogPendingDocument[]>([]);
 
   const AUTOSAVE_IDLE_MS = 5000;
 
@@ -110,6 +119,25 @@ export function BlogWorkspace({
       setPostPerformance(new Map(result.data.posts.map((post) => [post.conceptId, post])));
     });
   }, [tenantId]);
+
+  useEffect(() => {
+    void listKeywordResearchAction(tenantId, { minVolume: keywordMinVolume, limit: 100 }).then((result) => {
+      if (!result.ok || !result.data) return;
+      setKeywordRun(result.data.run);
+      setKeywordRows(result.data.rows);
+    });
+  }, [tenantId, keywordMinVolume]);
+
+  const appliedKeywordRef = useRef(false);
+  useEffect(() => {
+    if (appliedKeywordRef.current || !initialKeyword?.trim() || keywordRows.length === 0) return;
+    const hit =
+      keywordRows.find((row) => row.keyword.toLowerCase() === initialKeyword.trim().toLowerCase()) ??
+      keywordRows[0];
+    if (hit) applyKeywordRow(hit);
+    appliedKeywordRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prefill once from URL
+  }, [initialKeyword, keywordRows]);
 
   function rememberEditorSelection() {
     const selection = window.getSelection();
@@ -380,7 +408,27 @@ export function BlogWorkspace({
         excerpt: doc.excerpt,
         mimeType: doc.mimeType,
       })),
+      ...pendingKeywords.map((doc) => ({
+        kind: "keyword" as const,
+        label: doc.label,
+        excerpt: doc.excerpt,
+        mimeType: doc.mimeType,
+      })),
     ];
+  }
+
+  function applyKeywordRow(row: KeywordResearchRow) {
+    setMode("new");
+    setSourceText(row.keyword);
+    const excerpt = formatKeywordSourceExcerpt(row, keywordRun);
+    setPendingKeywords([
+      {
+        key: `kw-${row.keyword}`,
+        label: `Keyword: ${row.keyword}`,
+        excerpt,
+        mimeType: "text/plain",
+      },
+    ]);
   }
 
   function toggleMeeting(id: string) {
@@ -763,8 +811,37 @@ export function BlogWorkspace({
             <div className="mt-6">
               <Label className="block text-sm">Bronnen (optioneel)</Label>
               <p className="mt-1 text-xs text-vice-text-muted">
-                Koppel meetingtranscripten of upload PDF/Word. De AI gebruikt alleen deze feiten.
+                Koppel meetingtranscripten, keywordonderzoek of upload PDF/Word. De AI gebruikt alleen deze feiten.
               </p>
+
+              {keywordRows.length > 0 ? (
+                <div className="mt-4 rounded-md border border-vice-border p-3">
+                  <p className="text-sm font-medium text-vice-text">Keywordonderzoek</p>
+                  <label className="mt-2 flex items-center gap-2 text-xs text-vice-text-muted">
+                    Min. volume
+                    <input
+                      type="number"
+                      min={0}
+                      className="w-24 rounded border border-vice-border px-2 py-1 text-sm text-vice-text"
+                      value={keywordMinVolume}
+                      onChange={(e) => setKeywordMinVolume(Number(e.target.value) || 0)}
+                    />
+                  </label>
+                  <ul className="mt-2 max-h-40 space-y-2 overflow-auto">
+                    {keywordRows.slice(0, 20).map((row) => (
+                      <li key={row.id || row.keyword} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                        <span>
+                          {row.keyword}{" "}
+                          <span className="text-xs text-vice-text-muted">({row.avgMonthlySearches}/mnd)</span>
+                        </span>
+                        <Button type="button" variant="secondary" onClick={() => applyKeywordRow(row)}>
+                          Gebruik als onderwerp
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               {sourceMeetings.length > 0 ? (
                 <ul className="mt-3 max-h-48 space-y-2 overflow-auto rounded-md border border-vice-border p-2">

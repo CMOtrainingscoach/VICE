@@ -14,10 +14,13 @@ export const maxDuration = 300;
 
 export default async function BlogContentPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantId: string }>;
+  searchParams: Promise<{ keyword?: string }>;
 }) {
   const { tenantId } = await params;
+  const { keyword } = await searchParams;
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
   if (!ctx.isPlatformAdmin) redirect(`/klanten/${tenantId}`);
@@ -62,6 +65,7 @@ export default async function BlogContentPage({
       sourceMeetings={meetings.ok ? meetings.data ?? [] : []}
       bloggerReady={Boolean(blogger?.connected && blogger.blogId)}
       bloggerBlogName={blogger?.blogName ?? null}
+      initialKeyword={keyword ?? null}
     />
   );
 }

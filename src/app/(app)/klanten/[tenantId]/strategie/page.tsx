@@ -8,13 +8,18 @@ import { parseSearchConsolePublic } from "@/lib/integrations/search-console";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
 import { loadBlogBrandContextAction } from "@/modules/content/blog-actions";
+import { KeywordResearchWorkspace } from "@/components/keywords/keyword-research-workspace";
+import { googleAdsPublicStatus } from "@/lib/integrations/google-ads";
+import { listKeywordResearchAction } from "@/modules/keywords/actions";
 import { loadTenantMetricsAction } from "@/modules/metrics/actions";
 import { loadStrategyDocumentAction } from "@/modules/strategy/actions";
 
 export const maxDuration = 300;
 
 function parseTab(raw: string | undefined): StrategyAuditTab {
-  return raw === "cijfers" ? "cijfers" : "document";
+  if (raw === "cijfers") return "cijfers";
+  if (raw === "zoekwoorden") return "zoekwoorden";
+  return "document";
 }
 
 export default async function StrategyDocumentPage({
@@ -56,6 +61,31 @@ export default async function StrategyDocumentPage({
 
   const searchConsole = parseSearchConsolePublic(gscRpc.data);
   const googleAnalytics = parseGoogleAnalyticsPublic(gaRpc.data);
+
+  if (tab === "zoekwoorden") {
+    const research = await listKeywordResearchAction(tenantId, { minVolume: 0, limit: 300 });
+    const adsStatus = googleAdsPublicStatus();
+
+    return (
+      <div className="mx-auto max-w-6xl px-6 pt-8 md:px-10">
+        <StrategyAuditTabs tenantId={tenantId} tab={tab} />
+        {!research.ok ? (
+          <div className="py-6">
+            <h1 className="text-xl font-semibold">Zoekwoorden laden mislukt</h1>
+            <p className="mt-3 text-sm text-red-700 dark:text-red-300">{research.error}</p>
+          </div>
+        ) : (
+          <KeywordResearchWorkspace
+            tenantId={tenantId}
+            tenantName={tenantName}
+            adsStatus={adsStatus}
+            initialRun={research.data?.run ?? null}
+            initialRows={research.data?.rows ?? []}
+          />
+        )}
+      </div>
+    );
+  }
 
   if (tab === "cijfers") {
     const [metrics, brand] = await Promise.all([
