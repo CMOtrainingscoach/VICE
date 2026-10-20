@@ -43,6 +43,7 @@ export async function ensureTenantIntegrationAccessToken(
     p_account_email: secrets.accountEmail,
     p_access_token: refreshed.accessToken,
     p_refresh_token: secrets.refreshToken,
+    p_token_expires_at: expires,
     p_metadata: {},
   });
   if (upsert.error) throw new Error(integrationMigrationMessage(upsert.error.message));
