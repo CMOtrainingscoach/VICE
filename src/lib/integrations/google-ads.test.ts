@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { googleAdsPublicStatus } from "@/lib/integrations/google-ads";
+import { formatGoogleAdsError, googleAdsPublicStatus } from "@/lib/integrations/google-ads";
 
 const ENV_KEYS = [
   "GOOGLE_CLIENT_ID",
@@ -40,6 +40,14 @@ describe("googleAdsPublicStatus", () => {
     const status = googleAdsPublicStatus();
     expect(status.configured).toBe(true);
     expect(status.hasLegacyDeveloperToken).toBe(false);
+  });
+
+  it("formats Google Ads failure objects", () => {
+    expect(
+      formatGoogleAdsError({
+        errors: [{ message: "User does not have permission", error_code: { authorization_error: 2 } }],
+      }),
+    ).toContain("User does not have permission");
   });
 
   it("is not configured when refresh token is missing", () => {

@@ -1,7 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { generateKeywordIdeas, googleAdsPublicStatus } from "@/lib/integrations/google-ads";
+import {
+  formatGoogleAdsError,
+  generateKeywordIdeas,
+  googleAdsPublicStatus,
+} from "@/lib/integrations/google-ads";
 import { generateKeywordSeedTerms } from "@/lib/keywords/seed-ai";
 import type { KeywordResearchRow, KeywordResearchRun } from "@/lib/keywords/types";
 import { KEYWORD_RESEARCH_MIGRATION } from "@/lib/keywords/types";
@@ -223,7 +227,7 @@ export async function runKeywordResearchAction(
       },
     };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Keywordonderzoek mislukt" };
+    return { ok: false, error: formatGoogleAdsError(error) };
   }
 }
 

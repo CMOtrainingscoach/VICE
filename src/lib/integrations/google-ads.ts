@@ -35,6 +35,44 @@ function googleAdsDeveloperTokenForClient(): string {
   return process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim() ?? "";
 }
 
+/** google-ads-api / gRPC failures are often plain objects, not Error instances. */
+export function formatGoogleAdsError(error: unknown): string {
+  if (error instanceof Error) {
+    const msg = error.message.trim();
+    return msg || "Google Ads API-fout";
+  }
+  if (typeof error === "string" && error.trim()) return error.trim();
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const errors = record.errors;
+    if (Array.isArray(errors) && errors.length > 0) {
+      return errors
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return String(entry);
+          const row = entry as Record<string, unknown>;
+          const message = typeof row.message === "string" ? row.message : "";
+          const code =
+            row.error_code && typeof row.error_code === "object"
+              ? JSON.stringify(row.error_code)
+              : "";
+          return [message, code].filter(Boolean).join(" — ");
+        })
+        .filter(Boolean)
+        .join(" | ");
+    }
+    if (typeof record.message === "string" && record.message.trim()) {
+      return record.message.trim();
+    }
+  }
+  try {
+    const json = JSON.stringify(error);
+    if (json && json !== "{}") return json;
+  } catch {
+    /* ignore */
+  }
+  return "Keywordonderzoek mislukt (onbekende Google Ads-fout)";
+}
+
 function adsClient() {
   const status = googleAdsPublicStatus();
   if (!status.configured) {
@@ -106,18 +144,27 @@ export async function generateKeywordIdeas(input: {
   const languageConstant =
     LANGUAGE_CONSTANT[input.language.slice(0, 2).toLowerCase()] ?? LANGUAGE_CONSTANT.nl;
 
-  const response = await customer.keywordPlanIdeas.generateKeywordIdeas({
+  const siteUrl = input.siteUrl?.trim();
+  const request = {
     customer_id: process.env.GOOGLE_ADS_CUSTOMER_ID!.replace(/-/g, "").trim(),
     language: languageConstant,
     geo_target_constants: geoTargetConstants,
     include_adult_keywords: false,
     keyword_plan_network: "GOOGLE_SEARCH",
-    keyword_seed: { keywords: seeds },
-    ...(input.siteUrl?.trim()
-      ? { url_seed: { url: input.siteUrl.trim() } }
-      : {}),
     page_size: Math.min(input.limit ?? 300, 500),
-  } as Parameters<typeof customer.keywordPlanIdeas.generateKeywordIdeas>[0]);
+    ...(siteUrl
+      ? { keyword_and_url_seed: { url: siteUrl, keywords: seeds } }
+      : { keyword_seed: { keywords: seeds } }),
+  };
+
+  let response;
+  try {
+    response = await customer.keywordPlanIdeas.generateKeywordIdeas(
+      request as Parameters<typeof customer.keywordPlanIdeas.generateKeywordIdeas>[0],
+    );
+  } catch (error) {
+    throw new Error(formatGoogleAdsError(error));
+  }
 
   const ideas = response.results ?? [];
   const out: NormalizedKeywordIdea[] = [];
