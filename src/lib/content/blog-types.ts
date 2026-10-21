@@ -48,9 +48,12 @@ export type BlogConcept = {
   publishedPostId: string | null;
   publishedAt: string | null;
   textAiBaseline: { title?: string; bodyPlain?: string } | null;
+  buyerPersonaId: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+export type { ContentBuyerPersonaOption } from "@/lib/brand/buyer-persona-types";
 
 export type BlogConceptSummary = {
   id: string;

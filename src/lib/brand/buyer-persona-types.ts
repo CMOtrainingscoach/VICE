@@ -1,5 +1,13 @@
 export const BUYER_PERSONA_MIGRATION =
-  "Pas migratie 20260330136100 toe in de Supabase SQL-editor, na 20260330136000.";
+  "Pas migraties 20260330136100 en 20260330136200 toe in de Supabase SQL-editor.";
+
+export type ContentBuyerPersonaOption = {
+  id: string;
+  displayName: string;
+  roleTitle: string;
+  icpHeadline: string;
+  approved: boolean;
+};
 
 export type BuyerPersonaPortrait = {
   id: string;

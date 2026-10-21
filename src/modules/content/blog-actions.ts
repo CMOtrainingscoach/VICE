@@ -16,7 +16,10 @@ import {
   parseBaselineFromRow,
   recordContentLearningIfNeeded,
 } from "@/lib/content/content-learning";
-import { fetchAudiencePromptBlockForTenant } from "@/modules/content/audience-actions";
+import {
+  assertBuyerPersonaForGeneration,
+  fetchAudiencePromptBlockForTenant,
+} from "@/modules/content/audience-actions";
 import { extractBlogSourceText } from "@/lib/content/blog-source-extract";
 import {
   BLOG_MIGRATION,
@@ -349,6 +352,8 @@ export async function generateBlogTextAction(conceptId: string): Promise<ActionR
   if (!concept.brandVoiceSnapshot || concept.brandVoiceSnapshot.trim().length < 20) {
     return { ok: false, error: "Tone of voice ontbreekt. Vul die eerst aan bij Brand." };
   }
+  const personaCheck = await assertBuyerPersonaForGeneration(concept.tenantId, concept.buyerPersonaId);
+  if (!personaCheck.ok) return personaCheck;
 
   const supabase = await authed();
   await supabase.schema("app").rpc("save_blog_concept", {
@@ -361,7 +366,7 @@ export async function generateBlogTextAction(conceptId: string): Promise<ActionR
     const sources = await loadResolvedBlogSources(conceptId);
     const [contentLearnings, audienceContext] = await Promise.all([
       fetchContentLearningPromptBlock(supabase, concept.tenantId),
-      fetchAudiencePromptBlockForTenant(concept.tenantId),
+      fetchAudiencePromptBlockForTenant(concept.tenantId, concept.buyerPersonaId),
     ]);
     const generated = await generateBlogText({
       mode: concept.mode,
@@ -424,12 +429,14 @@ export async function rewriteBlogTextAction(
     return { ok: false, error: "Tone of voice ontbreekt. Vul die eerst aan bij Brand." };
   }
   if (!instruction.trim()) return { ok: false, error: "Beschrijf wat je wilt aanpassen." };
+  const personaCheck = await assertBuyerPersonaForGeneration(concept.tenantId, concept.buyerPersonaId);
+  if (!personaCheck.ok) return personaCheck;
 
   try {
     const supabase = await authed();
     const [contentLearnings, audienceContext] = await Promise.all([
       fetchContentLearningPromptBlock(supabase, concept.tenantId),
-      fetchAudiencePromptBlockForTenant(concept.tenantId),
+      fetchAudiencePromptBlockForTenant(concept.tenantId, concept.buyerPersonaId),
     ]);
     const generated = await generateBlogText({
       mode: "rewrite",
@@ -710,6 +717,7 @@ async function mapConcept(raw: unknown): Promise<BlogConcept | null> {
       row.textAiBaseline && typeof row.textAiBaseline === "object"
         ? (row.textAiBaseline as BlogConcept["textAiBaseline"])
         : null,
+    buyerPersonaId: row.buyerPersonaId ? String(row.buyerPersonaId) : null,
     createdAt: String(row.createdAt ?? ""),
     updatedAt: String(row.updatedAt ?? ""),
   };

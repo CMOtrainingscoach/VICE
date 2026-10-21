@@ -9,6 +9,7 @@ import {
   listBlogSourceMeetingsAction,
   loadBlogBrandContextAction,
 } from "@/modules/content/blog-actions";
+import { listContentBuyerPersonasAction } from "@/modules/content/audience-actions";
 
 export const maxDuration = 300;
 
@@ -34,10 +35,11 @@ export default async function BlogContentPage({
     .maybeSingle();
   if (!tenantData) notFound();
 
-  const [brand, concepts, meetings] = await Promise.all([
+  const [brand, concepts, meetings, buyerPersonas] = await Promise.all([
     loadBlogBrandContextAction(tenantId),
     listBlogConceptsAction(tenantId),
     listBlogSourceMeetingsAction(tenantId),
+    listContentBuyerPersonasAction(tenantId),
   ]);
 
   if (!brand.ok || !brand.data) {
@@ -66,6 +68,7 @@ export default async function BlogContentPage({
       bloggerReady={Boolean(blogger?.connected && blogger.blogId)}
       bloggerBlogName={blogger?.blogName ?? null}
       initialKeyword={keyword ?? null}
+      buyerPersonaOptions={buyerPersonas.ok ? buyerPersonas.data ?? [] : []}
     />
   );
 }

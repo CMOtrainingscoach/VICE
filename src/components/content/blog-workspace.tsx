@@ -16,7 +16,12 @@ import {
   type BlogPendingDocument,
   type BlogSourceMeeting,
   type BrandContext,
+  type ContentBuyerPersonaOption,
 } from "@/lib/content/blog-types";
+import {
+  ContentBuyerPersonaField,
+  resolveDefaultContentBuyerPersonaId,
+} from "@/components/content/content-buyer-persona-field";
 import {
   applyBlogRewriteAction,
   createBlogConceptAction,
@@ -52,6 +57,7 @@ export function BlogWorkspace({
   bloggerBlogName = null,
   openRewrite = false,
   initialKeyword = null,
+  buyerPersonaOptions = [],
 }: {
   tenantId: string;
   tenantName: string;
@@ -63,6 +69,7 @@ export function BlogWorkspace({
   bloggerBlogName?: string | null;
   openRewrite?: boolean;
   initialKeyword?: string | null;
+  buyerPersonaOptions?: ContentBuyerPersonaOption[];
 }) {
   const router = useRouter();
   const [concept, setConcept] = useState<BlogConcept | null>(initial);
@@ -71,6 +78,9 @@ export function BlogWorkspace({
   );
   const [language, setLanguage] = useState(initial?.language ?? "nl");
   const [lengthKey, setLengthKey] = useState<BlogLength>(initial?.lengthKey ?? "medium");
+  const [buyerPersonaId, setBuyerPersonaId] = useState(() =>
+    resolveDefaultContentBuyerPersonaId(buyerPersonaOptions, initial?.buyerPersonaId ?? null),
+  );
   const [sourceText, setSourceText] = useState(initial?.sourceText ?? "");
   const [selectedMeetingIds, setSelectedMeetingIds] = useState<string[]>([]);
   const [pendingDocuments, setPendingDocuments] = useState<BlogPendingDocument[]>([]);
@@ -308,6 +318,9 @@ export function BlogWorkspace({
       setMode(initial.mode);
       setLanguage(initial.language);
       setLengthKey(initial.lengthKey);
+      setBuyerPersonaId(
+        resolveDefaultContentBuyerPersonaId(buyerPersonaOptions, initial.buyerPersonaId ?? null),
+      );
       setSourceText(initial.sourceText);
       const documentHtml = ensureDocumentHtml(initial.title, initial.bodyHtml);
       setTitle(initial.title || extractTitleClient(documentHtml));
@@ -321,7 +334,7 @@ export function BlogWorkspace({
     } else {
       setForceEditor(false);
     }
-  }, [initial]);
+  }, [initial, buyerPersonaOptions]);
 
   function scheduleAutosave() {
     if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
@@ -348,6 +361,7 @@ export function BlogWorkspace({
           language,
           lengthKey,
           sourceText,
+          buyerPersonaId: buyerPersonaId || null,
         },
         { quiet: true },
       );
@@ -387,10 +401,13 @@ export function BlogWorkspace({
     scheduleAutosave();
     // Alleen herplannen bij inhoudelijke wijzigingen; blur/save regelt de rest.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scheduleAutosave is stabiel genoeg via refs
-  }, [title, bodyHtml, mode, language, lengthKey, sourceText, concept?.id]);
+  }, [title, bodyHtml, mode, language, lengthKey, sourceText, buyerPersonaId, concept?.id]);
 
+  const personaRequired = buyerPersonaOptions.length > 0;
+  const personaReady = !personaRequired || Boolean(buyerPersonaId);
   const hasResult = forceEditor || Boolean(concept && (concept.title || concept.bodyHtml));
-  const canGenerateText = brand.hasVoice && sourceText.trim().length >= 8 && busy !== "text";
+  const canGenerateText =
+    brand.hasVoice && sourceText.trim().length >= 8 && busy !== "text" && personaReady;
   const canGenerateVisual = brand.hasVisual && sourceText.trim().length >= 8 && busy !== "image";
   const brandOutdated =
     Boolean(concept?.brandVersionNumber != null && brand.versionNumber != null) &&
@@ -491,6 +508,12 @@ export function BlogWorkspace({
         return null;
       }
       current = created.data;
+      if (buyerPersonaId) {
+        const withPersona = await saveBlogConceptAction(current.id, current.updatedAt, {
+          buyerPersonaId,
+        });
+        if (withPersona.ok && withPersona.data) current = withPersona.data;
+      }
       setConcept(current);
       router.replace(`/klanten/${tenantId}/content/blog/${current.id}`);
       return current;
@@ -500,6 +523,7 @@ export function BlogWorkspace({
       language,
       lengthKey,
       sourceText,
+      buyerPersonaId: buyerPersonaId || null,
     });
     if (!saved.ok || !saved.data) {
       setError(saved.ok ? "Opslaan mislukt" : saved.error);
@@ -570,6 +594,7 @@ export function BlogWorkspace({
       language,
       lengthKey,
       sourceText,
+      buyerPersonaId: buyerPersonaId || null,
     });
     if (!saved.ok || !saved.data) {
       setSaveState("failed");
@@ -921,6 +946,15 @@ export function BlogWorkspace({
               ) : null}
             </div>
 
+            <div className="mt-4 space-y-3">
+              <ContentBuyerPersonaField
+                brandHref={brand.brandHref}
+                options={buyerPersonaOptions}
+                value={buyerPersonaId}
+                onChange={setBuyerPersonaId}
+                fieldClass={fieldClass}
+              />
+            </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Field label="Taal">
                 <select className={fieldClass} value={language} onChange={(event) => setLanguage(event.target.value)}>
@@ -945,7 +979,15 @@ export function BlogWorkspace({
               <Button
                 type="button"
                 disabled={!canGenerateText}
-                title={!brand.hasVoice ? "Tone of voice ontbreekt" : sourceText.trim().length < 8 ? "Vul eerst een onderwerp in" : undefined}
+                title={
+                  !brand.hasVoice
+                    ? "Tone of voice ontbreekt"
+                    : !personaReady
+                      ? "Kies een buyer persona als doelgroep"
+                      : sourceText.trim().length < 8
+                        ? "Vul eerst een onderwerp in"
+                        : undefined
+                }
                 onClick={() => void startGenerate()}
               >
                 {busy === "text" ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}

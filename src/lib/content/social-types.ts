@@ -49,6 +49,7 @@ export type SocialPostConcept = {
   imageJobStatus: JobStatus;
   imageJobError: string;
   textAiBaseline: { caption?: string; hashtags?: string } | null;
+  buyerPersonaId: string | null;
   createdAt: string;
   updatedAt: string;
 };

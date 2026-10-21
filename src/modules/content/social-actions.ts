@@ -14,7 +14,10 @@ import {
   recordContentLearningIfNeeded,
   socialSnapshotFromParts,
 } from "@/lib/content/content-learning";
-import { fetchAudiencePromptBlockForTenant } from "@/modules/content/audience-actions";
+import {
+  assertBuyerPersonaForGeneration,
+  fetchAudiencePromptBlockForTenant,
+} from "@/modules/content/audience-actions";
 import {
   SOCIAL_MIGRATION,
   type SocialCarouselSlide,
@@ -133,6 +136,7 @@ async function mapConcept(raw: unknown): Promise<SocialPostConcept | null> {
       row.textAiBaseline && typeof row.textAiBaseline === "object"
         ? (row.textAiBaseline as SocialPostConcept["textAiBaseline"])
         : null,
+    buyerPersonaId: row.buyerPersonaId ? String(row.buyerPersonaId) : null,
     createdAt: String(row.createdAt ?? ""),
     updatedAt: String(row.updatedAt ?? ""),
   };
@@ -326,6 +330,8 @@ export async function generateSocialCaptionAction(
   if (!concept.brandVoiceSnapshot || concept.brandVoiceSnapshot.trim().length < 20) {
     return { ok: false, error: "Tone of voice ontbreekt. Vul die eerst aan bij Brand." };
   }
+  const personaCheck = await assertBuyerPersonaForGeneration(concept.tenantId, concept.buyerPersonaId);
+  if (!personaCheck.ok) return personaCheck;
 
   const supabase = await authed();
   await supabase.schema("app").rpc("save_social_post_concept", {
@@ -338,7 +344,7 @@ export async function generateSocialCaptionAction(
     const { topic, sourceContext } = await resolveTopicContext(concept);
     const [contentLearnings, audienceContext] = await Promise.all([
       fetchContentLearningPromptBlock(supabase, concept.tenantId),
-      fetchAudiencePromptBlockForTenant(concept.tenantId),
+      fetchAudiencePromptBlockForTenant(concept.tenantId, concept.buyerPersonaId),
     ]);
     const generated = await generateSocialCaption({
       topic,

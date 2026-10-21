@@ -7,7 +7,16 @@ import { ImageIcon, LoaderCircle, Pencil, Plus, Sparkles, Trash2, Upload } from 
 import { SocialPostMockup } from "@/components/content/social-post-mockup";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import type { BlogConceptSummary, BlogSourceMeeting, BrandContext } from "@/lib/content/blog-types";
+import type {
+  BlogConceptSummary,
+  BlogSourceMeeting,
+  BrandContext,
+  ContentBuyerPersonaOption,
+} from "@/lib/content/blog-types";
+import {
+  ContentBuyerPersonaField,
+  resolveDefaultContentBuyerPersonaId,
+} from "@/components/content/content-buyer-persona-field";
 import {
   SOCIAL_CHANNELS,
   SOCIAL_FORMATS,
@@ -41,6 +50,7 @@ export function SocialWorkspace({
   concepts,
   blogs,
   meetings,
+  buyerPersonaOptions = [],
 }: {
   tenantId: string;
   tenantName: string;
@@ -49,6 +59,7 @@ export function SocialWorkspace({
   concepts: SocialPostConceptSummary[];
   blogs: BlogConceptSummary[];
   meetings: BlogSourceMeeting[];
+  buyerPersonaOptions?: ContentBuyerPersonaOption[];
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -60,6 +71,9 @@ export function SocialWorkspace({
   const [topicText, setTopicText] = useState(initial?.topicText ?? "");
   const [blogConceptId, setBlogConceptId] = useState(initial?.blogConceptId ?? "");
   const [meetingRecordingId, setMeetingRecordingId] = useState(initial?.meetingRecordingId ?? "");
+  const [buyerPersonaId, setBuyerPersonaId] = useState(() =>
+    resolveDefaultContentBuyerPersonaId(buyerPersonaOptions, initial?.buyerPersonaId ?? null),
+  );
   const [caption, setCaption] = useState(initial?.caption ?? "");
   const [hashtags, setHashtags] = useState(initial?.hashtags ?? "");
   const [visualSubject, setVisualSubject] = useState("");
@@ -82,6 +96,10 @@ export function SocialWorkspace({
     setChannels((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
   }
 
+  const personaRequired = buyerPersonaOptions.length > 0;
+  const personaReady = !personaRequired || Boolean(buyerPersonaId);
+  const canGenerateCaption = brand.hasVoice && channels.length > 0 && personaReady && busy !== "caption";
+
   async function ensureConcept() {
     if (concept) {
       const saved = await saveSocialPostConceptAction(
@@ -96,6 +114,7 @@ export function SocialWorkspace({
           meetingRecordingId: topicMode === "meeting" ? meetingRecordingId || null : null,
           caption,
           hashtags,
+          buyerPersonaId: buyerPersonaId || null,
         },
         { quiet: true },
       );
@@ -120,11 +139,18 @@ export function SocialWorkspace({
       setError(created.ok ? "Concept aanmaken mislukt" : created.error);
       return null;
     }
-    setConcept(created.data);
-    setCaption(created.data.caption);
-    setHashtags(created.data.hashtags);
-    router.replace(`/klanten/${tenantId}/content/social/${created.data.id}`);
-    return created.data;
+    let createdConcept = created.data;
+    if (buyerPersonaId) {
+      const withPersona = await saveSocialPostConceptAction(createdConcept.id, createdConcept.updatedAt, {
+        buyerPersonaId,
+      });
+      if (withPersona.ok && withPersona.data) createdConcept = withPersona.data;
+    }
+    setConcept(createdConcept);
+    setCaption(createdConcept.caption);
+    setHashtags(createdConcept.hashtags);
+    router.replace(`/klanten/${tenantId}/content/social/${createdConcept.id}`);
+    return createdConcept;
   }
 
   async function saveConcept() {
@@ -147,6 +173,7 @@ export function SocialWorkspace({
           topicText,
           blogConceptId: topicMode === "blog" ? blogConceptId || null : null,
           meetingRecordingId: topicMode === "meeting" ? meetingRecordingId || null : null,
+          buyerPersonaId: buyerPersonaId || null,
         });
         if (!saved.ok || !saved.data) {
           setError(saved.ok ? "Opslaan mislukt" : saved.error);
@@ -495,13 +522,22 @@ export function SocialWorkspace({
             ) : null}
           </div>
 
+          <ContentBuyerPersonaField
+            brandHref={brand.brandHref}
+            options={buyerPersonaOptions}
+            value={buyerPersonaId}
+            onChange={setBuyerPersonaId}
+            fieldClass={fieldClass}
+          />
+
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Label className="text-sm font-medium">Caption</Label>
               <Button
                 type="button"
                 variant="secondary"
-                disabled={busy !== "" || !brand.hasVoice || channels.length === 0}
+                disabled={busy !== "" || !canGenerateCaption}
+                title={!personaReady && personaRequired ? "Kies een buyer persona als doelgroep" : undefined}
                 onClick={() => void generateCaption()}
               >
                 {busy === "caption" ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}

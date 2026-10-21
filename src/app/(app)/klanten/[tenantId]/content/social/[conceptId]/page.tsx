@@ -12,6 +12,7 @@ import {
   listSocialPostConceptsAction,
   loadSocialPostConceptAction,
 } from "@/modules/content/social-actions";
+import { listContentBuyerPersonasAction } from "@/modules/content/audience-actions";
 
 export const maxDuration = 300;
 
@@ -34,12 +35,13 @@ export default async function SocialConceptPage({
     .maybeSingle();
   if (!tenantData) notFound();
 
-  const [brand, concept, concepts, blogs, meetings] = await Promise.all([
+  const [brand, concept, concepts, blogs, meetings, buyerPersonas] = await Promise.all([
     loadBlogBrandContextAction(tenantId),
     loadSocialPostConceptAction(conceptId),
     listSocialPostConceptsAction(tenantId),
     listBlogConceptsAction(tenantId),
     listBlogSourceMeetingsAction(tenantId),
+    listContentBuyerPersonasAction(tenantId),
   ]);
 
   if (!brand.ok || !brand.data) {
@@ -73,6 +75,7 @@ export default async function SocialConceptPage({
       concepts={concepts.ok ? concepts.data ?? [] : []}
       blogs={blogs.ok ? blogs.data ?? [] : []}
       meetings={meetings.ok ? meetings.data ?? [] : []}
+      buyerPersonaOptions={buyerPersonas.ok ? buyerPersonas.data ?? [] : []}
     />
   );
 }
