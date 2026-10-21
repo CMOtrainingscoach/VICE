@@ -1,28 +1,7 @@
 import OpenAI from "openai";
-import { z } from "zod";
 import { modelSupportsCustomTemperature, resolveMeetingAnalysisModel } from "@/lib/openai/models";
 import type { TenantIcpProfileData } from "@/lib/strategy/icp-types";
 import type { BuyerPersonaDraft } from "@/lib/brand/buyer-persona-types";
-
-const personaSchema = z.object({
-  displayName: z.string().max(80),
-  roleTitle: z.string().max(200),
-  summary: z.string().max(800),
-  decisionRoles: z.array(z.string().max(60)).max(6),
-  goals: z.string().max(800),
-  pains: z.string().max(800),
-  triggers: z.string().max(500),
-  decisionCriteria: z.string().max(800),
-  objections: z.string().max(800),
-  infoNeeded: z.string().max(800),
-  channels: z.string().max(400),
-  assumptions: z.string().max(800),
-  openQuestion: z.string().max(400),
-});
-
-const batchSchema = z.object({
-  personas: z.array(personaSchema).min(1).max(5),
-});
 
 function icpBlock(icp: TenantIcpProfileData): string {
   return [
@@ -37,6 +16,74 @@ function icpBlock(icp: TenantIcpProfileData): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function pickString(row: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return "";
+}
+
+function pickRoles(row: Record<string, unknown>): string[] {
+  const raw = row.decisionRoles ?? row.decision_roles ?? row.roles ?? row.tags;
+  if (Array.isArray(raw)) {
+    return raw.map((item) => String(item ?? "").trim()).filter(Boolean).slice(0, 6);
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return raw
+      .split(/[,;|/]/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+  return [];
+}
+
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function normalizePersona(raw: unknown): BuyerPersonaDraft | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const roleTitle = pickString(row, "roleTitle", "role_title", "title", "functie", "rol");
+  if (roleTitle.length < 2) return null;
+
+  const displayName =
+    pickString(row, "displayName", "display_name", "name", "naam") || roleTitle.split(/\s+/)[0] || roleTitle;
+
+  return {
+    displayName: clip(displayName, 80),
+    roleTitle: clip(roleTitle, 200),
+    summary: clip(pickString(row, "summary", "samenvatting", "bio", "beschrijving"), 800),
+    decisionRoles: pickRoles(row),
+    goals: clip(pickString(row, "goals", "doelen", "goal"), 800),
+    pains: clip(pickString(row, "pains", "pijn", "uitdagingen", "challenges", "barriers"), 800),
+    triggers: clip(pickString(row, "triggers", "trigger", "kooptrigger", "aanleiding"), 500),
+    decisionCriteria: clip(
+      pickString(row, "decisionCriteria", "decision_criteria", "besliscriteria", "criteria"),
+      800,
+    ),
+    objections: clip(pickString(row, "objections", "bezwaren", "objection"), 800),
+    infoNeeded: clip(pickString(row, "infoNeeded", "info_needed", "informatiebehoefte"), 800),
+    channels: clip(pickString(row, "channels", "kanalen"), 400),
+    assumptions: clip(pickString(row, "assumptions", "aannames"), 800),
+    openQuestion: clip(pickString(row, "openQuestion", "open_question", "openVraag"), 400),
+  };
+}
+
+function extractPersonaRows(parsed: unknown): unknown[] {
+  if (Array.isArray(parsed)) return parsed;
+  if (!parsed || typeof parsed !== "object") return [];
+  const root = parsed as Record<string, unknown>;
+  for (const key of ["personas", "buyerPersonas", "buyer_personas", "buyerPersonas", "data", "results"]) {
+    const value = root[key];
+    if (Array.isArray(value)) return value;
+  }
+  return [];
 }
 
 export async function generateBuyerPersonasFromIcp(input: {
@@ -63,8 +110,9 @@ export async function generateBuyerPersonasFromIcp(input: {
           "Elke persona is een fictieve maar realistische beslisser of beïnvloeder binnen het ICP — geen echte persoon, geen PII.",
           "Genereer 2–4 complementaire persona's (verschillende rollen, bv. zaakvoerder, marketing, finance).",
           "Baseer je op het ICP; extra context is optioneel.",
-          "decisionRoles: korte tags zoals Beslisser, Beïnvloeder, Gebruiker.",
-          "Antwoord JSON: { personas: [...] } met camelCase velden per persona.",
+          "decisionRoles: array van korte strings, bv. [\"Beslisser\", \"Beïnvloeder\"].",
+          "Verplicht JSON-object: { \"personas\": [ { \"displayName\", \"roleTitle\", \"summary\", \"decisionRoles\", \"goals\", \"pains\", \"triggers\", \"decisionCriteria\", \"objections\", \"infoNeeded\", \"channels\", \"assumptions\", \"openQuestion\" } ] }",
+          "Alle velden zijn strings behalve decisionRoles (array). Geen null; gebruik \"\" als onbekend.",
         ].join("\n"),
       },
       {
@@ -86,7 +134,23 @@ export async function generateBuyerPersonasFromIcp(input: {
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) throw new Error("Geen persona-voorstel ontvangen.");
-  const parsed = batchSchema.safeParse(JSON.parse(raw));
-  if (!parsed.success) throw new Error("Persona-antwoord voldeed niet aan het formaat.");
-  return parsed.data.personas;
+
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    throw new Error("Persona-antwoord was geen geldige JSON. Probeer opnieuw.");
+  }
+
+  const personas = extractPersonaRows(json)
+    .map(normalizePersona)
+    .filter((item): item is BuyerPersonaDraft => item !== null);
+
+  if (personas.length === 0) {
+    throw new Error(
+      "Het model gaf geen bruikbare persona's terug (ontbrekende functierol). Probeer opnieuw of voeg handmatig toe.",
+    );
+  }
+
+  return personas.slice(0, 5);
 }
