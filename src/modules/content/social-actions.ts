@@ -14,6 +14,7 @@ import {
   recordContentLearningIfNeeded,
   socialSnapshotFromParts,
 } from "@/lib/content/content-learning";
+import { fetchAudiencePromptBlockForTenant } from "@/modules/content/audience-actions";
 import {
   SOCIAL_MIGRATION,
   type SocialCarouselSlide,
@@ -335,7 +336,10 @@ export async function generateSocialCaptionAction(
 
   try {
     const { topic, sourceContext } = await resolveTopicContext(concept);
-    const contentLearnings = await fetchContentLearningPromptBlock(supabase, concept.tenantId);
+    const [contentLearnings, audienceContext] = await Promise.all([
+      fetchContentLearningPromptBlock(supabase, concept.tenantId),
+      fetchAudiencePromptBlockForTenant(concept.tenantId),
+    ]);
     const generated = await generateSocialCaption({
       topic,
       channels: concept.channels,
@@ -344,6 +348,7 @@ export async function generateSocialCaptionAction(
       voice: concept.brandVoiceSnapshot,
       sourceContext,
       contentLearnings,
+      audienceContext,
     });
     const baseline = socialSnapshotFromParts(generated.caption, generated.hashtags);
     const saved = await supabase.schema("app").rpc("save_social_post_concept", {

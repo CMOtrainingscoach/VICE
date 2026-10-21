@@ -6,6 +6,9 @@ import type { TenantRow } from "@/lib/types/tenant";
 import { loadClientBrandAction } from "@/modules/brand/actions";
 import { loadContentLearningsAction } from "@/modules/content/content-learning-actions";
 import type { ContentLearningEvent } from "@/lib/content/content-learning-types";
+import { listBuyerPersonasForIcpAction } from "@/modules/brand/buyer-persona-actions";
+import { listTenantIcpsAction } from "@/modules/strategy/icp-actions";
+import type { BuyerPersona } from "@/lib/brand/buyer-persona-types";
 
 export default async function ClientBrandPage({
   params,
@@ -26,12 +29,20 @@ export default async function ClientBrandPage({
     .maybeSingle();
   if (!tenantData) notFound();
 
-  const [loaded, learningsResult] = await Promise.all([
+  const [loaded, learningsResult, icpList] = await Promise.all([
     loadClientBrandAction(tenantId),
     loadContentLearningsAction(tenantId, { limit: 40 }),
+    listTenantIcpsAction(tenantId),
   ]);
   const initialLearnings: ContentLearningEvent[] =
     learningsResult.ok && learningsResult.data ? learningsResult.data : [];
+  const icpOptions = icpList.ok && icpList.data ? icpList.data : [];
+  const initialIcpId = icpOptions.find((i) => i.isPrimary)?.id ?? icpOptions[0]?.id ?? null;
+  let initialPersonas: BuyerPersona[] = [];
+  if (initialIcpId) {
+    const personas = await listBuyerPersonasForIcpAction(tenantId, initialIcpId);
+    if (personas.ok && personas.data) initialPersonas = personas.data;
+  }
 
   if (!loaded.ok || !loaded.data) {
     return (
@@ -50,6 +61,9 @@ export default async function ClientBrandPage({
       tenantName={(tenantData as Pick<TenantRow, "name">).name || loaded.data.tenantName}
       initial={loaded.data.brand}
       initialLearnings={initialLearnings}
+      icpOptions={icpOptions}
+      initialIcpId={initialIcpId}
+      initialPersonas={initialPersonas}
     />
   );
 }

@@ -2,9 +2,12 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check, Copy, Pencil, Plus, Trash2, X } from "lucide-react";
+import { BuyerPersonaWorkspace } from "@/components/brand/buyer-persona-workspace";
 import { ContentLearningsPanel } from "@/components/brand/content-learnings-panel";
 import { Button } from "@/components/ui/button";
 import type { ContentLearningEvent } from "@/lib/content/content-learning-types";
+import type { BuyerPersona } from "@/lib/brand/buyer-persona-types";
+import type { TenantIcpSummary } from "@/lib/strategy/icp-types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BRAND_FONTS, FONT_WEIGHTS, fontStack, googleFontsCssHref } from "@/lib/brand/fonts";
@@ -28,7 +31,7 @@ import {
   uploadBrandLogoAction,
 } from "@/modules/brand/actions";
 
-type Tab = "overview" | "type" | "color" | "visual" | "prompts";
+type Tab = "overview" | "type" | "color" | "visual" | "prompts" | "personas";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overzicht" },
@@ -36,6 +39,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "color", label: "Kleuren" },
   { id: "visual", label: "Beeldstijl" },
   { id: "prompts", label: "Prompts" },
+  { id: "personas", label: "Buyer persona's" },
 ];
 
 export function BrandWorkspace({
@@ -43,11 +47,17 @@ export function BrandWorkspace({
   tenantName,
   initial,
   initialLearnings = [],
+  icpOptions = [],
+  initialIcpId = null,
+  initialPersonas = [],
 }: {
   tenantId: string;
   tenantName: string;
   initial: ClientBrand | null;
   initialLearnings?: ContentLearningEvent[];
+  icpOptions?: TenantIcpSummary[];
+  initialIcpId?: string | null;
+  initialPersonas?: BuyerPersona[];
 }) {
   const [brand, setBrand] = useState<ClientBrand | null>(initial);
   const [tab, setTab] = useState<Tab>("overview");
@@ -239,6 +249,15 @@ export function BrandWorkspace({
             />
             <ContentLearningsPanel tenantId={tenantId} initialEvents={initialLearnings} />
           </>
+        )}
+        {tab === "personas" && (
+          <BuyerPersonaWorkspace
+            tenantId={tenantId}
+            tenantName={tenantName}
+            icpOptions={icpOptions}
+            initialIcpId={initialIcpId}
+            initialPersonas={initialPersonas}
+          />
         )}
       </div>
 

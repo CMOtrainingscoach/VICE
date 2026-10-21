@@ -16,6 +16,7 @@ import {
   parseBaselineFromRow,
   recordContentLearningIfNeeded,
 } from "@/lib/content/content-learning";
+import { fetchAudiencePromptBlockForTenant } from "@/modules/content/audience-actions";
 import { extractBlogSourceText } from "@/lib/content/blog-source-extract";
 import {
   BLOG_MIGRATION,
@@ -358,7 +359,10 @@ export async function generateBlogTextAction(conceptId: string): Promise<ActionR
 
   try {
     const sources = await loadResolvedBlogSources(conceptId);
-    const contentLearnings = await fetchContentLearningPromptBlock(supabase, concept.tenantId);
+    const [contentLearnings, audienceContext] = await Promise.all([
+      fetchContentLearningPromptBlock(supabase, concept.tenantId),
+      fetchAudiencePromptBlockForTenant(concept.tenantId),
+    ]);
     const generated = await generateBlogText({
       mode: concept.mode,
       sourceText: concept.sourceText,
@@ -367,6 +371,7 @@ export async function generateBlogTextAction(conceptId: string): Promise<ActionR
       voice: concept.brandVoiceSnapshot,
       sources,
       contentLearnings,
+      audienceContext,
     });
     const document = normalizeBlogDocument(generated.title, generated.bodyHtml);
     const plain = htmlToPlain(document.bodyHtml);
@@ -422,7 +427,10 @@ export async function rewriteBlogTextAction(
 
   try {
     const supabase = await authed();
-    const contentLearnings = await fetchContentLearningPromptBlock(supabase, concept.tenantId);
+    const [contentLearnings, audienceContext] = await Promise.all([
+      fetchContentLearningPromptBlock(supabase, concept.tenantId),
+      fetchAudiencePromptBlockForTenant(concept.tenantId),
+    ]);
     const generated = await generateBlogText({
       mode: "rewrite",
       sourceText: concept.sourceText,
@@ -433,6 +441,7 @@ export async function rewriteBlogTextAction(
       currentTitle: concept.title,
       currentBodyHtml: concept.bodyHtml,
       contentLearnings,
+      audienceContext,
     });
     const document = normalizeBlogDocument(generated.title, generated.bodyHtml);
     return {

@@ -20,7 +20,7 @@ const LENGTH_HINT: Record<BlogLength, string> = {
   long: "richtlijn: ongeveer 1200-1600 woorden",
 };
 
-function systemRules(voice: string, language: string, contentLearnings?: string): string {
+function systemRules(voice: string, language: string, contentLearnings?: string, audienceContext?: string): string {
   const isDutch = language !== "en";
   return [
     "Je schrijft blogs voor VICE, een strategisch platform.",
@@ -66,6 +66,9 @@ function systemRules(voice: string, language: string, contentLearnings?: string)
     contentLearnings?.trim()
       ? `Leerpunten uit eerdere redacties (volg deze voorkeuren):\n${contentLearnings.trim()}`
       : "",
+    audienceContext?.trim()
+      ? `Doelgroep (ICP en buyer persona's — schrijf expliciet voor deze lezer):\n${audienceContext.trim()}`
+      : "",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -81,6 +84,7 @@ export async function generateBlogText(input: {
   currentTitle?: string;
   currentBodyHtml?: string;
   contentLearnings?: string;
+  audienceContext?: string;
 }): Promise<BlogAiResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY ontbreekt. Vraag een beheerder om de configuratie.");
@@ -130,7 +134,10 @@ export async function generateBlogText(input: {
     ...(modelSupportsCustomTemperature(model) ? { temperature: 0.4 } : {}),
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: systemRules(input.voice, input.language, input.contentLearnings) },
+      {
+        role: "system",
+        content: systemRules(input.voice, input.language, input.contentLearnings, input.audienceContext),
+      },
       { role: "user", content: userParts.join("\n\n") },
     ],
   });
