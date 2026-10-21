@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-export type StrategyAuditTab = "document" | "cijfers" | "zoekwoorden";
+export type StrategyAuditTab = "document" | "icp" | "cijfers" | "zoekwoorden";
 
 export function StrategyAuditTabs({
   tenantId,
@@ -21,6 +21,9 @@ export function StrategyAuditTabs({
     >
       <TabLink href={`${base}?tab=document`} active={tab === "document"}>
         Document
+      </TabLink>
+      <TabLink href={`${base}?tab=icp`} active={tab === "icp"}>
+        ICP
       </TabLink>
       <TabLink href={`${base}?tab=cijfers`} active={tab === "cijfers"}>
         Cijfers

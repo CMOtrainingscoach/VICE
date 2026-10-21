@@ -16,11 +16,14 @@ import {
 } from "@/lib/integrations/platform-google-ads";
 import { listKeywordResearchAction } from "@/modules/keywords/actions";
 import { loadTenantMetricsAction } from "@/modules/metrics/actions";
+import { IcpWorkspace } from "@/components/strategy/icp-workspace";
 import { loadStrategyDocumentAction } from "@/modules/strategy/actions";
+import { listTenantIcpsAction, loadTenantIcpAction } from "@/modules/strategy/icp-actions";
 
 export const maxDuration = 300;
 
 function parseTab(raw: string | undefined): StrategyAuditTab {
+  if (raw === "icp") return "icp";
   if (raw === "cijfers") return "cijfers";
   if (raw === "zoekwoorden") return "zoekwoorden";
   return "document";
@@ -31,10 +34,10 @@ export default async function StrategyDocumentPage({
   searchParams,
 }: {
   params: Promise<{ tenantId: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; icp?: string }>;
 }) {
   const { tenantId } = await params;
-  const { tab: tabParam } = await searchParams;
+  const { tab: tabParam, icp: icpParam } = await searchParams;
   const tab = parseTab(tabParam);
 
   const ctx = await getUserAppContext();
@@ -65,6 +68,44 @@ export default async function StrategyDocumentPage({
 
   const searchConsole = parseSearchConsolePublic(gscRpc.data);
   const googleAnalytics = parseGoogleAnalyticsPublic(gaRpc.data);
+
+  if (tab === "icp") {
+    const listResult = await listTenantIcpsAction(tenantId);
+    const summaries = listResult.ok && listResult.data ? listResult.data : [];
+    const selectedId =
+      icpParam && summaries.some((item) => item.id === icpParam)
+        ? icpParam
+        : summaries.find((item) => item.isPrimary)?.id ?? summaries[0]?.id ?? null;
+    const recordResult = selectedId ? await loadTenantIcpAction(tenantId, selectedId) : { ok: true as const, data: null };
+
+    return (
+      <div>
+        <div className="mx-auto max-w-6xl px-6 pt-8 md:px-10">
+          <StrategyAuditTabs tenantId={tenantId} tab={tab} />
+        </div>
+        {!listResult.ok ? (
+          <div className="mx-auto max-w-6xl px-6 py-6 md:px-10">
+            <h1 className="text-xl font-semibold">ICP laden mislukt</h1>
+            <p className="mt-3 text-sm text-red-700 dark:text-red-300">{listResult.error}</p>
+          </div>
+        ) : !recordResult.ok ? (
+          <div className="mx-auto max-w-6xl px-6 py-6 md:px-10">
+            <h1 className="text-xl font-semibold">ICP laden mislukt</h1>
+            <p className="mt-3 text-sm text-red-700 dark:text-red-300">{recordResult.error}</p>
+          </div>
+        ) : (
+          <IcpWorkspace
+            key={selectedId ?? "empty"}
+            tenantId={tenantId}
+            tenantName={tenantName}
+            initialList={summaries}
+            initialRecord={recordResult.data ?? null}
+            selectedIcpId={selectedId}
+          />
+        )}
+      </div>
+    );
+  }
 
   if (tab === "zoekwoorden") {
     const research = await listKeywordResearchAction(tenantId, { minVolume: 0, limit: 300 });
