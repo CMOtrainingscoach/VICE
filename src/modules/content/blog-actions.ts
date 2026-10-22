@@ -120,7 +120,7 @@ export async function loadBlogBrandContextAction(tenantId: string): Promise<Acti
       },
       styles,
       colors,
-      brandHref: `/klanten/${tenantId}/strategie/brand`,
+      brandHref: `/klanten/${tenantId}/strategie/brand?tab=prompts`,
     },
   };
 }

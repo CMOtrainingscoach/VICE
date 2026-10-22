@@ -50,6 +50,7 @@ export function BrandWorkspace({
   icpOptions = [],
   initialIcpId = null,
   initialPersonas = [],
+  initialTab,
 }: {
   tenantId: string;
   tenantName: string;
@@ -58,9 +59,10 @@ export function BrandWorkspace({
   icpOptions?: TenantIcpSummary[];
   initialIcpId?: string | null;
   initialPersonas?: BuyerPersona[];
+  initialTab?: Tab;
 }) {
   const [brand, setBrand] = useState<ClientBrand | null>(initial);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(initialTab ?? "overview");
   const [editing, setEditing] = useState(false);
   const [viewport, setViewport] = useState<"desktop" | "mobile">("desktop");
   const [busy, setBusy] = useState(false);
@@ -244,6 +246,7 @@ export function BrandWorkspace({
               brand={brand}
               locked={locked}
               busy={busy}
+              onSaveVoice={(voice) => void savePatch({ voice })}
               onSaveVisual={(visual) => void savePatch({ visual })}
               onSaveTemplates={(promptTemplates) => void savePatch({ promptTemplates })}
             />
@@ -313,8 +316,8 @@ function Overview({
           <p className="max-w-2xl font-display text-3xl text-vice-text md:text-5xl">
             {brand.tagline || "Voeg een tagline toe via Bewerken."}
           </p>
-          <button type="button" className="text-sm text-vice-gold" onClick={() => onOpen("visual")}>
-            Positionering & tone of voice →
+          <button type="button" className="text-sm text-vice-gold" onClick={() => onOpen("prompts")}>
+            Tone of voice & prompts →
           </button>
         </div>
       </section>
@@ -759,12 +762,14 @@ function PromptsEditor({
   brand,
   locked,
   busy,
+  onSaveVoice,
   onSaveVisual,
   onSaveTemplates,
 }: {
   brand: ClientBrand;
   locked: boolean;
   busy: boolean;
+  onSaveVoice: (voice: string) => void;
   onSaveVisual: (visual: ClientBrand["visual"]) => void;
   onSaveTemplates: (templates: BrandPromptTemplate[]) => void;
 }) {
@@ -774,10 +779,17 @@ function PromptsEditor({
   const [camera, setCamera] = useState("");
   const [light, setLight] = useState("");
   const [advanced, setAdvanced] = useState(false);
+  const [voice, setVoice] = useState(brand.voice);
   const [stylePrompt, setStylePrompt] = useState(brand.visual.stylePrompt);
   const [copied, setCopied] = useState(false);
+  const [voiceCopied, setVoiceCopied] = useState(false);
 
-  useEffect(() => setStylePrompt(brand.visual.stylePrompt), [brand.visual.stylePrompt, brand.updatedAt]);
+  useEffect(() => {
+    setVoice(brand.voice);
+    setStylePrompt(brand.visual.stylePrompt);
+  }, [brand.voice, brand.visual.stylePrompt, brand.updatedAt]);
+
+  const voiceReady = voice.trim().length >= 20;
 
   const composed = [
     subject && `Onderwerp: ${subject}.`,
@@ -789,6 +801,56 @@ function PromptsEditor({
   ].filter(Boolean).join(" ");
 
   return (
+    <div className="space-y-8">
+      <section className="rounded-2xl border border-vice-border bg-vice-surface p-6">
+        <h2 className="text-lg font-medium">Tone of voice</h2>
+        <p className="mt-1 max-w-2xl text-sm text-vice-text-muted">
+          Deze prompt gebruikt VICE bij het genereren van blogartikels, social captions en andere tekstcontent. Houd
+          het concreet: toon, woordkeuze, aanspreekvorm, wat je wel en niet zegt.
+        </p>
+        <Field label="Tekstprompt voor contentgeneratie" className="mt-4">
+          <textarea
+            className={`${fieldClass} min-h-36`}
+            disabled={locked || busy}
+            readOnly={locked}
+            value={voice}
+            onChange={(event) => setVoice(event.target.value)}
+            placeholder="Bijv.: Warm en deskundig, je/jij, korte zinnen, geen jargon. Spreek de lezer direct aan. Leg uit alsof je naast iemand zit — geen salespraat."
+          />
+        </Field>
+        {!voiceReady ? (
+          <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
+            Minstens 20 tekens nodig voordat AI-content kan genereren.
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">Klaar voor contentgeneratie.</p>
+        )}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {!locked ? (
+            <Button
+              type="button"
+              disabled={busy || voice.trim() === brand.voice.trim()}
+              onClick={() => onSaveVoice(voice.trim())}
+            >
+              Tone of voice opslaan
+            </Button>
+          ) : (
+            <p className="text-xs text-vice-text-muted">Klik <strong className="font-medium">Bewerken</strong> bovenaan om aan te passen.</p>
+          )}
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={!voice.trim()}
+            onClick={async () => {
+              await navigator.clipboard.writeText(voice.trim());
+              setVoiceCopied(true);
+            }}
+          >
+            <Copy className="size-4" /> {voiceCopied ? "Gekopieerd" : "Kopieer prompt"}
+          </Button>
+        </div>
+      </section>
+
     <div className="grid gap-8 lg:grid-cols-[1.1fr_1fr]">
       <section className="rounded-2xl border border-vice-border bg-vice-surface p-6">
         <h2 className="text-lg font-medium">Zo ziet het merk eruit</h2>
@@ -906,6 +968,7 @@ function PromptsEditor({
           ) : null}
         </div>
       </section>
+    </div>
     </div>
   );
 }

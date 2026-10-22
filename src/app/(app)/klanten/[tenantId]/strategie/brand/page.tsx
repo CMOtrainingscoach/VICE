@@ -12,10 +12,13 @@ import type { BuyerPersona } from "@/lib/brand/buyer-persona-types";
 
 export default async function ClientBrandPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantId: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
   const { tenantId } = await params;
+  const { tab } = await searchParams;
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
   if (!ctx.isPlatformAdmin) redirect(`/klanten/${tenantId}`);
@@ -55,6 +58,11 @@ export default async function ClientBrandPage({
     );
   }
 
+  const initialTab =
+    tab === "prompts" || tab === "personas" || tab === "visual" || tab === "color" || tab === "type"
+      ? tab
+      : undefined;
+
   return (
     <BrandWorkspace
       tenantId={tenantId}
@@ -64,6 +72,7 @@ export default async function ClientBrandPage({
       icpOptions={icpOptions}
       initialIcpId={initialIcpId}
       initialPersonas={initialPersonas}
+      initialTab={initialTab}
     />
   );
 }
