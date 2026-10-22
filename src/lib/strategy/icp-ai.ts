@@ -5,6 +5,7 @@ import type { TenantIcpProfileData } from "@/lib/strategy/icp-types";
 import { emptyTenantIcpProfile } from "@/lib/strategy/icp-types";
 
 const icpSchema = z.object({
+  marketType: z.enum(["b2b", "b2c"]).optional(),
   headline: z.string().max(200),
   summary: z.string().max(1200),
   offer: z.string().max(400),
@@ -68,7 +69,8 @@ export async function extractTenantIcpFromMarkdown(input: {
           "- positioning: hoe deze klant zich positioneert t.o.v. het ICP (aanbod + belofte), niet generieke marketingtaal.",
           "- Geen PII van personen; wel bedrijfscontext uit de audit.",
           "- Als er al andere ICP's bestaan voor deze klant: formuleer een afgebakend, aanvullend segment — geen herhaling van bestaande profielen.",
-          "Antwoord als JSON met exact deze keys (camelCase): headline, summary, offer, activity, region, phase, teamSize, teamSizeNeedsValidation, extraCharacteristics, criteriaMust, criteriaPlus, criteriaExclude, mainProblem, mainProblemSource, desiredOutcome, trigger, triggerLabel, budget, capacity, openQuestions, positioning, sourcesAndAssumptions.",
+          "- marketType: \"b2b\" als het ICP bedrijven/organisaties als klant beschrijft; \"b2c\" als het eindconsumenten/particulieren beschrijft. Kies één waarde op basis van het document.",
+          "Antwoord als JSON met exact deze keys (camelCase): marketType, headline, summary, offer, activity, region, phase, teamSize, teamSizeNeedsValidation, extraCharacteristics, criteriaMust, criteriaPlus, criteriaExclude, mainProblem, mainProblemSource, desiredOutcome, trigger, triggerLabel, budget, capacity, openQuestions, positioning, sourcesAndAssumptions.",
         ].join("\n"),
       },
       {
@@ -103,7 +105,11 @@ export async function extractTenantIcpFromMarkdown(input: {
     throw new Error("ICP-antwoord voldeed niet aan het verwachte formaat.");
   }
 
-  return { ...emptyTenantIcpProfile(), ...result.data };
+  return {
+    ...emptyTenantIcpProfile(),
+    ...result.data,
+    marketType: result.data.marketType ?? "b2b",
+  };
 }
 
 export function icpProfileToMarkdown(tenantName: string, profile: TenantIcpProfileData, version: string): string {
@@ -111,6 +117,7 @@ export function icpProfileToMarkdown(tenantName: string, profile: TenantIcpProfi
     `# ICP — ${tenantName}`,
     "",
     `Versie: ${version}`,
+    `Markt: ${profile.marketType === "b2c" ? "B2C" : "B2B"}`,
     "",
     `## ${profile.headline || "Ideale klant"}`,
     "",

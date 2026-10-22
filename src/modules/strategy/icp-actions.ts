@@ -6,6 +6,7 @@ import { extractTenantIcpFromMarkdown } from "@/lib/strategy/icp-ai";
 import {
   TENANT_ICP_MIGRATION,
   emptyTenantIcpProfile,
+  normalizeTenantIcpMarketType,
   type TenantIcpProfileData,
   type TenantIcpRecord,
   type TenantIcpStatus,
@@ -38,6 +39,7 @@ function mapProfileData(raw: unknown): TenantIcpProfileData {
   };
   return {
     ...base,
+    marketType: normalizeTenantIcpMarketType(row.marketType),
     headline: String(row.headline ?? ""),
     summary: String(row.summary ?? ""),
     offer: String(row.offer ?? ""),

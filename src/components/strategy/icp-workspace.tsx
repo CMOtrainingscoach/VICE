@@ -10,7 +10,9 @@ import { Label } from "@/components/ui/label";
 import { icpProfileToMarkdown } from "@/lib/strategy/icp-ai";
 import {
   emptyTenantIcpProfile,
+  tenantIcpMarketTypeLabel,
   versionLabel,
+  type TenantIcpMarketType,
   type TenantIcpProfileData,
   type TenantIcpRecord,
   type TenantIcpSummary,
@@ -360,7 +362,32 @@ export function IcpWorkspace({
                 profile.headline || "Ideale klant"
               )}
             </h2>
-            <p className="mt-1 text-sm text-vice-text-muted">Een helder profiel om de juiste bedrijven te herkennen</p>
+            <p className="mt-1 text-sm text-vice-text-muted">
+              {profile.marketType === "b2c"
+                ? "Een helder profiel om de juiste consumenten te herkennen"
+                : "Een helder profiel om de juiste bedrijven te herkennen"}
+            </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Label className="text-xs text-vice-text-muted">Markt</Label>
+              {editMode && !locked ? (
+                <select
+                  className="rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm text-vice-text"
+                  value={profile.marketType}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, marketType: e.target.value as TenantIcpMarketType }))
+                  }
+                >
+                  <option value="b2b">B2B — bedrijven als klant</option>
+                  <option value="b2c">B2C — consumenten als klant</option>
+                </select>
+              ) : (
+                <Badge>{tenantIcpMarketTypeLabel(profile.marketType)}</Badge>
+              )}
+              <p className="text-xs text-vice-text-muted">
+                Bepaalt o.a. hoe buyer persona&apos;s worden gegenereerd bij Brand.
+              </p>
+            </div>
 
             <div className="mt-6 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
               <div className="flex min-h-[8rem] items-center justify-center rounded-xl border border-vice-border bg-vice-bg/50 text-vice-text-muted">
@@ -398,7 +425,7 @@ export function IcpWorkspace({
           </section>
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <Card title="Bedrijfsprofiel">
+            <Card title={profile.marketType === "b2c" ? "Klantprofiel" : "Bedrijfsprofiel"}>
               <Field label="Activiteit" edit={editMode && !locked} value={profile.activity} onChange={(v) => setProfile((p) => ({ ...p, activity: v }))} />
               <Field label="Werkgebied" edit={editMode && !locked} value={profile.region} onChange={(v) => setProfile((p) => ({ ...p, region: v }))} />
               <Field label="Bedrijfsfase" edit={editMode && !locked} value={profile.phase} onChange={(v) => setProfile((p) => ({ ...p, phase: v }))} />

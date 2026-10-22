@@ -3,7 +3,10 @@ export const TENANT_ICP_MIGRATION =
 
 export type TenantIcpStatus = "draft" | "approved";
 
+export type TenantIcpMarketType = "b2b" | "b2c";
+
 export type TenantIcpProfileData = {
+  marketType: TenantIcpMarketType;
   headline: string;
   summary: string;
   offer: string;
@@ -50,8 +53,18 @@ export type TenantIcpRecord = {
   updatedAt: string;
 };
 
+export function normalizeTenantIcpMarketType(raw: unknown): TenantIcpMarketType {
+  const value = String(raw ?? "").trim().toLowerCase();
+  return value === "b2c" ? "b2c" : "b2b";
+}
+
+export function tenantIcpMarketTypeLabel(marketType: TenantIcpMarketType): string {
+  return marketType === "b2c" ? "B2C" : "B2B";
+}
+
 export function emptyTenantIcpProfile(): TenantIcpProfileData {
   return {
+    marketType: "b2b",
     headline: "",
     summary: "",
     offer: "",

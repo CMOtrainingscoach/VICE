@@ -1,10 +1,11 @@
 import OpenAI from "openai";
 import { modelSupportsCustomTemperature, resolveMeetingAnalysisModel } from "@/lib/openai/models";
-import type { TenantIcpProfileData } from "@/lib/strategy/icp-types";
+import type { TenantIcpMarketType, TenantIcpProfileData } from "@/lib/strategy/icp-types";
 import type { BuyerPersonaDraft } from "@/lib/brand/buyer-persona-types";
 
 function icpBlock(icp: TenantIcpProfileData): string {
   return [
+    `Markt: ${icp.marketType === "b2c" ? "B2C (consumenten)" : "B2B (bedrijven)"}`,
     icp.headline ? `ICP: ${icp.headline}` : "",
     icp.summary,
     icp.offer ? `Aanbod: ${icp.offer}` : "",
@@ -105,15 +106,7 @@ export async function generateBuyerPersonasFromIcp(input: {
     messages: [
       {
         role: "system",
-        content: [
-          "Je maakt buyer persona's voor B2B-marketing in VICE.",
-          "Elke persona is een fictieve maar realistische beslisser of beïnvloeder binnen het ICP — geen echte persoon, geen PII.",
-          "Genereer 2–4 complementaire persona's (verschillende rollen, bv. zaakvoerder, marketing, finance).",
-          "Baseer je op het ICP; extra context is optioneel.",
-          "decisionRoles: array van korte strings, bv. [\"Beslisser\", \"Beïnvloeder\"].",
-          "Verplicht JSON-object: { \"personas\": [ { \"displayName\", \"roleTitle\", \"summary\", \"decisionRoles\", \"goals\", \"pains\", \"triggers\", \"decisionCriteria\", \"objections\", \"infoNeeded\", \"channels\", \"assumptions\", \"openQuestion\" } ] }",
-          "Alle velden zijn strings behalve decisionRoles (array). Geen null; gebruik \"\" als onbekend.",
-        ].join("\n"),
+        content: personaSystemPrompt(input.icp.marketType ?? "b2b"),
       },
       {
         role: "user",
@@ -125,6 +118,9 @@ export async function generateBuyerPersonasFromIcp(input: {
             ? `Bestaande rollen (niet dupliceren):\n${input.existingRoleTitles.map((r) => `- ${r}`).join("\n")}`
             : "",
           input.extraContext?.trim() ? `Extra context:\n${input.extraContext.trim()}` : "",
+          input.icp.marketType === "b2c" && input.icp.offer.trim()
+            ? `Producten/diensten om pijnen op te mappen:\n${input.icp.offer.trim()}`
+            : "",
         ]
           .filter(Boolean)
           .join("\n\n"),
@@ -153,4 +149,32 @@ export async function generateBuyerPersonasFromIcp(input: {
   }
 
   return personas.slice(0, 5);
+}
+
+function personaSystemPrompt(marketType: TenantIcpMarketType): string {
+  if (marketType === "b2c") {
+    return [
+      "Je maakt buyer persona's voor B2C-marketing in VICE.",
+      "Elke persona is een fictief maar realistisch consumentensegment binnen het ICP — geen echte persoon, geen PII.",
+      "Genereer 2–4 complementaire persona's (verschillende levensfase, situatie of motivatie, bv. drukke ouder, starter op de woningmarkt, hobbyist).",
+      "roleTitle: korte segmentnaam (geen bedrijfsfunctie). displayName: voornaam of archetype-label.",
+      "pains: verplicht concreet en herkenbaar voor consumenten. Koppel elke pijn expliciet aan producten/diensten uit het ICP-aanbod (offer) — wat irriteert ze, wat mislukte eerder, welk gevolg voelen ze?",
+      "Geen vage marketingpijn; wel dagelijkse frustraties die dit aanbod kan oplossen.",
+      "goals, triggers, decisionCriteria: passend voor B2C (gemak, vertrouwen, prijs, tijd, resultaat).",
+      "decisionRoles: array, bv. [\"Beslisser\"] of [\"Beïnvloeder\", \"Gebruiker\"] waar relevant.",
+      "Baseer je op het ICP; extra context is optioneel.",
+      "Verplicht JSON-object: { \"personas\": [ { \"displayName\", \"roleTitle\", \"summary\", \"decisionRoles\", \"goals\", \"pains\", \"triggers\", \"decisionCriteria\", \"objections\", \"infoNeeded\", \"channels\", \"assumptions\", \"openQuestion\" } ] }",
+      "Alle velden zijn strings behalve decisionRoles (array). Geen null; gebruik \"\" als onbekend.",
+    ].join("\n");
+  }
+
+  return [
+    "Je maakt buyer persona's voor B2B-marketing in VICE.",
+    "Elke persona is een fictieve maar realistische beslisser of beïnvloeder binnen het ICP — geen echte persoon, geen PII.",
+    "Genereer 2–4 complementaire persona's (verschillende rollen, bv. zaakvoerder, marketing, finance).",
+    "Baseer je op het ICP; extra context is optioneel.",
+    "decisionRoles: array van korte strings, bv. [\"Beslisser\", \"Beïnvloeder\"].",
+    "Verplicht JSON-object: { \"personas\": [ { \"displayName\", \"roleTitle\", \"summary\", \"decisionRoles\", \"goals\", \"pains\", \"triggers\", \"decisionCriteria\", \"objections\", \"infoNeeded\", \"channels\", \"assumptions\", \"openQuestion\" } ] }",
+    "Alle velden zijn strings behalve decisionRoles (array). Geen null; gebruik \"\" als onbekend.",
+  ].join("\n");
 }
