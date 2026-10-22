@@ -1,4 +1,4 @@
-export type ContentTypeId = "social" | "blog" | "email" | "beeld" | "verkoop";
+export type ContentTypeId = "social" | "blog" | "email" | "beeld" | "leadgen";
 
 export type ContentType = {
   id: ContentTypeId;
@@ -35,10 +35,10 @@ export function contentTypes(tenantId: string): ContentType[] {
       href: `${base}/beeld`,
     },
     {
-      id: "verkoop",
-      title: "Verkoop",
-      description: "Salescontent en flows — binnenkort beschikbaar.",
-      href: `${base}/verkoop`,
+      id: "leadgen",
+      title: "Leadgen",
+      description: "Vind relevante bedrijven in jouw werkgebied.",
+      href: `${base}/leadgen`,
     },
   ];
 }
