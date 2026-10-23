@@ -1,5 +1,6 @@
 "use server";
 
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
@@ -17,6 +18,8 @@ import type {
   LeadgenRunDetail,
   LeadgenRunSummary,
 } from "@/lib/leadgen/types";
+import { leadgenBasePath } from "@/lib/leadgen/paths";
+import { runLeadgenWorkerForRun } from "@/lib/leadgen/trigger-worker";
 import { LEADGEN_MIGRATION } from "@/lib/leadgen/types";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
@@ -105,6 +108,7 @@ function mapProspectRow(raw: unknown): LeadgenProspectRow | null {
 }
 
 function revalidateLeadgen(tenantId: string) {
+  revalidatePath(leadgenBasePath(tenantId));
   revalidatePath(`/klanten/${tenantId}/content/leadgen`);
 }
 
@@ -151,24 +155,34 @@ export async function createLeadgenRunAction(
   const mapped = mapRunDetail(data);
   if (!mapped) return { ok: false, error: "Run aanmaken mislukt" };
 
-  void triggerLeadgenWorker(mapped.id);
+  after(async () => {
+    try {
+      await runLeadgenWorkerForRun(mapped.id);
+    } catch (error) {
+      console.error("[leadgen] worker failed for run", mapped.id, error);
+    }
+  });
   revalidateLeadgen(tenantId);
   return { ok: true, data: mapped };
 }
 
-async function triggerLeadgenWorker(runId: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return;
-  try {
-    await fetch(`${base}/api/cron/leadgen?runId=${encodeURIComponent(runId)}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${secret}` },
-      cache: "no-store",
-    });
-  } catch {
-    // worker may be picked up by cron
-  }
+/** Idempotent kick for queued runs (e.g. after page load or missed cron). */
+export async function ensureLeadgenWorkerAction(runId: string): Promise<ActionResult> {
+  if (leadgenFixturesEnabled()) return { ok: true };
+  const supabase = await authed();
+  const { data, error } = await supabase.schema("app").rpc("get_leadgen_run", { p_run_id: runId });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  const detail = mapRunDetail(data);
+  if (!detail) return { ok: false, error: "Run niet gevonden" };
+  if (detail.status !== "queued") return { ok: true };
+  after(async () => {
+    try {
+      await runLeadgenWorkerForRun(runId);
+    } catch (workerError) {
+      console.error("[leadgen] ensure worker failed", runId, workerError);
+    }
+  });
+  return { ok: true };
 }
 
 export async function renameLeadgenRunAction(runId: string, name: string): Promise<ActionResult<LeadgenRunDetail>> {

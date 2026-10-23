@@ -133,13 +133,12 @@ export function AppShell({
   const strategieActive = pathname.includes("/strategie") && !brandActive;
   const leadgenActive =
     Boolean(tenantIdFromPath) &&
-    (pathname === `/klanten/${tenantIdFromPath}/content/leadgen` ||
-      pathname.startsWith(`/klanten/${tenantIdFromPath}/content/leadgen/`));
+    (pathname === `/klanten/${tenantIdFromPath}/leadgen` ||
+      pathname.startsWith(`/klanten/${tenantIdFromPath}/leadgen/`));
   const contentActive =
     Boolean(tenantIdFromPath) &&
     (pathname === `/klanten/${tenantIdFromPath}/content` ||
-      pathname.startsWith(`/klanten/${tenantIdFromPath}/content/`)) &&
-    !leadgenActive;
+      pathname.startsWith(`/klanten/${tenantIdFromPath}/content/`));
 
   const initials = userLabel
     .split(/\s+/)
@@ -224,10 +223,10 @@ export function AppShell({
                 indent
               />
               <NavLink
-                href={`/klanten/${activeClient.tenantId}/content/leadgen`}
+                href={`/klanten/${activeClient.tenantId}/leadgen`}
                 label="Leadgen"
                 active={leadgenActive}
-                nested
+                indent
               />
             </div>
           )}

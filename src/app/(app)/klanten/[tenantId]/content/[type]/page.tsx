@@ -5,7 +5,7 @@ import { contentTypes, type ContentTypeId } from "@/lib/content/types";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
 
-const ALLOWED = new Set<ContentTypeId>(["social", "blog", "email", "beeld", "leadgen"]);
+const ALLOWED = new Set<ContentTypeId>(["social", "blog", "email", "beeld"]);
 
 export default async function ContentTypePage({
   params,
@@ -13,11 +13,10 @@ export default async function ContentTypePage({
   params: Promise<{ tenantId: string; type: string }>;
 }) {
   const { tenantId, type } = await params;
-  if (!ALLOWED.has(type as ContentTypeId)) notFound();
+  if (type === "leadgen" || type === "verkoop") redirect(`/klanten/${tenantId}/leadgen`);
   if (type === "blog") redirect(`/klanten/${tenantId}/content/blog`);
   if (type === "social") redirect(`/klanten/${tenantId}/content/social`);
-  if (type === "leadgen") redirect(`/klanten/${tenantId}/content/leadgen`);
-  if (type === "verkoop") redirect(`/klanten/${tenantId}/content/leadgen`);
+  if (!ALLOWED.has(type as ContentTypeId)) notFound();
 
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");

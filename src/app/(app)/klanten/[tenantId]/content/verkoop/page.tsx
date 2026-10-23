@@ -6,5 +6,5 @@ export default async function VerkoopContentPage({
   params: Promise<{ tenantId: string }>;
 }) {
   const { tenantId } = await params;
-  redirect(`/klanten/${tenantId}/content/leadgen`);
+  redirect(`/klanten/${tenantId}/leadgen`);
 }

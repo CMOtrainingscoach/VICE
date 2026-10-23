@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, FilePenLine, ImageIcon, Mail, MessageSquare, Target } from "lucide-react";
+import { ArrowRight, FilePenLine, ImageIcon, Mail, MessageSquare } from "lucide-react";
 import { contentTypes, type ContentTypeId } from "@/lib/content/types";
 
 const ICONS: Record<ContentTypeId, typeof MessageSquare> = {
@@ -9,7 +9,6 @@ const ICONS: Record<ContentTypeId, typeof MessageSquare> = {
   blog: FilePenLine,
   email: Mail,
   beeld: ImageIcon,
-  leadgen: Target,
 };
 
 export function ContentHub({

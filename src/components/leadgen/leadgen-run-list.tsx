@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LEADGEN_FIXTURE_BANNER, leadgenFixturesEnabled } from "@/lib/leadgen/fixtures";
 import { RUN_STATUS_LABELS, type LeadgenRunSummary } from "@/lib/leadgen/types";
+import { leadgenBasePath } from "@/lib/leadgen/paths";
 import { deleteLeadgenRunAction, renameLeadgenRunAction } from "@/modules/leadgen/actions";
 
 export function LeadgenRunList({
@@ -66,7 +67,7 @@ export function LeadgenRunList({
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <p className="text-sm text-vice-text-muted">
-        {tenantName} / Content / Leadgen
+        {tenantName} / Leadgen
       </p>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -74,7 +75,7 @@ export function LeadgenRunList({
           <p className="mt-2 text-sm text-vice-text-muted">Vind relevante bedrijven in jouw werkgebied.</p>
         </div>
         <Button asChild>
-          <Link href={`/klanten/${tenantId}/content/leadgen/nieuw`}>
+          <Link href={`${leadgenBasePath(tenantId)}/nieuw`}>
             <Plus className="size-4" aria-hidden />
             Nieuwe zoektocht
           </Link>
@@ -127,7 +128,7 @@ export function LeadgenRunList({
           description="Start een nieuwe zoektocht om potentiële klanten te vinden."
           action={
             <Button asChild variant="secondary">
-              <Link href={`/klanten/${tenantId}/content/leadgen/nieuw`}>Nieuwe zoektocht</Link>
+              <Link href={`${leadgenBasePath(tenantId)}/nieuw`}>Nieuwe zoektocht</Link>
             </Button>
           }
         />
@@ -140,7 +141,7 @@ export function LeadgenRunList({
             >
               <div className="min-w-0 flex-1">
                 <Link
-                  href={`/klanten/${tenantId}/content/leadgen/${run.id}`}
+                  href={`${leadgenBasePath(tenantId)}/${run.id}`}
                   className="font-medium text-vice-text hover:text-vice-gold"
                 >
                   {run.name}

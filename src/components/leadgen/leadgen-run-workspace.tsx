@@ -13,8 +13,10 @@ import {
   type LeadgenProspectRow,
   type LeadgenRunDetail,
 } from "@/lib/leadgen/types";
+import { leadgenBasePath } from "@/lib/leadgen/paths";
 import {
   cancelLeadgenRunAction,
+  ensureLeadgenWorkerAction,
   getLeadgenRunAction,
   listLeadgenProspectsAction,
   updateLeadgenProspectStatusAction,
@@ -52,6 +54,12 @@ export function LeadgenRunWorkspace({
     const result = await listLeadgenProspectsAction(run.id, { search, status: statusFilter });
     if (result.ok && result.data) setProspects(result.data);
   }, [run.id, search, statusFilter]);
+
+  useEffect(() => {
+    if (run.status === "queued") {
+      void ensureLeadgenWorkerAction(run.id);
+    }
+  }, [run.id, run.status]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -95,7 +103,7 @@ export function LeadgenRunWorkspace({
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
       <p className="text-sm text-vice-text-muted">
-        {tenantName} / Content / Leadgen / {run.name}
+        {tenantName} / Leadgen / {run.name}
       </p>
 
       {leadgenFixturesEnabled() || run.isFixture ? (
@@ -126,7 +134,7 @@ export function LeadgenRunWorkspace({
           ) : null}
           <Button type="button" variant="secondary" asChild>
             <Link
-              href={`/klanten/${tenantId}/content/leadgen/nieuw`}
+              href={`${leadgenBasePath(tenantId)}/nieuw`}
               onClick={() => {
                 try {
                   sessionStorage.setItem("leadgen-clone-config", JSON.stringify(run.config));

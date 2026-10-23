@@ -12,6 +12,7 @@ import { LeadgenPlacesAutocomplete } from "@/components/leadgen/leadgen-places-a
 import { leadgenMaxRadiusKm, leadgenMinRadiusKm } from "@/lib/leadgen/constants";
 import { LEADGEN_FIXTURE_BANNER, leadgenFixturesEnabled } from "@/lib/leadgen/fixtures";
 import type { LeadgenRunConfig } from "@/lib/leadgen/types";
+import { leadgenBasePath } from "@/lib/leadgen/paths";
 import { createLeadgenRunAction, saveLeadgenTemplateAction } from "@/modules/leadgen/actions";
 
 const DEFAULT_LAT = 51.3225;
@@ -121,7 +122,7 @@ export function LeadgenSetupWorkspace({
       setError(result.ok ? "Run aanmaken mislukt" : result.error);
       return;
     }
-    router.push(`/klanten/${tenantId}/content/leadgen/${result.data.id}`);
+    router.push(`${leadgenBasePath(tenantId)}/${result.data.id}`);
     router.refresh();
   }
 
@@ -138,7 +139,7 @@ export function LeadgenSetupWorkspace({
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
       <p className="text-sm text-vice-text-muted">
-        {tenantName} / Content / Leadgen / Nieuwe zoektocht
+        {tenantName} / Leadgen / Nieuwe zoektocht
       </p>
       <h1 className="mt-4 font-display text-4xl tracking-tight text-vice-text">Vind je volgende klant.</h1>
       <p className="mt-2 max-w-2xl text-sm text-vice-text-muted">
@@ -255,7 +256,7 @@ export function LeadgenSetupWorkspace({
               Bewaar opdracht
             </Button>
             <Button type="button" variant="ghost" asChild>
-              <Link href={`/klanten/${tenantId}/content/leadgen`}>Annuleren</Link>
+              <Link href={leadgenBasePath(tenantId)}>Annuleren</Link>
             </Button>
           </div>
         </div>
