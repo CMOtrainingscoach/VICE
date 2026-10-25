@@ -7,10 +7,6 @@
     {
       "path": "/api/cron/metrics",
       "schedule": "0 5 * * *"
-    },
-    {
-      "path": "/api/cron/leadgen",
-      "schedule": "*/5 * * * *"
     }
   ]
 }
