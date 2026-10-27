@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { SALESBRAIN_NAV_LABEL, salesbrainEnabled } from "@/lib/salesbrain/flags";
+import { SALESBRAIN_NAV_LABEL } from "@/lib/salesbrain/flags";
 import { usePathname } from "next/navigation";
 import { Home, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -24,6 +24,8 @@ type AppShellProps = {
   children: React.ReactNode;
   userLabel: string;
   isPlatformAdmin: boolean;
+  /** From server layout — avoids NEXT_PUBLIC build-time-only gating for nav label. */
+  salesbrainEnabled?: boolean;
   clientNav?: ClientNav | null;
 };
 
@@ -87,6 +89,7 @@ export function AppShell({
   children,
   userLabel,
   isPlatformAdmin,
+  salesbrainEnabled: salesbrainNav = false,
   clientNav,
 }: AppShellProps) {
   const pathname = usePathname();
@@ -225,7 +228,7 @@ export function AppShell({
               />
               <NavLink
                 href={`/klanten/${activeClient.tenantId}/leadgen`}
-                label={salesbrainEnabled() ? SALESBRAIN_NAV_LABEL : "Leadgen"}
+                label={salesbrainNav ? SALESBRAIN_NAV_LABEL : "Leadgen"}
                 active={leadgenActive}
                 indent
               />
@@ -241,6 +244,12 @@ export function AppShell({
                 href={`/klanten/${clientNav.tenantId}`}
                 label="Overzicht"
                 active={pathname === `/klanten/${clientNav.tenantId}`}
+              />
+              <NavLink
+                href={`/klanten/${clientNav.tenantId}/leadgen`}
+                label={salesbrainNav ? SALESBRAIN_NAV_LABEL : "Leadgen"}
+                active={leadgenActive}
+                indent
               />
             </div>
           )}
