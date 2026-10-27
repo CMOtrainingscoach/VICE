@@ -31,6 +31,7 @@ import { leadgenBasePath } from "@/lib/leadgen/paths";
 import {
   publishWorkflowGraphAction,
   saveWorkflowDraftAction,
+  updateSbWorkflowMetaAction,
 } from "@/modules/salesbrain/actions";
 
 const COMPACT_NODE_TYPES = new Set<SbNodeType>(["client_context", "website_fetch", "normalize"]);
@@ -79,17 +80,23 @@ export function SalesbrainWorkflowEditor({
   tenantName,
   workflowId,
   workflowTitle = "Vind bedrijven met groeisignalen",
+  workflowPurpose = "",
   initialDefinition,
+  readOnly = false,
 }: {
   tenantId: string;
   tenantName?: string;
   workflowId: string;
   workflowTitle?: string;
+  workflowPurpose?: string;
   initialDefinition?: SbWorkflowDefinition;
+  readOnly?: boolean;
 }) {
   const base = useMemo(() => initialDefinition ?? exampleFirstMarketerWorkflow(), [initialDefinition]);
   const formSchema = useMemo(() => exampleFirstMarketerFormSchema(), []);
   const [graphNodes, setGraphNodes] = useState<SbGraphNode[]>(base.nodes);
+  const [title, setTitle] = useState(workflowTitle);
+  const [purpose, setPurpose] = useState(workflowPurpose);
   const [selectedId, setSelectedId] = useState<string | null>("jobs");
   const [nodes, setNodes, onNodesChange] = useNodesState(graphToFlowNodes(base.nodes, "jobs"));
   const [edges, setEdges, onEdgesChange] = useEdgesState(toFlowEdges(base));
@@ -151,6 +158,15 @@ export function SalesbrainWorkflowEditor({
   );
 
   useEffect(() => {
+    setGraphNodes(base.nodes);
+    setEdges(toFlowEdges(base));
+    setNodes(graphToFlowNodes(base.nodes, selectedId));
+    setTitle(workflowTitle);
+    setPurpose(workflowPurpose);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when workflow file changes
+  }, [base, workflowTitle, workflowPurpose]);
+
+  useEffect(() => {
     pushHistory(toFlowNodes(graphNodes, selectedId), toFlowEdges(base));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed undo stack once
   }, []);
@@ -196,6 +212,8 @@ export function SalesbrainWorkflowEditor({
   }
 
   async function onPublish() {
+    if (readOnly) return;
+    await updateSbWorkflowMetaAction(tenantId, workflowId, title, purpose);
     const def = definitionFromState(graphNodes, nodes, edges);
     const issues = validateWorkflowGraph(def);
     if (issues.some((i) => i.code !== "deferred_node")) {
@@ -218,14 +236,39 @@ export function SalesbrainWorkflowEditor({
         </p>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="font-display text-2xl text-vice-text">{workflowTitle}</h1>
-            <p className="mt-1 text-sm text-vice-text-muted">Ontwerp en publiceer de client-workflow.</p>
+            {readOnly ? (
+              <>
+                <h1 className="font-display text-2xl text-vice-text">{title}</h1>
+                <p className="mt-1 text-sm text-amber-700">Gearchiveerd — alleen bekijken. Herstel via Workflows-lijst.</p>
+              </>
+            ) : (
+              <>
+                <input
+                  className="font-display w-full max-w-xl bg-transparent text-2xl text-vice-text outline-none border-b border-transparent focus:border-vice-gold"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onBlur={() => void updateSbWorkflowMetaAction(tenantId, workflowId, title, purpose)}
+                  aria-label="Workflownaam"
+                />
+                <input
+                  className="mt-2 w-full max-w-xl bg-transparent text-sm text-vice-text-muted outline-none"
+                  value={purpose}
+                  placeholder="Doel van deze workflow"
+                  onChange={(e) => setPurpose(e.target.value)}
+                  onBlur={() => void updateSbWorkflowMetaAction(tenantId, workflowId, title, purpose)}
+                  aria-label="Workflowdoel"
+                />
+              </>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="ghost" asChild>
+              <Link href={`${basePath}/workflows`}>Alle workflows</Link>
+            </Button>
             <Button type="button" variant="secondary" asChild>
               <Link href={`${basePath}/start/${workflowId}?test=1`}>Preview</Link>
             </Button>
-            <Button type="button" onClick={() => void onPublish()}>
+            <Button type="button" disabled={readOnly} onClick={() => void onPublish()}>
               Publiceren
             </Button>
           </div>
@@ -271,9 +314,12 @@ export function SalesbrainWorkflowEditor({
               nodes={nodes}
               edges={edges}
               nodeTypes={sbFlowNodeTypes}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
+              nodesDraggable={!readOnly}
+              nodesConnectable={!readOnly}
+              elementsSelectable
+              onNodesChange={readOnly ? undefined : onNodesChange}
+              onEdgesChange={readOnly ? undefined : onEdgesChange}
+              onConnect={readOnly ? undefined : onConnect}
               onNodeClick={(_, node) => setSelectedId(node.id)}
               isValidConnection={isValidConnection}
               fitView

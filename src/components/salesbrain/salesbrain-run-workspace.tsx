@@ -14,7 +14,9 @@ import {
   getSbRunAction,
   listSbInsightsAction,
   listSbProspectsAction,
+  softDeleteSbRunAction,
 } from "@/modules/salesbrain/actions";
+import { useRouter } from "next/navigation";
 import type { SbMarketInsight } from "@/lib/salesbrain/types";
 import { updateLeadgenProspectStatusAction } from "@/modules/leadgen/actions";
 
@@ -25,12 +27,15 @@ export function SalesbrainRunWorkspace({
   tenantName,
   initialRun,
   initialProspects,
+  isAdmin,
 }: {
   tenantId: string;
   tenantName: string;
   initialRun: SbRunDetail;
   initialProspects: LeadgenProspectRow[];
+  isAdmin?: boolean;
 }) {
+  const router = useRouter();
   const [run, setRun] = useState(initialRun);
   const [prospects, setProspects] = useState(initialProspects);
   const [insights, setInsights] = useState<SbMarketInsight[]>([]);
@@ -158,9 +163,25 @@ export function SalesbrainRunWorkspace({
         <p className="mt-6 text-sm text-vice-text-muted">Open een prospect voor signalen, beperkingen en bronverwijzingen.</p>
       ) : null}
 
-      <Button asChild className="mt-8" variant="secondary">
-        <Link href={leadgenBasePath(tenantId)}>Terug naar Salesbrain</Link>
-      </Button>
+      <div className="mt-8 flex flex-wrap gap-3">
+        <Button asChild variant="secondary">
+          <Link href={leadgenBasePath(tenantId)}>Terug naar Salesbrain</Link>
+        </Button>
+        {isAdmin ? (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              if (!confirm("Deze run verwijderen?")) return;
+              void softDeleteSbRunAction(tenantId, run.id).then((r) => {
+                if (r.ok) router.push(leadgenBasePath(tenantId));
+              });
+            }}
+          >
+            Run verwijderen
+          </Button>
+        ) : null}
+      </div>
 
       {selected ? (
         <SalesbrainProspectPanel

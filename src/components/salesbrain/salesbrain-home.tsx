@@ -8,6 +8,7 @@ import { leadgenBasePath } from "@/lib/leadgen/paths";
 import { SALESBRAIN_FIXTURE_BANNER } from "@/lib/salesbrain/fixtures";
 import { salesbrainFixturesEnabled } from "@/lib/salesbrain/flags";
 import type { SbRunSummary, SbWorkflowSummary } from "@/lib/salesbrain/types";
+import { SalesbrainRunsList } from "@/components/salesbrain/salesbrain-runs-list";
 import { publishDefaultWorkflowAction } from "@/modules/salesbrain/actions";
 
 export function SalesbrainHome({
@@ -85,9 +86,14 @@ export function SalesbrainHome({
                     <Link href={`${base}/start/${w.id}`}>Start analyse</Link>
                   </Button>
                   {isAdmin ? (
-                    <Button asChild variant="secondary">
-                      <Link href={`${base}/start/${w.id}?test=1`}>Test als klant</Link>
-                    </Button>
+                    <>
+                      <Button asChild variant="secondary">
+                        <Link href={`${base}/workflows/${w.id}`}>Bewerken</Link>
+                      </Button>
+                      <Button asChild variant="secondary">
+                        <Link href={`${base}/start/${w.id}?test=1`}>Test als klant</Link>
+                      </Button>
+                    </>
                   ) : null}
                 </div>
               </li>
@@ -98,23 +104,7 @@ export function SalesbrainHome({
 
       <section className="mt-10">
         <h2 className="font-display text-2xl text-vice-text">Eerdere runs</h2>
-        {runs.length === 0 ? (
-          <p className="mt-4 text-sm text-vice-text-muted">Nog geen opgeslagen analyses.</p>
-        ) : (
-          <ul className="mt-4 space-y-2">
-            {runs.map((run) => (
-              <li key={run.id}>
-                <Link href={`${base}/sb/${run.id}`} className="text-vice-gold underline">
-                  {run.name}
-                </Link>
-                <span className="ml-2 text-xs text-vice-text-muted">
-                  {run.status} · {run.prospectCount} prospects
-                  {run.isTest ? " · test" : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <SalesbrainRunsList tenantId={tenantId} runs={runs} isAdmin={isAdmin} />
       </section>
     </div>
   );

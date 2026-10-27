@@ -38,6 +38,7 @@ export default async function SalesbrainRunPage({
       tenantName={(tenantData as Pick<TenantRow, "name">).name}
       initialRun={runResult.data}
       initialProspects={prospectsResult.ok ? prospectsResult.data ?? [] : []}
+      isAdmin={ctx.isPlatformAdmin}
     />
   );
 }

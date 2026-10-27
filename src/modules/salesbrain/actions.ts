@@ -24,8 +24,10 @@ import {
   type SbMarketInsight,
   type SbRunDetail,
   type SbRunSummary,
+  type SbWorkflowDetail,
   type SbWorkflowSummary,
 } from "@/lib/salesbrain/types";
+import type { SbClientFormSchema } from "@/lib/salesbrain/graph/types";
 import { createClient } from "@/lib/supabase/server";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
@@ -56,10 +58,16 @@ function revalidateSb(tenantId: string) {
   revalidatePath(leadgenBasePath(tenantId));
 }
 
-export async function listSbWorkflowsAction(tenantId: string): Promise<ActionResult<SbWorkflowSummary[]>> {
+export async function listSbWorkflowsAction(
+  tenantId: string,
+  options?: { includeArchived?: boolean },
+): Promise<ActionResult<SbWorkflowSummary[]>> {
   if (salesbrainFixturesEnabled()) return { ok: true, data: fixtureWorkflows() };
   const supabase = await authedTenant(tenantId);
-  const { data, error } = await supabase.schema("app").rpc("list_sb_workflows", { p_tenant_id: tenantId });
+  const { data, error } = await supabase.schema("app").rpc("list_sb_workflows", {
+    p_tenant_id: tenantId,
+    p_include_archived: options?.includeArchived ?? false,
+  });
   if (error) return { ok: false, error: migrationError(error.message) };
   const parsed = typeof data === "string" ? JSON.parse(data) : data;
   const list = Array.isArray(parsed) ? parsed : [];
@@ -142,10 +150,109 @@ export async function saveWorkflowDraftAction(
   return { ok: true };
 }
 
-export async function listSbRunsAction(tenantId: string): Promise<ActionResult<SbRunSummary[]>> {
+export async function createSbWorkflowAction(
+  tenantId: string,
+  payload: { name: string; purpose?: string; template?: "first_marketer" | "blank" },
+): Promise<ActionResult<{ id: string }>> {
+  if (salesbrainFixturesEnabled()) return { ok: true, data: { id: fixtureWorkflows()[0].id } };
+  const graph =
+    payload.template === "blank" ? { schemaVersion: 1 as const, nodes: [], edges: [] } : exampleFirstMarketerWorkflow();
+  const form = exampleFirstMarketerFormSchema();
+  const supabase = await authedAdmin();
+  const { data, error } = await supabase.schema("app").rpc("create_sb_workflow", {
+    p_tenant_id: tenantId,
+    p_name: payload.name,
+    p_purpose: payload.purpose ?? "",
+    p_draft_graph: graph,
+    p_form_schema: form,
+  });
+  if (error || !data) return { ok: false, error: migrationError(error?.message ?? "Workflow aanmaken mislukt") };
+  revalidateSb(tenantId);
+  return { ok: true, data: { id: String(data) } };
+}
+
+export async function getSbWorkflowAction(workflowId: string): Promise<ActionResult<SbWorkflowDetail | null>> {
+  if (salesbrainFixturesEnabled()) {
+    const w = fixtureWorkflows()[0];
+    return {
+      ok: true,
+      data: {
+        ...w,
+        tenantId: "",
+        draftGraph: fixtureGraphJson(),
+        draftFormSchema: exampleFirstMarketerFormSchema(),
+      },
+    };
+  }
+  const supabase = await authedAdmin();
+  const { data, error } = await supabase.schema("app").rpc("get_sb_workflow", { p_workflow_id: workflowId });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  if (!data) return { ok: true, data: null };
+  const r = data as Record<string, unknown>;
+  return {
+    ok: true,
+    data: {
+      id: String(r.id),
+      tenantId: String(r.tenantId),
+      name: String(r.name ?? ""),
+      purpose: String(r.purpose ?? ""),
+      status: String(r.status ?? "draft") as SbWorkflowDetail["status"],
+      updatedAt: String(r.updatedAt ?? ""),
+      publishedVersionId: r.publishedVersionId ? String(r.publishedVersionId) : null,
+      lastTestAt: null,
+      draftGraph: (r.draftGraph as SbWorkflowDetail["draftGraph"]) ?? exampleFirstMarketerWorkflow(),
+      draftFormSchema: (r.draftFormSchema as SbClientFormSchema) ?? exampleFirstMarketerFormSchema(),
+    },
+  };
+}
+
+export async function archiveSbWorkflowAction(tenantId: string, workflowId: string): Promise<ActionResult> {
+  if (salesbrainFixturesEnabled()) return { ok: true };
+  const supabase = await authedAdmin();
+  const { error } = await supabase.schema("app").rpc("archive_sb_workflow", { p_workflow_id: workflowId });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  revalidateSb(tenantId);
+  revalidatePath(`${leadgenBasePath(tenantId)}/workflows`);
+  return { ok: true };
+}
+
+export async function restoreSbWorkflowAction(tenantId: string, workflowId: string): Promise<ActionResult> {
+  if (salesbrainFixturesEnabled()) return { ok: true };
+  const supabase = await authedAdmin();
+  const { error } = await supabase.schema("app").rpc("restore_sb_workflow", { p_workflow_id: workflowId });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  revalidateSb(tenantId);
+  return { ok: true };
+}
+
+export async function updateSbWorkflowMetaAction(
+  tenantId: string,
+  workflowId: string,
+  name: string,
+  purpose: string,
+): Promise<ActionResult> {
+  if (salesbrainFixturesEnabled()) return { ok: true };
+  const supabase = await authedAdmin();
+  const { error } = await supabase.schema("app").rpc("update_sb_workflow_meta", {
+    p_workflow_id: workflowId,
+    p_name: name,
+    p_purpose: purpose,
+  });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  revalidateSb(tenantId);
+  return { ok: true };
+}
+
+export async function listSbRunsAction(
+  tenantId: string,
+  options?: { includeDeleted?: boolean },
+): Promise<ActionResult<SbRunSummary[]>> {
   if (salesbrainFixturesEnabled()) return { ok: true, data: fixtureRuns() };
   const supabase = await authedTenant(tenantId);
-  const { data, error } = await supabase.schema("app").rpc("list_sb_runs", { p_tenant_id: tenantId });
+  const { data, error } = await supabase.schema("app").rpc("list_sb_runs", {
+    p_tenant_id: tenantId,
+    p_include_deleted: options?.includeDeleted ?? false,
+  });
   if (error) return { ok: false, error: migrationError(error.message) };
   const parsedRuns = typeof data === "string" ? JSON.parse(data) : data;
   const list = Array.isArray(parsedRuns) ? parsedRuns : [];
@@ -163,9 +270,28 @@ export async function listSbRunsAction(tenantId: string): Promise<ActionResult<S
         insightCount: Number(r.insightCount ?? 0),
         createdAt: String(r.createdAt ?? ""),
         updatedAt: String(r.updatedAt ?? ""),
+        deletedAt: r.deletedAt ? String(r.deletedAt) : null,
       };
     }),
   };
+}
+
+export async function softDeleteSbRunAction(tenantId: string, runId: string): Promise<ActionResult> {
+  if (salesbrainFixturesEnabled()) return { ok: true };
+  const supabase = await authedTenant(tenantId);
+  const { error } = await supabase.schema("app").rpc("soft_delete_sb_run", { p_run_id: runId });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  revalidateSb(tenantId);
+  return { ok: true };
+}
+
+export async function renameSbRunAction(tenantId: string, runId: string, name: string): Promise<ActionResult> {
+  if (salesbrainFixturesEnabled()) return { ok: true };
+  const supabase = await authedTenant(tenantId);
+  const { error } = await supabase.schema("app").rpc("update_sb_run_name", { p_run_id: runId, p_name: name });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  revalidateSb(tenantId);
+  return { ok: true };
 }
 
 export async function createSbRunAction(

@@ -1,5 +1,5 @@
 export const SALESBRAIN_MIGRATION =
-  "Pas migraties 20260330136400–36402 toe in Supabase, na 20260330136300.";
+  "Pas migraties 20260330136400–36403 toe in Supabase, na 20260330136300.";
 
 export type SbRunStatus =
   | "queued"
@@ -49,6 +49,13 @@ export type SbRunSummary = {
   insightCount: number;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
+};
+
+export type SbWorkflowDetail = SbWorkflowSummary & {
+  tenantId: string;
+  draftGraph: import("@/lib/salesbrain/graph/types").SbWorkflowDefinition;
+  draftFormSchema: import("@/lib/salesbrain/graph/types").SbClientFormSchema;
 };
 
 export type SbRunDetail = SbRunSummary & {
