@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { z } from "zod";
-import { geocodeBusinessNearLocation } from "@/lib/leadgen/google-geo";
+import { geocodeBusinessNearLocation, geocodePlaceLabel } from "@/lib/leadgen/google-geo";
 import { haversineDistanceKm } from "@/lib/leadgen/haversine";
 import { extractEmailsFromHtml, extractPhonesFromHtml, safeFetchUrl } from "@/lib/leadgen/safe-fetch";
 import { normalizeWebsiteHost } from "@/lib/leadgen/web-search";
@@ -159,9 +159,31 @@ export async function processSalesbrainRunById(runId: string): Promise<void> {
   if (!row || row.deleted_at || row.status === "cancelled") return;
 
   const ctx = buildContext(row);
-  const graph = row.graph;
-  const order = topoSort(graph.nodes, graph.edges);
   const warnings: string[] = [];
+
+  if (!ctx.pinned.lat || !ctx.pinned.lng || (Math.abs(ctx.pinned.lat) < 0.01 && Math.abs(ctx.pinned.lng) < 0.01)) {
+    const center = await geocodePlaceLabel(ctx.pinned.locationLabel);
+    if (center) {
+      ctx.pinned.lat = center.lat;
+      ctx.pinned.lng = center.lng;
+    } else {
+      warnings.push("Geen geldige kaartcoördinaten — stel NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in op de server.");
+    }
+  }
+
+  if (!process.env.TAVILY_API_KEY?.trim() && !process.env.SERPER_API_KEY?.trim()) {
+    warnings.push("Geen TAVILY_API_KEY of SERPER_API_KEY — zoeknodes leveren geen resultaten.");
+  }
+
+  const graph = row.graph;
+  if (!graph?.nodes?.length) {
+    await updateSbProgress(admin, runId, "failed", { phase: "failed", message: "Lege workflow-graph" }, {
+      errorMessage: "Workflow heeft geen nodes. Publiceer opnieuw vanuit de editor.",
+    });
+    return;
+  }
+
+  const order = topoSort(graph.nodes, graph.edges);
   let searchHits: SearchHitArtifact[] = [];
   let jobSignals: JobSignalArtifact[] = [];
   let pageEvidence: PageEvidenceArtifact[] = [];
@@ -191,13 +213,25 @@ export async function processSalesbrainRunById(runId: string): Promise<void> {
         case "documents":
           break;
         case "web_research":
-          searchHits = await runWebResearchNode(ctx, node.config as { maxResults?: number });
+          try {
+            searchHits = await runWebResearchNode(ctx, node.config as { maxResults?: number });
+            if (!searchHits.length) warnings.push("Live webonderzoek: geen treffers voor deze query.");
+          } catch (e) {
+            warnings.push(e instanceof Error ? e.message : "Webonderzoek mislukt");
+            searchHits = [];
+          }
           break;
         case "website_fetch":
           pageEvidence = await runWebsiteFetchNode(searchHits);
           break;
         case "job_ads":
-          jobSignals = await runJobAdsNode(ctx, node.config as { maxResults?: number });
+          try {
+            jobSignals = await runJobAdsNode(ctx, node.config as { maxResults?: number });
+            if (!jobSignals.length) warnings.push("Vacatures zoeken: geen treffers.");
+          } catch (e) {
+            warnings.push(e instanceof Error ? e.message : "Vacature-zoeken mislukt");
+            jobSignals = [];
+          }
           break;
         case "gsc_source": {
           const obs = await runGscSourceNode(admin, ctx);
@@ -238,8 +272,13 @@ export async function processSalesbrainRunById(runId: string): Promise<void> {
         case "ai_analysis":
           break;
         case "results": {
+          const strictGeo = Boolean(graph.nodes.find((n) => n.type === "icp_filter")?.config?.strictGeo);
           const seen = new Set<string>();
           const candidates = [...jobSignals.map((j) => ({ kind: "job" as const, j })), ...searchHits.map((h) => ({ kind: "web" as const, h }))];
+
+          if (!candidates.length) {
+            warnings.push("Geen kandidaten na zoeken — controleer API-sleutels en workflow.");
+          }
 
           for (const item of candidates) {
             if (qualified.length >= 30) break;
@@ -282,8 +321,8 @@ export async function processSalesbrainRunById(runId: string): Promise<void> {
                 continue;
               }
             } else {
-              warnings.push(`${displayName}: locatie niet geverifieerd — overgeslagen.`);
-              continue;
+              warnings.push(`${displayName}: locatie niet geverifieerd.`);
+              if (strictGeo) continue;
             }
 
             const observations: string[] = [];

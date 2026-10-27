@@ -14,6 +14,13 @@ function mapsServerKey(): string | null {
   );
 }
 
+/** Geocode a place label (city/region) for run center. */
+export async function geocodePlaceLabel(locationLabel: string): Promise<GeocodeResult | null> {
+  const label = locationLabel.trim();
+  if (!label) return null;
+  return geocodeBusinessNearLocation("", label);
+}
+
 export async function geocodeBusinessNearLocation(
   businessLabel: string,
   locationLabel: string,

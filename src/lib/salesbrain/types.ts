@@ -1,5 +1,5 @@
 export const SALESBRAIN_MIGRATION =
-  "Pas migraties 20260330136400–36403 toe in Supabase, na 20260330136300.";
+  "Pas migraties 20260330136400–36404 toe in Supabase, na 20260330136300.";
 
 export type SbRunStatus =
   | "queued"
@@ -67,6 +67,7 @@ export type SbRunDetail = SbRunSummary & {
     warnings?: string[];
   };
   errorMessage: string | null;
+  warnings: string[];
   inputs: Record<string, unknown>;
   workflowVersionId: string;
 };

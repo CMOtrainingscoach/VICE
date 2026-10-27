@@ -88,6 +88,24 @@ export function SalesbrainRunWorkspace({
         </div>
       ) : null}
 
+      {run.warnings?.length ? (
+        <div className="mt-6 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm" role="status">
+          <p className="font-medium text-vice-text">Waarschuwingen</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-vice-text-muted">
+            {run.warnings.slice(0, 15).map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {!isActive && run.prospectCount === 0 && !run.warnings?.length ? (
+        <p className="mt-6 text-sm text-vice-text-muted">
+          Geen prospects opgeslagen. Start een nieuwe run na deploy; controleer op Vercel: TAVILY_API_KEY, OPENAI_API_KEY en
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.
+        </p>
+      ) : null}
+
       <div className="mt-6 flex gap-2 text-sm">
         {(["prospects", "insights", "sources"] as const).map((t) => (
           <button

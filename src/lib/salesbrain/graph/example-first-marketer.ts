@@ -53,7 +53,7 @@ export function exampleFirstMarketerWorkflow(): SbWorkflowDefinition {
         id: "icp",
         type: "icp_filter",
         label: "Filter & match",
-        config: { strictGeo: true },
+        config: { strictGeo: false },
         position: { x: 340, y: 380 },
       },
       { id: "ai", type: "ai_analysis", label: "AI-analyse", config: { bounded: true }, position: { x: 520, y: 320 } },

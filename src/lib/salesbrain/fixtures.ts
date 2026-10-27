@@ -44,6 +44,7 @@ export function fixtureRunDetail(runId: string): SbRunDetail | null {
     ...s,
     progress: { phase: "done", message: "Demo voltooid", qualified: 2 },
     errorMessage: null,
+    warnings: [],
     inputs: { goalText: "Bedrijven die hun eerste marketeer zoeken" },
     workflowVersionId: "00000000-0000-4000-8000-000000000012",
   };

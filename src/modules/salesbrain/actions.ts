@@ -343,10 +343,19 @@ export async function getSbRunAction(runId: string): Promise<ActionResult<SbRunD
       updatedAt: String(r.updatedAt ?? ""),
       progress: (r.progress as SbRunDetail["progress"]) ?? { phase: "", message: "" },
       errorMessage: r.errorMessage ? String(r.errorMessage) : null,
+      warnings: parseWarnings(r.warnings ?? r.progress),
       inputs: (r.inputs as Record<string, unknown>) ?? {},
       workflowVersionId: String(r.workflowVersionId ?? ""),
     },
   };
+}
+
+function parseWarnings(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map((w) => String(w));
+  if (raw && typeof raw === "object" && Array.isArray((raw as { warnings?: unknown }).warnings)) {
+    return ((raw as { warnings: unknown[] }).warnings).map((w) => String(w));
+  }
+  return [];
 }
 
 export async function listSbProspectsAction(runId: string): Promise<ActionResult<LeadgenProspectRow[]>> {
