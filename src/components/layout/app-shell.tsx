@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { SALESBRAIN_NAV_LABEL } from "@/lib/salesbrain/flags";
 import { usePathname } from "next/navigation";
 import { Home, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -24,8 +23,6 @@ type AppShellProps = {
   children: React.ReactNode;
   userLabel: string;
   isPlatformAdmin: boolean;
-  /** From server layout — avoids NEXT_PUBLIC build-time-only gating for nav label. */
-  salesbrainEnabled?: boolean;
   clientNav?: ClientNav | null;
 };
 
@@ -89,7 +86,6 @@ export function AppShell({
   children,
   userLabel,
   isPlatformAdmin,
-  salesbrainEnabled: salesbrainNav = false,
   clientNav,
 }: AppShellProps) {
   const pathname = usePathname();
@@ -135,10 +131,6 @@ export function AppShell({
     (pathname === `/klanten/${tenantIdFromPath}/strategie/brand` ||
       pathname.startsWith(`/klanten/${tenantIdFromPath}/strategie/brand/`));
   const strategieActive = pathname.includes("/strategie") && !brandActive;
-  const leadgenActive =
-    Boolean(tenantIdFromPath) &&
-    (pathname === `/klanten/${tenantIdFromPath}/leadgen` ||
-      pathname.startsWith(`/klanten/${tenantIdFromPath}/leadgen/`));
   const contentActive =
     Boolean(tenantIdFromPath) &&
     (pathname === `/klanten/${tenantIdFromPath}/content` ||
@@ -226,12 +218,6 @@ export function AppShell({
                 active={contentActive}
                 indent
               />
-              <NavLink
-                href={`/klanten/${activeClient.tenantId}/leadgen`}
-                label={salesbrainNav ? SALESBRAIN_NAV_LABEL : "Leadgen"}
-                active={leadgenActive}
-                indent
-              />
             </div>
           )}
 
@@ -244,12 +230,6 @@ export function AppShell({
                 href={`/klanten/${clientNav.tenantId}`}
                 label="Overzicht"
                 active={pathname === `/klanten/${clientNav.tenantId}`}
-              />
-              <NavLink
-                href={`/klanten/${clientNav.tenantId}/leadgen`}
-                label={salesbrainNav ? SALESBRAIN_NAV_LABEL : "Leadgen"}
-                active={leadgenActive}
-                indent
               />
             </div>
           )}

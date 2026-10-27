@@ -13,7 +13,7 @@ export default async function ContentTypePage({
   params: Promise<{ tenantId: string; type: string }>;
 }) {
   const { tenantId, type } = await params;
-  if (type === "leadgen" || type === "verkoop") redirect(`/klanten/${tenantId}/leadgen`);
+  if (type === "leadgen" || type === "verkoop") notFound();
   if (type === "blog") redirect(`/klanten/${tenantId}/content/blog`);
   if (type === "social") redirect(`/klanten/${tenantId}/content/social`);
   if (!ALLOWED.has(type as ContentTypeId)) notFound();
