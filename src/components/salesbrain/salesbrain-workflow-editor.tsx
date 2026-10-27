@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
+  BackgroundVariant,
   Controls,
-  MiniMap,
   ReactFlow,
   addEdge,
   useEdgesState,
@@ -15,34 +16,54 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Button } from "@/components/ui/button";
+import { sbFlowNodeTypes } from "@/components/salesbrain/flow/sb-flow-node";
+import { SbNodeInspector } from "@/components/salesbrain/flow/sb-node-inspector";
+import { SbPalette } from "@/components/salesbrain/flow/sb-palette";
 import { exampleFirstMarketerFormSchema, exampleFirstMarketerWorkflow } from "@/lib/salesbrain/graph/example-first-marketer";
+import type { SbGraphNode } from "@/lib/salesbrain/graph/types";
 import { canConnectNodeTypes } from "@/lib/salesbrain/graph/port-compat";
 import type { SbWorkflowDefinition } from "@/lib/salesbrain/graph/types";
 import { validateWorkflowGraph } from "@/lib/salesbrain/graph/validate";
 import { buildEvalHarness } from "@/lib/salesbrain/eval-harness";
 import { NODE_REGISTRY } from "@/lib/salesbrain/nodes/registry";
+import type { SbNodeType } from "@/lib/salesbrain/types";
+import { leadgenBasePath } from "@/lib/leadgen/paths";
 import {
   publishWorkflowGraphAction,
   saveWorkflowDraftAction,
 } from "@/modules/salesbrain/actions";
 
-function toFlowNodes(def: SbWorkflowDefinition): Node[] {
-  return def.nodes.map((n, i) => ({
+const COMPACT_NODE_TYPES = new Set<SbNodeType>(["client_context", "website_fetch", "normalize"]);
+
+function graphToFlowNodes(graphNodes: SbGraphNode[], selectedId: string | null): Node[] {
+  return graphNodes.map((n, i) => ({
     id: n.id,
-    type: "default",
+    type: "sb",
     position: n.position ?? { x: (i % 3) * 220, y: Math.floor(i / 3) * 120 },
-    data: { label: `${n.label} (${n.type})`, nodeType: n.type },
+    data: {
+      label: n.label,
+      nodeType: n.type,
+      selected: n.id === selectedId,
+      compact: COMPACT_NODE_TYPES.has(n.type),
+    },
+    selected: n.id === selectedId,
   }));
 }
 
 function toFlowEdges(def: SbWorkflowDefinition): Edge[] {
-  return def.edges.map((e) => ({ id: e.id, source: e.source, target: e.target }));
+  return def.edges.map((e) => ({
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    type: "smoothstep",
+    style: { stroke: "var(--vice-gold)", strokeWidth: 2 },
+  }));
 }
 
-function definitionFromState(base: SbWorkflowDefinition, nodes: Node[], edges: Edge[]): SbWorkflowDefinition {
+function definitionFromState(graphNodes: SbGraphNode[], nodes: Node[], edges: Edge[]): SbWorkflowDefinition {
   return {
     schemaVersion: 1,
-    nodes: base.nodes.map((n) => {
+    nodes: graphNodes.map((n) => {
       const flow = nodes.find((fn) => fn.id === n.id);
       return {
         ...n,
@@ -55,16 +76,22 @@ function definitionFromState(base: SbWorkflowDefinition, nodes: Node[], edges: E
 
 export function SalesbrainWorkflowEditor({
   tenantId,
+  tenantName,
   workflowId,
+  workflowTitle = "Vind bedrijven met groeisignalen",
   initialDefinition,
 }: {
   tenantId: string;
+  tenantName?: string;
   workflowId: string;
+  workflowTitle?: string;
   initialDefinition?: SbWorkflowDefinition;
 }) {
   const base = useMemo(() => initialDefinition ?? exampleFirstMarketerWorkflow(), [initialDefinition]);
   const formSchema = useMemo(() => exampleFirstMarketerFormSchema(), []);
-  const [nodes, setNodes, onNodesChange] = useNodesState(toFlowNodes(base));
+  const [graphNodes, setGraphNodes] = useState<SbGraphNode[]>(base.nodes);
+  const [selectedId, setSelectedId] = useState<string | null>("jobs");
+  const [nodes, setNodes, onNodesChange] = useNodesState(graphToFlowNodes(base.nodes, "jobs"));
   const [edges, setEdges, onEdgesChange] = useEdgesState(toFlowEdges(base));
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState<"workflow" | "client" | "runs">("workflow");
@@ -72,7 +99,12 @@ export function SalesbrainWorkflowEditor({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const nodeTypeById = useMemo(() => new Map(base.nodes.map((n) => [n.id, n.type])), [base.nodes]);
+  const nodeTypeById = useMemo(() => new Map(graphNodes.map((n) => [n.id, n.type])), [graphNodes]);
+  const selectedGraphNode = graphNodes.find((n) => n.id === selectedId) ?? null;
+
+  useEffect(() => {
+    setNodes(graphToFlowNodes(graphNodes, selectedId));
+  }, [graphNodes, selectedId, setNodes]);
 
   const pushHistory = useCallback(
     (nextNodes: Node[], nextEdges: Edge[]) => {
@@ -109,19 +141,41 @@ export function SalesbrainWorkflowEditor({
         return;
       }
       setEdges((eds) => {
-        const next = addEdge(connection, eds);
+        const next = addEdge({ ...connection, type: "smoothstep", style: { stroke: "var(--vice-gold)", strokeWidth: 2 } }, eds);
         pushHistory(nodes, next);
-        scheduleAutosave(definitionFromState(base, nodes, next));
+        scheduleAutosave(definitionFromState(graphNodes, nodes, next));
         return next;
       });
     },
-    [base, isValidConnection, nodes, pushHistory, scheduleAutosave, setEdges],
+    [graphNodes, isValidConnection, nodes, pushHistory, scheduleAutosave, setEdges],
   );
 
   useEffect(() => {
-    pushHistory(toFlowNodes(base), toFlowEdges(base));
+    pushHistory(toFlowNodes(graphNodes, selectedId), toFlowEdges(base));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed undo stack once
   }, []);
+
+  function onNodeConfigChange(nodeId: string, patch: Record<string, unknown>) {
+    setGraphNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, config: { ...n.config, ...patch } } : n)),
+    );
+    const def = definitionFromState(
+      graphNodes.map((n) => (n.id === nodeId ? { ...n, config: { ...n.config, ...patch } } : n)),
+      nodes,
+      edges,
+    );
+    scheduleAutosave(def);
+  }
+
+  function onPalettePick(type: SbNodeType) {
+    const match = graphNodes.find((n) => n.type === type);
+    if (match) {
+      setSelectedId(match.id);
+      setMessage("");
+    } else {
+      setMessage(`Node «${type}» staat nog niet in deze workflow.`);
+    }
+  }
 
   function undo() {
     if (historyIndex <= 0) return;
@@ -142,7 +196,7 @@ export function SalesbrainWorkflowEditor({
   }
 
   async function onPublish() {
-    const def = definitionFromState(base, nodes, edges);
+    const def = definitionFromState(graphNodes, nodes, edges);
     const issues = validateWorkflowGraph(def);
     if (issues.some((i) => i.code !== "deferred_node")) {
       setMessage(issues[0]?.message ?? "Validatiefout");
@@ -152,64 +206,89 @@ export function SalesbrainWorkflowEditor({
     setMessage(result.ok ? "Gepubliceerd." : result.error);
   }
 
-  async function onTestNode() {
-    setMessage("Node-test: gebruik «Test als klant» op de home voor een end-to-end run.");
-  }
-
-  const validationIssues = validateWorkflowGraph(definitionFromState(base, nodes, edges));
+  const validationIssues = validateWorkflowGraph(definitionFromState(graphNodes, nodes, edges));
   const evalHarness = useMemo(() => buildEvalHarness(), []);
+  const basePath = leadgenBasePath(tenantId);
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col">
-      <div className="flex flex-wrap gap-2 border-b border-vice-border px-4 py-2 text-sm">
-        {(["workflow", "client", "runs"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            className={`px-3 py-1 capitalize ${tab === t ? "border-b-2 border-vice-gold" : "text-vice-text-muted"}`}
-            onClick={() => setTab(t)}
-          >
-            {t === "workflow" ? "Workflow" : t === "client" ? "Klantervaring" : "Uitvoeringen"}
-          </button>
-        ))}
-        <div className="ml-auto flex flex-wrap gap-2">
-          <Button type="button" variant="ghost" onClick={undo}>
-            Ongedaan
-          </Button>
-          <Button type="button" variant="ghost" onClick={redo}>
-            Opnieuw
-          </Button>
-          <Button type="button" variant="secondary" onClick={() => void onTestNode()}>
-            Node test
-          </Button>
-          <Button type="button" variant="secondary" onClick={() => void onPublish()}>
-            Publiceren
-          </Button>
+    <div className="flex min-h-[calc(100vh-5rem)] flex-col rounded-xl border border-vice-border bg-vice-bg">
+      <header className="border-b border-vice-border px-6 py-4">
+        <p className="text-sm text-vice-text-muted">
+          {tenantName ?? "Klant"} / Salesbrain / Workflow
+        </p>
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="font-display text-2xl text-vice-text">{workflowTitle}</h1>
+            <p className="mt-1 text-sm text-vice-text-muted">Ontwerp en publiceer de client-workflow.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" asChild>
+              <Link href={`${basePath}/start/${workflowId}?test=1`}>Preview</Link>
+            </Button>
+            <Button type="button" onClick={() => void onPublish()}>
+              Publiceren
+            </Button>
+          </div>
         </div>
-      </div>
-      {message ? <p className="px-4 py-2 text-sm text-vice-text-muted">{message}</p> : null}
+        <div className="mt-4 flex flex-wrap items-center gap-4 border-b border-vice-border pb-0 text-sm">
+          {(["workflow", "client", "runs"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`border-b-2 px-1 pb-2 ${tab === t ? "border-vice-gold text-vice-text" : "border-transparent text-vice-text-muted"}`}
+              onClick={() => setTab(t)}
+            >
+              {t === "workflow" ? "Workflow" : t === "client" ? "Klantervaring" : "Uitvoeringen"}
+            </button>
+          ))}
+          <div className="ml-auto flex gap-2 pb-2">
+            <Button type="button" variant="ghost" className="text-xs" onClick={undo}>
+              Ongedaan
+            </Button>
+            <Button type="button" variant="ghost" className="text-xs" onClick={redo}>
+              Opnieuw
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {message ? (
+        <p className="px-6 py-2 text-sm text-vice-text-muted" role="status">
+          {message}
+        </p>
+      ) : null}
       {validationIssues.length ? (
-        <p className="px-4 py-1 text-xs text-amber-700" role="status">
+        <p className="px-6 py-1 text-xs text-amber-700" role="status">
           {validationIssues[0]?.message}
         </p>
       ) : null}
+
       {tab === "workflow" ? (
-        <div className="min-h-0 flex-1">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            isValidConnection={isValidConnection}
-            fitView
-          >
-            <Background />
-            <Controls />
-            <MiniMap />
-          </ReactFlow>
+        <div className="flex min-h-0 flex-1">
+          <SbPalette onPickType={onPalettePick} />
+          <div className="relative min-w-0 flex-1">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={sbFlowNodeTypes}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeClick={(_, node) => setSelectedId(node.id)}
+              isValidConnection={isValidConnection}
+              fitView
+              fitViewOptions={{ padding: 0.2 }}
+              proOptions={{ hideAttribution: true }}
+              defaultEdgeOptions={{ type: "smoothstep", style: { stroke: "var(--vice-gold)", strokeWidth: 2 } }}
+            >
+              <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--vice-border)" />
+              <Controls className="!border-vice-border !bg-vice-surface !shadow-sm" />
+            </ReactFlow>
+          </div>
+          <SbNodeInspector node={selectedGraphNode} onChange={onNodeConfigChange} />
         </div>
       ) : null}
+
       {tab === "client" ? (
         <div className="space-y-4 p-6 text-sm">
           <p className="text-vice-text-muted">Formulier-mapping (gepubliceerde versie):</p>
@@ -233,6 +312,7 @@ export function SalesbrainWorkflowEditor({
           </ol>
         </div>
       ) : null}
+
       {tab === "runs" ? (
         <div className="space-y-2 p-6 text-sm text-vice-text-muted">
           <p>Node-catalogus en readiness:</p>
@@ -250,4 +330,8 @@ export function SalesbrainWorkflowEditor({
       ) : null}
     </div>
   );
+}
+
+function toFlowNodes(graphNodes: SbGraphNode[], selectedId: string | null): Node[] {
+  return graphToFlowNodes(graphNodes, selectedId);
 }

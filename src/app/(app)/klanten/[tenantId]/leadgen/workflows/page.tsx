@@ -20,9 +20,13 @@ export default async function SalesbrainWorkflowsPage({ params }: { params: Prom
   const workflowId = workflows.ok && workflows.data?.[0]?.id ? workflows.data[0].id : tenantId;
 
   return (
-    <div className="px-4 py-6">
-      <p className="text-sm text-vice-text-muted">{tenantData.name} / Salesbrain / Workflows</p>
-      <SalesbrainWorkflowEditor tenantId={tenantId} workflowId={workflowId} />
+    <div className="px-4 py-4 md:px-6">
+      <SalesbrainWorkflowEditor
+        tenantId={tenantId}
+        tenantName={tenantData.name}
+        workflowId={workflowId}
+        workflowTitle="Vind bedrijven met groeisignalen"
+      />
     </div>
   );
 }
