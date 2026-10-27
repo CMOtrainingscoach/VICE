@@ -79,6 +79,10 @@ export type LeadgenProspectRow = {
   contactStatus: LeadgenContactStatus;
   sourceCount: number;
   assessedAt: string | null;
+  /** Salesbrain run-prospect fields (optional on list rows). */
+  assessmentSummary?: string;
+  signals?: { label: string; kind: "observed" | "interpretation" | "unverified"; detail: string }[];
+  limitations?: string[];
 };
 
 export type LeadgenProspectDetail = LeadgenProspectRow & {

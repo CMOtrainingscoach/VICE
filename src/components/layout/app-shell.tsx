@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { SALESBRAIN_NAV_LABEL, salesbrainEnabled } from "@/lib/salesbrain/flags";
 import { usePathname } from "next/navigation";
 import { Home, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -224,7 +225,7 @@ export function AppShell({
               />
               <NavLink
                 href={`/klanten/${activeClient.tenantId}/leadgen`}
-                label="Leadgen"
+                label={salesbrainEnabled() ? SALESBRAIN_NAV_LABEL : "Leadgen"}
                 active={leadgenActive}
                 indent
               />

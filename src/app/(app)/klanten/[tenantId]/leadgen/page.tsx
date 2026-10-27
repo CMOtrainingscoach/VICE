@@ -1,9 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import { LeadgenRunList } from "@/components/leadgen/leadgen-run-list";
+import { SalesbrainHome } from "@/components/salesbrain/salesbrain-home";
 import { getUserAppContext } from "@/lib/auth/context";
+import { canAccessTenant } from "@/lib/auth/tenant-access";
+import { salesbrainEnabled } from "@/lib/salesbrain/flags";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
 import { listLeadgenRunsAction } from "@/modules/leadgen/actions";
+import { listSbRunsAction, listSbWorkflowsAction } from "@/modules/salesbrain/actions";
 
 export const maxDuration = 300;
 
@@ -11,7 +15,7 @@ export default async function LeadgenPage({ params }: { params: Promise<{ tenant
   const { tenantId } = await params;
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
-  if (!ctx.isPlatformAdmin) redirect(`/klanten/${tenantId}`);
+  if (!canAccessTenant(ctx, tenantId)) redirect("/");
 
   const supabase = await createClient();
   const { data: tenantData } = await supabase
@@ -21,6 +25,21 @@ export default async function LeadgenPage({ params }: { params: Promise<{ tenant
     .eq("id", tenantId)
     .maybeSingle();
   if (!tenantData) notFound();
+
+  const tenantName = (tenantData as Pick<TenantRow, "name">).name;
+
+  if (salesbrainEnabled()) {
+    const [workflows, runs] = await Promise.all([listSbWorkflowsAction(tenantId), listSbRunsAction(tenantId)]);
+    return (
+      <SalesbrainHome
+        tenantId={tenantId}
+        tenantName={tenantName}
+        workflows={workflows.ok ? workflows.data ?? [] : []}
+        runs={runs.ok ? runs.data ?? [] : []}
+        isAdmin={ctx.isPlatformAdmin}
+      />
+    );
+  }
 
   const runs = await listLeadgenRunsAction(tenantId);
   const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() || null;
@@ -37,7 +56,7 @@ export default async function LeadgenPage({ params }: { params: Promise<{ tenant
   return (
     <LeadgenRunList
       tenantId={tenantId}
-      tenantName={(tenantData as Pick<TenantRow, "name">).name}
+      tenantName={tenantName}
       initialRuns={runs.data ?? []}
       mapsApiKey={mapsApiKey}
     />

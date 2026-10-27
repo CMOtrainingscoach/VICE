@@ -133,6 +133,18 @@ export async function processLeadgenRunById(runId: string): Promise<void> {
       return;
     }
 
+    const excludedHosts = new Set<string>();
+    const excludedRows = await admin
+      .schema("app")
+      .from("leadgen_prospects")
+      .select("website_host")
+      .eq("tenant_id", run.tenant_id)
+      .eq("exclude_from_future_runs", true);
+    for (const row of excludedRows.data ?? []) {
+      const h = (row as { website_host?: string }).website_host;
+      if (h) excludedHosts.add(h.toLowerCase());
+    }
+
     const seenHosts = new Set<string>();
     let discovered = 0;
     let assessed = 0;
@@ -145,7 +157,7 @@ export async function processLeadgenRunById(runId: string): Promise<void> {
       if (!row || row.deleted_at || row.status === "cancelled") return;
 
       const host = normalizeWebsiteHost(hit.url);
-      if (!host || seenHosts.has(host)) continue;
+      if (!host || seenHosts.has(host) || excludedHosts.has(host)) continue;
       seenHosts.add(host);
       discovered += 1;
 
