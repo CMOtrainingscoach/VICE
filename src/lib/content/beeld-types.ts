@@ -103,7 +103,7 @@ export function beeldExportDimensions(presetId: string, quality: BeeldImageQuali
 export type BeeldLayerKind = "image" | "logo" | "text" | "ai_label";
 
 /** EU AI transparency label (bundled in /public/content). */
-export const EU_AI_LABEL_PATH = "/content/eu-ai-label.png";
+export const EU_AI_LABEL_PATH = "/content/eu-ai-label.svg";
 
 export type BeeldLayerBase = {
   id: string;

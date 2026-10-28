@@ -1,9 +1,5 @@
-import {
-  EU_AI_LABEL_PATH,
-  type BeeldCanvasPreset,
-  type BeeldDocument,
-  type BeeldLayer,
-} from "@/lib/content/beeld-types";
+import { drawEuAiLabelOnCanvas } from "@/lib/content/beeld-ai-label";
+import type { BeeldCanvasPreset, BeeldDocument, BeeldLayer } from "@/lib/content/beeld-types";
 import type { TypeStyle } from "@/lib/brand/types";
 import { fontStack } from "@/lib/brand/fonts";
 
@@ -105,10 +101,8 @@ export async function flattenBeeldDocument(input: {
   exportWidth: number;
   exportHeight: number;
   logoUrl?: string | null;
-  aiLabelUrl?: string;
   typography: Partial<Record<string, TypeStyle>>;
 }): Promise<Blob> {
-  const aiLabelSrc = input.aiLabelUrl ?? EU_AI_LABEL_PATH;
   const canvas = document.createElement("canvas");
   canvas.width = input.exportWidth;
   canvas.height = input.exportHeight;
@@ -139,18 +133,7 @@ export async function flattenBeeldDocument(input: {
       ctx.restore();
     }
     if (layer.kind === "ai_label") {
-      const img = await loadImage(aiLabelSrc);
-      ctx.save();
-      ctx.globalAlpha = layer.opacity;
-      const boxW = (layer.width / 100) * canvas.width;
-      const boxH = (layer.height / 100) * canvas.height;
-      const x = (layer.x / 100) * canvas.width;
-      const y = (layer.y / 100) * canvas.height;
-      const scale = Math.min(boxW / img.width, boxH / img.height);
-      const w = img.width * scale;
-      const h = img.height * scale;
-      ctx.drawImage(img, x + (boxW - w) / 2, y + (boxH - h) / 2, w, h);
-      ctx.restore();
+      drawEuAiLabelOnCanvas(ctx, layer, canvas.width, canvas.height);
     }
     if (layer.kind === "text" && layer.text.trim()) {
       drawTextLayer(ctx, layer, canvas.width, canvas.height, input.typography);

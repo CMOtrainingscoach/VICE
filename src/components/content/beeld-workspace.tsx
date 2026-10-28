@@ -30,7 +30,6 @@ import {
   beeldExportDimensions,
   beeldPresetById,
   defaultLayerName,
-  EU_AI_LABEL_PATH,
   newBeeldLayerId,
   type BeeldComposition,
   type BeeldCompositionSummary,
@@ -414,7 +413,6 @@ export function BeeldWorkspace({
         exportWidth: dims.width,
         exportHeight: dims.height,
         logoUrl: clientBrand?.logoUrl,
-        aiLabelUrl: `${window.location.origin}${EU_AI_LABEL_PATH}`,
         typography: clientBrand?.typography ?? {},
       });
       const url = URL.createObjectURL(blob);
@@ -1089,16 +1087,27 @@ function BeeldLayerPreview({
         role="button"
         tabIndex={0}
         onPointerDown={(e) => beginPointer("move", e)}
-        className={`absolute flex cursor-move items-center justify-center ${ringClass}`}
+        className={`absolute flex cursor-move items-center justify-center overflow-visible ${ringClass}`}
         style={{ ...boxStyle, zIndex }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={EU_AI_LABEL_PATH}
-          alt="AI"
-          className="pointer-events-none max-h-full max-w-full object-contain"
-          draggable={false}
-        />
+        <svg
+          viewBox="0 0 100 100"
+          className="pointer-events-none size-full overflow-visible"
+          aria-hidden
+        >
+          <circle cx="50" cy="50" r="50" fill="#989898" />
+          <text
+            x="50"
+            y="54"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontFamily="system-ui, Arial, sans-serif"
+            fontSize="38"
+            fontWeight="700"
+          >
+            AI
+          </text>
+        </svg>
         {selected ? (
           <span
             className="absolute bottom-0 right-0 size-3 cursor-se-resize rounded-sm bg-vice-gold"
