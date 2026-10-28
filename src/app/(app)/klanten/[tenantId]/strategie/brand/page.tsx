@@ -6,8 +6,10 @@ import type { TenantRow } from "@/lib/types/tenant";
 import { loadClientBrandAction } from "@/modules/brand/actions";
 import { loadContentLearningsAction } from "@/modules/content/content-learning-actions";
 import type { ContentLearningEvent } from "@/lib/content/content-learning-types";
+import { listBrandCharactersAction } from "@/modules/brand/character-actions";
 import { listBuyerPersonasForIcpAction } from "@/modules/brand/buyer-persona-actions";
 import { listTenantIcpsAction } from "@/modules/strategy/icp-actions";
+import type { BrandCharacter } from "@/lib/brand/character-types";
 import type { BuyerPersona } from "@/lib/brand/buyer-persona-types";
 
 export default async function ClientBrandPage({
@@ -46,6 +48,9 @@ export default async function ClientBrandPage({
     const personas = await listBuyerPersonasForIcpAction(tenantId, initialIcpId);
     if (personas.ok && personas.data) initialPersonas = personas.data;
   }
+  let initialCharacters: BrandCharacter[] = [];
+  const characters = await listBrandCharactersAction(tenantId);
+  if (characters.ok && characters.data) initialCharacters = characters.data;
 
   if (!loaded.ok || !loaded.data) {
     return (
@@ -59,7 +64,12 @@ export default async function ClientBrandPage({
   }
 
   const initialTab =
-    tab === "prompts" || tab === "personas" || tab === "visual" || tab === "color" || tab === "type"
+    tab === "prompts" ||
+    tab === "personas" ||
+    tab === "characters" ||
+    tab === "visual" ||
+    tab === "color" ||
+    tab === "type"
       ? tab
       : undefined;
 
@@ -72,6 +82,7 @@ export default async function ClientBrandPage({
       icpOptions={icpOptions}
       initialIcpId={initialIcpId}
       initialPersonas={initialPersonas}
+      initialCharacters={initialCharacters}
       initialTab={initialTab}
     />
   );
