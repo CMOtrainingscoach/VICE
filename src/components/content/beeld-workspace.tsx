@@ -58,6 +58,19 @@ const fieldClass =
 const TYPE_ROLES: TypeRole[] = ["h1", "h2", "h3", "body"];
 const SAVE_DEBOUNCE_MS = 2200;
 
+function normalizeHexColor(hex: string): string {
+  const raw = hex.trim().replace(/^#/, "");
+  if (raw.length === 3) {
+    return `#${raw
+      .split("")
+      .map((c) => c + c)
+      .join("")
+      .toLowerCase()}`;
+  }
+  if (raw.length === 6) return `#${raw.toLowerCase()}`;
+  return hex.trim().toLowerCase();
+}
+
 function fullBleedImageLayer(name: string): BeeldLayer {
   return {
     id: newBeeldLayerId(),
@@ -109,7 +122,7 @@ function aiLabelLayer(): BeeldLayer {
   };
 }
 
-function textLayer(): BeeldLayer {
+function textLayer(defaultColor = "#ffffff"): BeeldLayer {
   return {
     id: newBeeldLayerId(),
     name: "Tekst",
@@ -119,7 +132,7 @@ function textLayer(): BeeldLayer {
     opacity: 1,
     text: "Jouw boodschap",
     typeRole: "h2",
-    color: "#ffffff",
+    color: defaultColor,
     align: "center",
     x: 8,
     y: 72,
@@ -174,6 +187,22 @@ export function BeeldWorkspace({
 
   const preset = beeldPresetById(composition?.presetId ?? "instagram_feed");
   const selectedLayer = composition?.document.layers.find((l) => l.id === selectedLayerId) ?? null;
+
+  const brandTextColors = useMemo(() => {
+    const seen = new Set<string>();
+    const picked: { name: string; hex: string; role: string }[] = [];
+    for (const color of [...brand.colors, ...(clientBrand?.colors ?? [])]) {
+      const hex = normalizeHexColor(color.hex || "");
+      if (!hex.startsWith("#") || hex.length < 4 || seen.has(hex)) continue;
+      seen.add(hex);
+      picked.push({
+        name: color.name || color.role || "Kleur",
+        hex,
+        role: color.role || "",
+      });
+    }
+    return picked;
+  }, [brand.colors, clientBrand?.colors]);
 
   const fontHref = useMemo(() => {
     if (!clientBrand) return null;
@@ -327,11 +356,12 @@ export function BeeldWorkspace({
       return;
     }
     const imageCount = composition.document.layers.filter((l) => l.kind === "image").length;
+    const defaultTextColor = brandTextColors[0]?.hex ?? "#ffffff";
     const layer =
       kind === "logo"
         ? logoLayer()
         : kind === "text"
-          ? textLayer()
+          ? textLayer(defaultTextColor)
           : kind === "ai_label"
             ? aiLabelLayer()
             : fullBleedImageLayer(defaultLayerName("image", imageCount + 1));
@@ -819,17 +849,69 @@ export function BeeldWorkspace({
                       </div>
                       <div>
                         <Label className="text-xs text-vice-text-muted">Kleur</Label>
-                        <Input
-                          type="color"
-                          value={selectedLayer.color}
-                          onChange={(e) => {
-                            updateDocument((doc) => ({
-                              layers: doc.layers.map((l) =>
-                                l.id === selectedLayer.id && l.kind === "text" ? { ...l, color: e.target.value } : l,
-                              ),
-                            }));
-                          }}
-                        />
+                        {brandTextColors.length > 0 ? (
+                          <div className="mt-2">
+                            <p className="mb-1.5 text-[11px] text-vice-text-muted">Merkkleuren</p>
+                            <div className="flex flex-wrap gap-2">
+                              {brandTextColors.map((color) => {
+                                const active =
+                                  normalizeHexColor(selectedLayer.color) === normalizeHexColor(color.hex);
+                                return (
+                                  <button
+                                    key={color.hex}
+                                    type="button"
+                                    title={`${color.name}${color.role ? ` · ${color.role}` : ""} (${color.hex})`}
+                                    disabled={Boolean(busy)}
+                                    className={
+                                      active
+                                        ? "size-9 rounded-md ring-2 ring-vice-gold ring-offset-2 ring-offset-vice-bg"
+                                        : "size-9 rounded-md ring-1 ring-vice-border hover:ring-vice-gold/60"
+                                    }
+                                    style={{ backgroundColor: color.hex }}
+                                    onClick={() => {
+                                      updateDocument((doc) => ({
+                                        layers: doc.layers.map((l) =>
+                                          l.id === selectedLayer.id && l.kind === "text"
+                                            ? { ...l, color: color.hex }
+                                            : l,
+                                        ),
+                                      }));
+                                    }}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="mt-1 text-[11px] text-vice-text-muted">
+                            Geen merkkleuren — vul kleuren in onder Brand.
+                          </p>
+                        )}
+                        <div className="mt-3 flex items-center gap-3">
+                          <Label className="shrink-0 text-[11px] text-vice-text-muted">Eigen kleur</Label>
+                          <Input
+                            type="color"
+                            className="h-10 w-14 cursor-pointer p-1"
+                            value={
+                              normalizeHexColor(selectedLayer.color).match(/^#[0-9a-f]{6}$/)
+                                ? normalizeHexColor(selectedLayer.color)
+                                : "#ffffff"
+                            }
+                            disabled={Boolean(busy)}
+                            onChange={(e) => {
+                              updateDocument((doc) => ({
+                                layers: doc.layers.map((l) =>
+                                  l.id === selectedLayer.id && l.kind === "text"
+                                    ? { ...l, color: e.target.value }
+                                    : l,
+                                ),
+                              }));
+                            }}
+                          />
+                          <span className="font-mono text-xs text-vice-text-muted">
+                            {normalizeHexColor(selectedLayer.color)}
+                          </span>
+                        </div>
                       </div>
                       <p className="text-xs text-vice-text-muted">
                         Sleep op het canvas; gouden hoek = schalen. Lettergrootte geldt in de export (14–120px).
