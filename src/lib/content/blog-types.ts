@@ -49,6 +49,7 @@ export type BlogConcept = {
   publishedAt: string | null;
   textAiBaseline: { title?: string; bodyPlain?: string } | null;
   buyerPersonaId: string | null;
+  brandCharacterId: string | null;
   createdAt: string;
   updatedAt: string;
 };

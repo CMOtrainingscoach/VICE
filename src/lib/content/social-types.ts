@@ -50,6 +50,7 @@ export type SocialPostConcept = {
   imageJobError: string;
   textAiBaseline: { caption?: string; hashtags?: string } | null;
   buyerPersonaId: string | null;
+  brandCharacterId: string | null;
   createdAt: string;
   updatedAt: string;
 };

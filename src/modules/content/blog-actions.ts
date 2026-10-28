@@ -35,6 +35,7 @@ import {
   type BrandContext,
   type JobStatus,
 } from "@/lib/content/blog-types";
+import { resolveBrandCharacterLockPromptAction } from "@/modules/brand/character-actions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -504,7 +505,7 @@ export async function applyBlogRewriteAction(
 
 export async function generateBlogVisualAction(
   conceptId: string,
-  options?: { tweak?: string; styleId?: string; subject?: string },
+  options?: { tweak?: string; styleId?: string; subject?: string; brandCharacterId?: string | null },
 ): Promise<ActionResult<BlogConcept>> {
   const loaded = await loadBlogConceptAction(conceptId);
   if (!loaded.ok || !loaded.data) return loaded;
@@ -520,11 +521,22 @@ export async function generateBlogVisualAction(
     brand.data.styles.find((style) => style.id === options?.styleId) ??
     brand.data.styles[0];
 
+  const characterId = options?.brandCharacterId ?? concept.brandCharacterId;
+  let characterLock: { name: string; lockPrompt: string } | null = null;
+  if (characterId) {
+    const resolved = await resolveBrandCharacterLockPromptAction(concept.tenantId, characterId);
+    if (resolved.ok && resolved.data) characterLock = resolved.data;
+  }
+
   const supabase = await authed();
   await supabase.schema("app").rpc("save_blog_concept", {
     p_concept_id: conceptId,
     p_expected: concept.updatedAt,
-    p_patch: { imageJobStatus: "running", imageJobError: "" },
+    p_patch: {
+      imageJobStatus: "running",
+      imageJobError: "",
+      ...(options?.brandCharacterId !== undefined ? { brandCharacterId: options.brandCharacterId || null } : {}),
+    },
   });
 
   try {
@@ -541,6 +553,8 @@ export async function generateBlogVisualAction(
       styleName: selectedStyle.name,
       subject: options?.subject,
       tweak: options?.tweak,
+      characterLockPrompt: characterLock?.lockPrompt,
+      characterName: characterLock?.name,
     });
 
     const ext = image.mime.includes("jpeg") ? "jpg" : image.mime.includes("webp") ? "webp" : "png";
@@ -718,6 +732,7 @@ async function mapConcept(raw: unknown): Promise<BlogConcept | null> {
         ? (row.textAiBaseline as BlogConcept["textAiBaseline"])
         : null,
     buyerPersonaId: row.buyerPersonaId ? String(row.buyerPersonaId) : null,
+    brandCharacterId: row.brandCharacterId ? String(row.brandCharacterId) : null,
     createdAt: String(row.createdAt ?? ""),
     updatedAt: String(row.updatedAt ?? ""),
   };

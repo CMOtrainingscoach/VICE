@@ -234,6 +234,8 @@ export async function generateSocialImage(input: {
   slideTitle?: string;
   slideIndex?: number;
   slideCount?: number;
+  characterLockPrompt?: string;
+  characterName?: string;
 }): Promise<{ bytes: Uint8Array; mime: string; prompt: string; styleSummary: string; width: number; height: number }> {
   const aspect = socialImageAspect(input.format);
   const width = aspect === "9:16" ? 1024 : 1024;
@@ -253,7 +255,12 @@ export async function generateSocialImage(input: {
     .join(" · ")
     .slice(0, 220) || `Beeldstijl van ${input.brandName}`;
 
-  const subject = input.subject?.trim() || input.topic;
+  let subject = input.subject?.trim() || input.topic;
+  if (input.characterName?.trim()) {
+    subject = input.subject?.trim()
+      ? `${input.subject.trim()} (featuring brand character ${input.characterName.trim()})`
+      : `Featuring brand character ${input.characterName.trim()}: ${subject}`;
+  }
   const slideLine =
     input.format === "carousel" && input.slideIndex != null && input.slideCount
       ? `Carousel slide ${input.slideIndex + 1} of ${input.slideCount}${input.slideTitle ? `: ${input.slideTitle}` : ""}. Distinct composition from other slides.`
@@ -263,6 +270,7 @@ export async function generateSocialImage(input: {
     "LOCKED BRAND VISUAL STYLE — follow this block strictly; do not invent another aesthetic:",
     input.stylePrompt || `Brand look of ${input.brandName}`,
     "",
+    input.characterLockPrompt?.trim() || "",
     `Social media visual for ${input.brandName}.`,
     input.format === "reel" ? "Vertical 9:16 composition for Reels/TikTok." : "Square 1:1 composition for a feed post.",
     slideLine,

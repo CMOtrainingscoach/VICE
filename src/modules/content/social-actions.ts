@@ -30,6 +30,7 @@ import {
   type JobStatus,
 } from "@/lib/content/social-types";
 import { loadBlogBrandContextAction } from "@/modules/content/blog-actions";
+import { resolveBrandCharacterLockPromptAction } from "@/modules/brand/character-actions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -137,6 +138,7 @@ async function mapConcept(raw: unknown): Promise<SocialPostConcept | null> {
         ? (row.textAiBaseline as SocialPostConcept["textAiBaseline"])
         : null,
     buyerPersonaId: row.buyerPersonaId ? String(row.buyerPersonaId) : null,
+    brandCharacterId: row.brandCharacterId ? String(row.brandCharacterId) : null,
     createdAt: String(row.createdAt ?? ""),
     updatedAt: String(row.updatedAt ?? ""),
   };
@@ -422,9 +424,21 @@ export async function planSocialCarouselOutlineAction(
   }
 }
 
+async function characterLockForGeneration(tenantId: string, characterId: string | null | undefined) {
+  if (!characterId) return null;
+  const resolved = await resolveBrandCharacterLockPromptAction(tenantId, characterId);
+  if (!resolved.ok || !resolved.data) return null;
+  return resolved.data;
+}
+
 export async function generateSocialVisualAction(
   conceptId: string,
-  options?: { styleId?: string; subject?: string; slides?: SocialCarouselSlide[] },
+  options?: {
+    styleId?: string;
+    subject?: string;
+    slides?: SocialCarouselSlide[];
+    brandCharacterId?: string | null;
+  },
 ): Promise<ActionResult<SocialPostConcept>> {
   const loaded = await loadSocialPostConceptAction(conceptId);
   if (!loaded.ok || !loaded.data) return loaded;
@@ -439,11 +453,19 @@ export async function generateSocialVisualAction(
   const selectedStyle =
     brand.data.styles.find((style) => style.id === options?.styleId) ?? brand.data.styles[0];
 
+  const characterId =
+    options?.brandCharacterId !== undefined ? options.brandCharacterId || null : concept.brandCharacterId;
+  const characterLock = await characterLockForGeneration(concept.tenantId, characterId);
+
   const supabase = await authed();
   await supabase.schema("app").rpc("save_social_post_concept", {
     p_concept_id: conceptId,
     p_expected: concept.updatedAt,
-    p_patch: { imageJobStatus: "running", imageJobError: "" },
+    p_patch: {
+      imageJobStatus: "running",
+      imageJobError: "",
+      ...(options?.brandCharacterId !== undefined ? { brandCharacterId: options.brandCharacterId || null } : {}),
+    },
   });
 
   try {
@@ -484,6 +506,8 @@ export async function generateSocialVisualAction(
         slideTitle: job.slideTitle,
         slideIndex: job.slideIndex,
         slideCount: job.slideCount,
+        characterLockPrompt: characterLock?.lockPrompt,
+        characterName: characterLock?.name,
       });
 
       const ext = image.mime.includes("jpeg") ? "jpg" : image.mime.includes("webp") ? "webp" : "png";

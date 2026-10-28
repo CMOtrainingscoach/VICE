@@ -1,10 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { buildBrandCharacterLockPrompt } from "@/lib/brand/character-prompt";
 import {
+  BRAND_CHARACTER_CONTENT_MIGRATION,
   BRAND_CHARACTER_MIGRATION,
   type BrandCharacter,
   type BrandCharacterAssetSlot,
+  type BrandCharacterContentOption,
 } from "@/lib/brand/character-types";
 import { sniffImage } from "@/lib/brand/image-sniff";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
@@ -14,9 +17,12 @@ import { createClient } from "@/lib/supabase/server";
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
 const MISSING =
-  /list_brand_characters|upsert_brand_character|set_brand_character_asset|delete_brand_character|brand-characters|schema cache|does not exist/i;
+  /list_brand_characters|list_brand_characters_for_content|get_brand_character_lock_context|upsert_brand_character|set_brand_character_asset|delete_brand_character|brand-characters|brand_character_id|schema cache|does not exist/i;
 
 function migrationError(message: string): string {
+  if (/brand_character_id|list_brand_characters_for_content/i.test(message)) {
+    return BRAND_CHARACTER_CONTENT_MIGRATION;
+  }
   return MISSING.test(message) ? BRAND_CHARACTER_MIGRATION : message;
 }
 
@@ -86,6 +92,51 @@ async function mapList(raw: unknown): Promise<BrandCharacter[]> {
 
 function revalidateBrand(tenantId: string) {
   revalidatePath(`/klanten/${tenantId}/strategie/brand`);
+}
+
+export async function listBrandCharactersForContentAction(
+  tenantId: string,
+): Promise<ActionResult<BrandCharacterContentOption[]>> {
+  const supabase = await client();
+  const { data, error } = await supabase.schema("app").rpc("list_brand_characters_for_content", {
+    p_tenant_id: tenantId,
+  });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  const rows = Array.isArray(data) ? data : [];
+  return {
+    ok: true,
+    data: rows
+      .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
+      .map((row) => ({
+        id: String(row.id ?? ""),
+        name: String(row.name ?? ""),
+        referenceCount: Number(row.referenceCount ?? row.reference_count ?? 0),
+      }))
+      .filter((row) => row.id && row.name),
+  };
+}
+
+export async function resolveBrandCharacterLockPromptAction(
+  tenantId: string,
+  characterId: string,
+): Promise<ActionResult<{ name: string; lockPrompt: string }>> {
+  const supabase = await client();
+  const { data, error } = await supabase.schema("app").rpc("get_brand_character_lock_context", {
+    p_character_id: characterId,
+  });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  const mapped = await mapList([data]);
+  const character = mapped[0];
+  if (!character || character.tenantId !== tenantId) {
+    return { ok: false, error: "Personage niet gevonden voor deze klant." };
+  }
+  return {
+    ok: true,
+    data: {
+      name: character.name,
+      lockPrompt: buildBrandCharacterLockPrompt(character),
+    },
+  };
 }
 
 export async function listBrandCharactersAction(tenantId: string): Promise<ActionResult<BrandCharacter[]>> {

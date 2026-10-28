@@ -13,6 +13,7 @@ import {
   loadSocialPostConceptAction,
 } from "@/modules/content/social-actions";
 import { listContentBuyerPersonasAction } from "@/modules/content/audience-actions";
+import { listBrandCharactersForContentAction } from "@/modules/brand/character-actions";
 
 export const maxDuration = 300;
 
@@ -35,13 +36,14 @@ export default async function SocialConceptPage({
     .maybeSingle();
   if (!tenantData) notFound();
 
-  const [brand, concept, concepts, blogs, meetings, buyerPersonas] = await Promise.all([
+  const [brand, concept, concepts, blogs, meetings, buyerPersonas, brandCharacters] = await Promise.all([
     loadBlogBrandContextAction(tenantId),
     loadSocialPostConceptAction(conceptId),
     listSocialPostConceptsAction(tenantId),
     listBlogConceptsAction(tenantId),
     listBlogSourceMeetingsAction(tenantId),
     listContentBuyerPersonasAction(tenantId),
+    listBrandCharactersForContentAction(tenantId),
   ]);
 
   if (!brand.ok || !brand.data) {
@@ -76,6 +78,7 @@ export default async function SocialConceptPage({
       blogs={blogs.ok ? blogs.data ?? [] : []}
       meetings={meetings.ok ? meetings.data ?? [] : []}
       buyerPersonaOptions={buyerPersonas.ok ? buyerPersonas.data ?? [] : []}
+      brandCharacterOptions={brandCharacters.ok ? brandCharacters.data ?? [] : []}
     />
   );
 }

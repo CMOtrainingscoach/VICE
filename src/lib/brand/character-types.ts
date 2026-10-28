@@ -33,3 +33,12 @@ export const BRAND_CHARACTER_SLOTS: {
 
 export const BRAND_CHARACTER_MIGRATION =
   "Pas migratie 20260330136405 toe in de Supabase SQL-editor (brand-characters bucket + tabellen).";
+
+export const BRAND_CHARACTER_CONTENT_MIGRATION =
+  "Pas migratie 20260330136406 toe voor character-keuze in content (social/blog).";
+
+export type BrandCharacterContentOption = {
+  id: string;
+  name: string;
+  referenceCount: number;
+};

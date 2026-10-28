@@ -13,10 +13,12 @@ import type {
   BrandContext,
   ContentBuyerPersonaOption,
 } from "@/lib/content/blog-types";
+import { ContentBrandCharacterField } from "@/components/content/content-brand-character-field";
 import {
   ContentBuyerPersonaField,
   resolveDefaultContentBuyerPersonaId,
 } from "@/components/content/content-buyer-persona-field";
+import type { BrandCharacterContentOption } from "@/lib/brand/character-types";
 import {
   SOCIAL_CHANNELS,
   SOCIAL_FORMATS,
@@ -51,6 +53,7 @@ export function SocialWorkspace({
   blogs,
   meetings,
   buyerPersonaOptions = [],
+  brandCharacterOptions = [],
 }: {
   tenantId: string;
   tenantName: string;
@@ -60,6 +63,7 @@ export function SocialWorkspace({
   blogs: BlogConceptSummary[];
   meetings: BlogSourceMeeting[];
   buyerPersonaOptions?: ContentBuyerPersonaOption[];
+  brandCharacterOptions?: BrandCharacterContentOption[];
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -74,6 +78,7 @@ export function SocialWorkspace({
   const [buyerPersonaId, setBuyerPersonaId] = useState(() =>
     resolveDefaultContentBuyerPersonaId(buyerPersonaOptions, initial?.buyerPersonaId ?? null),
   );
+  const [brandCharacterId, setBrandCharacterId] = useState(initial?.brandCharacterId ?? "");
   const [caption, setCaption] = useState(initial?.caption ?? "");
   const [hashtags, setHashtags] = useState(initial?.hashtags ?? "");
   const [visualSubject, setVisualSubject] = useState("");
@@ -115,6 +120,7 @@ export function SocialWorkspace({
           caption,
           hashtags,
           buyerPersonaId: buyerPersonaId || null,
+          brandCharacterId: brandCharacterId || null,
         },
         { quiet: true },
       );
@@ -140,9 +146,10 @@ export function SocialWorkspace({
       return null;
     }
     let createdConcept = created.data;
-    if (buyerPersonaId) {
+    if (buyerPersonaId || brandCharacterId) {
       const withPersona = await saveSocialPostConceptAction(createdConcept.id, createdConcept.updatedAt, {
-        buyerPersonaId,
+        buyerPersonaId: buyerPersonaId || null,
+        brandCharacterId: brandCharacterId || null,
       });
       if (withPersona.ok && withPersona.data) createdConcept = withPersona.data;
     }
@@ -174,6 +181,7 @@ export function SocialWorkspace({
           blogConceptId: topicMode === "blog" ? blogConceptId || null : null,
           meetingRecordingId: topicMode === "meeting" ? meetingRecordingId || null : null,
           buyerPersonaId: buyerPersonaId || null,
+          brandCharacterId: brandCharacterId || null,
         });
         if (!saved.ok || !saved.data) {
           setError(saved.ok ? "Opslaan mislukt" : saved.error);
@@ -250,6 +258,7 @@ export function SocialWorkspace({
         const result = await generateSocialVisualAction(current.id, {
           styleId: selectedStyleId || undefined,
           slides,
+          brandCharacterId: brandCharacterId || null,
         });
         if (!result.ok || !result.data) {
           setError(result.ok ? "Visuals genereren mislukt" : result.error);
@@ -263,6 +272,7 @@ export function SocialWorkspace({
       const result = await generateSocialVisualAction(current.id, {
         styleId: selectedStyleId || undefined,
         subject: visualSubject.trim() || undefined,
+        brandCharacterId: brandCharacterId || null,
       });
       if (!result.ok || !result.data) {
         setError(result.ok ? "Visual genereren mislukt" : result.error);
@@ -599,6 +609,16 @@ export function SocialWorkspace({
               </select>
             </div>
           ) : null}
+
+          <div className="mt-4">
+            <ContentBrandCharacterField
+              tenantId={tenantId}
+              options={brandCharacterOptions}
+              value={brandCharacterId}
+              disabled={busy !== ""}
+              onChange={setBrandCharacterId}
+            />
+          </div>
 
           {format === "carousel" ? (
             <div className="mt-4 space-y-3">

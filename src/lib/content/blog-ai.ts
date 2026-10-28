@@ -166,6 +166,8 @@ export async function generateBlogImage(input: {
   /** Optionele foto-inhoud; leeg = afleiden uit artikel. Stijl blijft altijd gelden. */
   subject?: string;
   tweak?: string;
+  characterLockPrompt?: string;
+  characterName?: string;
 }): Promise<{ bytes: Uint8Array; mime: string; prompt: string; styleSummary: string }> {
   const colorLine = input.colors
     .slice(0, 4)
@@ -178,11 +180,17 @@ export async function generateBlogImage(input: {
     input.tags.length ? `Tags: ${input.tags.join(", ")}` : "",
   ].filter(Boolean).join(" · ").slice(0, 220) || `Beeldstijl van ${input.brandName}`;
 
-  const subject = input.subject?.trim();
+  let subject = input.subject?.trim();
+  if (input.characterName?.trim()) {
+    subject = subject
+      ? `${subject} (featuring brand character ${input.characterName.trim()})`
+      : `Featuring brand character ${input.characterName.trim()}: ${input.title || input.summary}`;
+  }
   const prompt = [
     "LOCKED BRAND VISUAL STYLE — follow this block strictly; do not invent another aesthetic:",
     input.stylePrompt || `Brand look of ${input.brandName}`,
     "",
+    input.characterLockPrompt?.trim() || "",
     `Editorial blog visual for ${input.brandName}, wide 16:9 composition.`,
     input.styleName ? `Active style variant: ${input.styleName}` : "",
     subject

@@ -18,10 +18,12 @@ import {
   type BrandContext,
   type ContentBuyerPersonaOption,
 } from "@/lib/content/blog-types";
+import { ContentBrandCharacterField } from "@/components/content/content-brand-character-field";
 import {
   ContentBuyerPersonaField,
   resolveDefaultContentBuyerPersonaId,
 } from "@/components/content/content-buyer-persona-field";
+import type { BrandCharacterContentOption } from "@/lib/brand/character-types";
 import {
   applyBlogRewriteAction,
   createBlogConceptAction,
@@ -58,6 +60,7 @@ export function BlogWorkspace({
   openRewrite = false,
   initialKeyword = null,
   buyerPersonaOptions = [],
+  brandCharacterOptions = [],
 }: {
   tenantId: string;
   tenantName: string;
@@ -70,6 +73,7 @@ export function BlogWorkspace({
   openRewrite?: boolean;
   initialKeyword?: string | null;
   buyerPersonaOptions?: ContentBuyerPersonaOption[];
+  brandCharacterOptions?: BrandCharacterContentOption[];
 }) {
   const router = useRouter();
   const [concept, setConcept] = useState<BlogConcept | null>(initial);
@@ -81,6 +85,7 @@ export function BlogWorkspace({
   const [buyerPersonaId, setBuyerPersonaId] = useState(() =>
     resolveDefaultContentBuyerPersonaId(buyerPersonaOptions, initial?.buyerPersonaId ?? null),
   );
+  const [brandCharacterId, setBrandCharacterId] = useState(initial?.brandCharacterId ?? "");
   const [sourceText, setSourceText] = useState(initial?.sourceText ?? "");
   const [selectedMeetingIds, setSelectedMeetingIds] = useState<string[]>([]);
   const [pendingDocuments, setPendingDocuments] = useState<BlogPendingDocument[]>([]);
@@ -362,6 +367,7 @@ export function BlogWorkspace({
           lengthKey,
           sourceText,
           buyerPersonaId: buyerPersonaId || null,
+          brandCharacterId: brandCharacterId || null,
         },
         { quiet: true },
       );
@@ -508,9 +514,10 @@ export function BlogWorkspace({
         return null;
       }
       current = created.data;
-      if (buyerPersonaId) {
+      if (buyerPersonaId || brandCharacterId) {
         const withPersona = await saveBlogConceptAction(current.id, current.updatedAt, {
-          buyerPersonaId,
+          buyerPersonaId: buyerPersonaId || null,
+          brandCharacterId: brandCharacterId || null,
         });
         if (withPersona.ok && withPersona.data) current = withPersona.data;
       }
@@ -524,6 +531,7 @@ export function BlogWorkspace({
       lengthKey,
       sourceText,
       buyerPersonaId: buyerPersonaId || null,
+      brandCharacterId: brandCharacterId || null,
     });
     if (!saved.ok || !saved.data) {
       setError(saved.ok ? "Opslaan mislukt" : saved.error);
@@ -595,6 +603,7 @@ export function BlogWorkspace({
       lengthKey,
       sourceText,
       buyerPersonaId: buyerPersonaId || null,
+      brandCharacterId: brandCharacterId || null,
     });
     if (!saved.ok || !saved.data) {
       setSaveState("failed");
@@ -661,6 +670,7 @@ export function BlogWorkspace({
         tweak,
         styleId: selectedStyleId || undefined,
         subject: visualSubject.trim() || undefined,
+        brandCharacterId: brandCharacterId || null,
       });
       if (!result.ok || !result.data) {
         setError(result.ok ? "Visual genereren mislukt" : result.error);
@@ -1004,6 +1014,7 @@ export function BlogWorkspace({
             </div>
           </section>
           <VisualCard
+            tenantId={tenantId}
             brand={brand}
             concept={concept}
             canGenerate={canGenerateVisual}
@@ -1013,6 +1024,9 @@ export function BlogWorkspace({
             onStyleChange={setSelectedStyleId}
             visualSubject={visualSubject}
             onVisualSubjectChange={setVisualSubject}
+            brandCharacterOptions={brandCharacterOptions}
+            brandCharacterId={brandCharacterId}
+            onBrandCharacterChange={setBrandCharacterId}
             disabledReason={
               !brand.hasVisual
                 ? "Beeldstijl ontbreekt"
@@ -1184,6 +1198,7 @@ export function BlogWorkspace({
             ) : null}
           </section>
           <VisualCard
+            tenantId={tenantId}
             brand={brand}
             concept={concept}
             canGenerate={canGenerateVisual}
@@ -1194,6 +1209,9 @@ export function BlogWorkspace({
             onStyleChange={setSelectedStyleId}
             visualSubject={visualSubject}
             onVisualSubjectChange={setVisualSubject}
+            brandCharacterOptions={brandCharacterOptions}
+            brandCharacterId={brandCharacterId}
+            onBrandCharacterChange={setBrandCharacterId}
             onSelect={(visualId) => {
               if (!concept) return;
               void selectBlogVisualAction(concept.id, concept.updatedAt, visualId).then((result) => {
@@ -1341,6 +1359,7 @@ function BrandBar({ brand }: { brand: BrandContext }) {
 }
 
 function VisualCard({
+  tenantId,
   brand,
   concept,
   canGenerate,
@@ -1358,8 +1377,12 @@ function VisualCard({
   onStyleChange,
   visualSubject = "",
   onVisualSubjectChange,
+  brandCharacterOptions = [],
+  brandCharacterId = "",
+  onBrandCharacterChange,
   disabledReason,
 }: {
+  tenantId: string;
   brand: BrandContext;
   concept: BlogConcept | null;
   canGenerate: boolean;
@@ -1377,6 +1400,9 @@ function VisualCard({
   onStyleChange?: (styleId: string) => void;
   visualSubject?: string;
   onVisualSubjectChange?: (value: string) => void;
+  brandCharacterOptions?: BrandCharacterContentOption[];
+  brandCharacterId?: string;
+  onBrandCharacterChange?: (id: string) => void;
   disabledReason?: string;
 }) {
   const selected = concept?.selectedVisual;
@@ -1405,6 +1431,15 @@ function VisualCard({
           </p>
         </div>
       ) : null}
+      <div className="mt-4">
+        <ContentBrandCharacterField
+          tenantId={tenantId}
+          options={brandCharacterOptions}
+          value={brandCharacterId}
+          disabled={busy || deletingVisual}
+          onChange={(id) => onBrandCharacterChange?.(id)}
+        />
+      </div>
       <div className="mt-4">
         <Label htmlFor="visual-subject" className="mb-1.5 block text-xs text-vice-text-muted">
           Waarover gaat de foto? (optioneel)
