@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { z } from "zod";
+import type { CharacterImageReference } from "@/lib/ai/character-image-input";
 import { generateProviderImage } from "@/lib/ai/image-provider";
 import {
   modelSupportsCustomTemperature,
@@ -168,6 +169,7 @@ export async function generateBlogImage(input: {
   tweak?: string;
   characterLockPrompt?: string;
   characterName?: string;
+  characterReferences?: CharacterImageReference[];
 }): Promise<{ bytes: Uint8Array; mime: string; prompt: string; styleSummary: string }> {
   const colorLine = input.colors
     .slice(0, 4)
@@ -210,7 +212,12 @@ export async function generateBlogImage(input: {
     "Photorealistic, no logos, no readable text, no watermarks, no UI mockups, no generic stock look.",
   ].filter(Boolean).join("\n");
 
-  const image = await generateProviderImage({ prompt, aspectRatio: "16:9" });
+  const image = await generateProviderImage({
+    prompt,
+    aspectRatio: "16:9",
+    characterReferences: input.characterReferences,
+    characterName: input.characterName,
+  });
   return { bytes: image.bytes, mime: image.mime, prompt, styleSummary };
 }
 

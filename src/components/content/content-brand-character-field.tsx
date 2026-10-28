@@ -23,9 +23,9 @@ export function ContentBrandCharacterField({
   if (options.length === 0) {
     return (
       <p className="text-xs text-vice-text-muted">
-        Geen brand characters.{" "}
+        Geen geactiveerde characters.{" "}
         <Link className="text-vice-gold underline" href={`/klanten/${tenantId}/strategie/brand?tab=characters`}>
-          Voeg toe onder Brand → Characters
+          Upload referenties en activeer onder Brand → Characters
         </Link>
         .
       </p>
@@ -50,7 +50,7 @@ export function ContentBrandCharacterField({
         ))}
       </select>
       <p className="mt-1 text-xs text-vice-text-muted">
-        Gekozen personage: lock-prompt + referenties worden meegestuurd bij beeldgeneratie.
+        Gekozen personage: Gemini Nano krijgt lock-prompt + tot 4 referentiebeelden (face, front, side, back).
       </p>
     </div>
   );

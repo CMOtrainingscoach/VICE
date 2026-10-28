@@ -1,13 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { CharacterImageReference } from "@/lib/ai/character-image-input";
 import { buildBrandCharacterLockPrompt } from "@/lib/brand/character-prompt";
+import { nanoReferencePaths } from "@/lib/brand/character-nano-refs";
 import {
   BRAND_CHARACTER_CONTENT_MIGRATION,
   BRAND_CHARACTER_MIGRATION,
+  BRAND_CHARACTER_NANO_MIGRATION,
   type BrandCharacter,
   type BrandCharacterAssetSlot,
   type BrandCharacterContentOption,
+  type BrandCharacterReadyStatus,
 } from "@/lib/brand/character-types";
 import { sniffImage } from "@/lib/brand/image-sniff";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
@@ -17,13 +21,29 @@ import { createClient } from "@/lib/supabase/server";
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
 const MISSING =
-  /list_brand_characters|list_brand_characters_for_content|get_brand_character_lock_context|upsert_brand_character|set_brand_character_asset|delete_brand_character|brand-characters|brand_character_id|schema cache|does not exist/i;
+  /list_brand_characters|list_brand_characters_for_content|get_brand_character_lock_context|activate_brand_character|upsert_brand_character|set_brand_character_asset|delete_brand_character|ready_status|brand-characters|brand_character_id|schema cache|does not exist/i;
 
 function migrationError(message: string): string {
+  if (/ready_status|activate_brand_character|refs_fingerprint/i.test(message)) {
+    return BRAND_CHARACTER_NANO_MIGRATION;
+  }
   if (/brand_character_id|list_brand_characters_for_content/i.test(message)) {
     return BRAND_CHARACTER_CONTENT_MIGRATION;
   }
   return MISSING.test(message) ? BRAND_CHARACTER_MIGRATION : message;
+}
+
+function parseReadyStatus(raw: unknown): BrandCharacterReadyStatus {
+  const value = String(raw ?? "draft");
+  if (value === "ready" || value === "stale") return value;
+  return "draft";
+}
+
+function mimeFromStoragePath(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
 }
 
 async function client() {
@@ -59,6 +79,9 @@ function mapCharacter(raw: unknown, urls: Map<string, string>): BrandCharacter |
     visualPrompt: String(row.visualPrompt ?? row.visual_prompt ?? ""),
     assets,
     assetUrls,
+    readyStatus: parseReadyStatus(row.readyStatus ?? row.ready_status),
+    refsFingerprint: String(row.refsFingerprint ?? row.refs_fingerprint ?? ""),
+    activatedAt: row.activatedAt || row.activated_at ? String(row.activatedAt ?? row.activated_at) : null,
     sortOrder: Number(row.sortOrder ?? row.sort_order ?? 0),
     updatedAt: String(row.updatedAt ?? row.updated_at ?? ""),
     createdAt: String(row.createdAt ?? row.created_at ?? ""),
@@ -111,9 +134,88 @@ export async function listBrandCharactersForContentAction(
         id: String(row.id ?? ""),
         name: String(row.name ?? ""),
         referenceCount: Number(row.referenceCount ?? row.reference_count ?? 0),
+        readyStatus: parseReadyStatus(row.readyStatus ?? row.ready_status),
       }))
       .filter((row) => row.id && row.name),
   };
+}
+
+export type BrandCharacterNanoBundle = {
+  name: string;
+  lockPrompt: string;
+  references: CharacterImageReference[];
+};
+
+export async function loadBrandCharacterNanoBundleAction(
+  tenantId: string,
+  characterId: string,
+): Promise<ActionResult<BrandCharacterNanoBundle>> {
+  const supabase = await client();
+  const { data, error } = await supabase.schema("app").rpc("get_brand_character_lock_context", {
+    p_character_id: characterId,
+  });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  const mapped = await mapList([data]);
+  const character = mapped[0];
+  if (!character || character.tenantId !== tenantId) {
+    return { ok: false, error: "Personage niet gevonden voor deze klant." };
+  }
+  if (character.readyStatus !== "ready") {
+    return {
+      ok: false,
+      error:
+        character.readyStatus === "stale"
+          ? "Referenties zijn gewijzigd. Activeer het personage opnieuw onder Brand → Characters."
+          : "Personage is nog niet geactiveerd voor Nano. Upload referenties en klik op «Activeer voor generatie».",
+    };
+  }
+
+  const paths = nanoReferencePaths(character);
+  if (paths.length === 0) {
+    return { ok: false, error: "Geen referentiebeelden gevonden voor dit personage." };
+  }
+
+  const admin = createAdminClient();
+  const references: CharacterImageReference[] = [];
+  for (const { slot, path } of paths) {
+    const downloaded = await admin.storage.from("brand-characters").download(path);
+    if (downloaded.error || !downloaded.data) {
+      return { ok: false, error: `Referentie «${slot}» kon niet worden geladen.` };
+    }
+    const bytes = new Uint8Array(await downloaded.data.arrayBuffer());
+    references.push({
+      slot,
+      mime: downloaded.data.type || mimeFromStoragePath(path),
+      bytes,
+    });
+  }
+
+  return {
+    ok: true,
+    data: {
+      name: character.name,
+      lockPrompt: buildBrandCharacterLockPrompt(character),
+      references,
+    },
+  };
+}
+
+export async function activateBrandCharacterAction(
+  tenantId: string,
+  characterId: string,
+): Promise<ActionResult<BrandCharacter>> {
+  const supabase = await client();
+  const { data, error } = await supabase.schema("app").rpc("activate_brand_character", {
+    p_character_id: characterId,
+  });
+  if (error) return { ok: false, error: migrationError(error.message) };
+  const mapped = await mapList([data]);
+  const character = mapped[0];
+  if (!character || character.tenantId !== tenantId) {
+    return { ok: false, error: "Personage niet gevonden" };
+  }
+  revalidateBrand(tenantId);
+  return { ok: true, data: character };
 }
 
 export async function resolveBrandCharacterLockPromptAction(

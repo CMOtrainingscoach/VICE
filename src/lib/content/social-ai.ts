@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { z } from "zod";
+import type { CharacterImageReference } from "@/lib/ai/character-image-input";
 import { generateProviderImage, type ImageAspectRatio } from "@/lib/ai/image-provider";
 import {
   modelSupportsCustomTemperature,
@@ -236,6 +237,7 @@ export async function generateSocialImage(input: {
   slideCount?: number;
   characterLockPrompt?: string;
   characterName?: string;
+  characterReferences?: CharacterImageReference[];
 }): Promise<{ bytes: Uint8Array; mime: string; prompt: string; styleSummary: string; width: number; height: number }> {
   const aspect = socialImageAspect(input.format);
   const width = aspect === "9:16" ? 1024 : 1024;
@@ -286,7 +288,12 @@ export async function generateSocialImage(input: {
     .filter(Boolean)
     .join("\n");
 
-  const image = await generateProviderImage({ prompt, aspectRatio: aspect });
+  const image = await generateProviderImage({
+    prompt,
+    aspectRatio: aspect,
+    characterReferences: input.characterReferences,
+    characterName: input.characterName,
+  });
   return {
     bytes: image.bytes,
     mime: image.mime,

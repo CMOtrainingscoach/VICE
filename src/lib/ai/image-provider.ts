@@ -3,6 +3,12 @@
  * Providers: OpenAI (gpt-image-1) or Google Gemini Nano Banana.
  */
 
+import {
+  buildNanoCharacterIntro,
+  mimeForNanoReference,
+  type CharacterImageReference,
+} from "@/lib/ai/character-image-input";
+
 export type ImageAspectRatio = "1:1" | "16:9" | "9:16" | "4:5" | "3:2";
 export type ImageProviderId = "openai" | "gemini";
 
@@ -185,7 +191,11 @@ function geminiFailureHint(payload: Record<string, unknown>): string {
   return "Controleer modeltoegang tot Nano Banana.";
 }
 
-async function generateWithGemini(prompt: string, aspect: ImageAspectRatio): Promise<GeneratedImage> {
+async function generateWithGemini(
+  prompt: string,
+  aspect: ImageAspectRatio,
+  characterReferences?: CharacterImageReference[],
+): Promise<GeneratedImage> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error(
@@ -196,6 +206,18 @@ async function generateWithGemini(prompt: string, aspect: ImageAspectRatio): Pro
   const model = resolveGeminiImageModel();
   const imageSize = (process.env.VICE_GEMINI_IMAGE_SIZE?.trim().toUpperCase() || "1K") as "1K" | "2K" | "4K";
 
+  const refs = characterReferences?.filter((ref) => ref.bytes?.length) ?? [];
+  const input: { type: string; text?: string; mime_type?: string; data?: string }[] = [
+    { type: "text", text: prompt },
+  ];
+  for (const ref of refs) {
+    input.push({
+      type: "image",
+      mime_type: mimeForNanoReference(ref.mime),
+      data: Buffer.from(ref.bytes).toString("base64"),
+    });
+  }
+
   const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
     headers: {
@@ -204,7 +226,7 @@ async function generateWithGemini(prompt: string, aspect: ImageAspectRatio): Pro
     },
     body: JSON.stringify({
       model,
-      input: [{ type: "text", text: prompt }],
+      input,
       response_format: {
         type: "image",
         // Nano Banana accepteert hier alleen JPEG (niet PNG).
@@ -253,8 +275,22 @@ async function generateWithGemini(prompt: string, aspect: ImageAspectRatio): Pro
 export async function generateProviderImage(input: {
   prompt: string;
   aspectRatio?: ImageAspectRatio;
+  characterReferences?: CharacterImageReference[];
+  characterName?: string;
 }): Promise<GeneratedImage> {
   const aspect = input.aspectRatio ?? "16:9";
+  const refs = input.characterReferences?.filter((ref) => ref.bytes?.length) ?? [];
+  if (refs.length > 0) {
+    if (resolveImageProvider() !== "gemini") {
+      throw new Error(
+        "Merpersonages in beelden vereisen Gemini Nano (VICE_IMAGE_PROVIDER=gemini en GEMINI_API_KEY).",
+      );
+    }
+    const name = input.characterName?.trim() || "brand character";
+    const prompt = `${buildNanoCharacterIntro(name, refs.length)}\n\n${input.prompt}`;
+    return generateWithGemini(prompt, aspect, refs);
+  }
+
   const provider = resolveImageProvider();
   if (provider === "gemini") {
     return generateWithGemini(input.prompt, aspect);

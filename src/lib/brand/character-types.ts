@@ -1,3 +1,5 @@
+export type BrandCharacterReadyStatus = "draft" | "ready" | "stale";
+
 export type BrandCharacterAssetSlot = "face" | "front" | "side" | "back" | "contingency";
 
 export type BrandCharacterAssets = Record<BrandCharacterAssetSlot, string>;
@@ -10,6 +12,9 @@ export type BrandCharacter = {
   visualPrompt: string;
   assets: BrandCharacterAssets;
   assetUrls: Partial<Record<BrandCharacterAssetSlot, string>>;
+  readyStatus: BrandCharacterReadyStatus;
+  refsFingerprint: string;
+  activatedAt: string | null;
   sortOrder: number;
   updatedAt: string;
   createdAt: string;
@@ -37,8 +42,12 @@ export const BRAND_CHARACTER_MIGRATION =
 export const BRAND_CHARACTER_CONTENT_MIGRATION =
   "Pas migratie 20260330136406 toe voor character-keuze in content (social/blog).";
 
+export const BRAND_CHARACTER_NANO_MIGRATION =
+  "Pas migratie 20260330136407 toe voor Nano-ready status en referenties in beeldgeneratie.";
+
 export type BrandCharacterContentOption = {
   id: string;
   name: string;
   referenceCount: number;
+  readyStatus?: BrandCharacterReadyStatus;
 };

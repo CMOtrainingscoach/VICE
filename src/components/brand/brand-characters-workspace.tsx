@@ -9,9 +9,12 @@ import {
   BRAND_CHARACTER_SLOTS,
   type BrandCharacter,
   type BrandCharacterAssetSlot,
+  type BrandCharacterReadyStatus,
 } from "@/lib/brand/character-types";
+import { canActivateCharacterForNano } from "@/lib/brand/character-nano-refs";
 import { buildBrandCharacterLockPrompt } from "@/lib/brand/character-prompt";
 import {
+  activateBrandCharacterAction,
   clearBrandCharacterAssetAction,
   deleteBrandCharacterAction,
   listBrandCharactersAction,
@@ -19,7 +22,10 @@ import {
   uploadBrandCharacterAssetAction,
 } from "@/modules/brand/character-actions";
 
-function emptyDraft(): Omit<BrandCharacter, "id" | "tenantId" | "updatedAt" | "createdAt" | "sortOrder"> & {
+function emptyDraft(): Omit<
+  BrandCharacter,
+  "id" | "tenantId" | "updatedAt" | "createdAt" | "sortOrder" | "refsFingerprint" | "activatedAt"
+> & {
   id: string | null;
 } {
   return {
@@ -29,7 +35,14 @@ function emptyDraft(): Omit<BrandCharacter, "id" | "tenantId" | "updatedAt" | "c
     visualPrompt: "",
     assets: { face: "", front: "", side: "", back: "", contingency: "" },
     assetUrls: {},
+    readyStatus: "draft",
   };
+}
+
+function readyStatusLabel(status: BrandCharacterReadyStatus): string {
+  if (status === "ready") return "Actief (Nano)";
+  if (status === "stale") return "Opnieuw activeren";
+  return "Concept";
 }
 
 function filledSlots(character: BrandCharacter | ReturnType<typeof emptyDraft>): number {
@@ -55,6 +68,7 @@ export function BrandCharactersWorkspace({
         visualPrompt: first.visualPrompt,
         assets: { ...first.assets },
         assetUrls: { ...first.assetUrls },
+        readyStatus: first.readyStatus,
       };
     }
     return emptyDraft();
@@ -77,6 +91,7 @@ export function BrandCharactersWorkspace({
       visualPrompt: c.visualPrompt,
       assets: { ...c.assets },
       assetUrls: { ...c.assetUrls },
+      readyStatus: c.readyStatus,
     });
     setError("");
     setNotice("");
@@ -121,6 +136,7 @@ export function BrandCharactersWorkspace({
         visualPrompt: result.data.visualPrompt,
         assets: { ...result.data.assets },
         assetUrls: { ...result.data.assetUrls },
+        readyStatus: result.data.readyStatus,
       });
       setNotice("Personage opgeslagen.");
     }
@@ -167,6 +183,7 @@ export function BrandCharactersWorkspace({
         visualPrompt: result.data.visualPrompt,
         assets: { ...result.data.assets },
         assetUrls: { ...result.data.assetUrls },
+        readyStatus: result.data.readyStatus,
       });
       await reload();
       setNotice(`${BRAND_CHARACTER_SLOTS.find((s) => s.id === slot)?.label ?? slot} geüpload.`);
@@ -191,8 +208,34 @@ export function BrandCharactersWorkspace({
         visualPrompt: result.data.visualPrompt,
         assets: { ...result.data.assets },
         assetUrls: { ...result.data.assetUrls },
+        readyStatus: result.data.readyStatus,
       });
       await reload();
+    }
+  }
+
+  async function activateForNano() {
+    if (!draft.id) return;
+    setBusy("activate");
+    setError("");
+    const result = await activateBrandCharacterAction(tenantId, draft.id);
+    setBusy("");
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (result.data) {
+      setDraft({
+        id: result.data.id,
+        name: result.data.name,
+        description: result.data.description,
+        visualPrompt: result.data.visualPrompt,
+        assets: { ...result.data.assets },
+        assetUrls: { ...result.data.assetUrls },
+        readyStatus: result.data.readyStatus,
+      });
+      await reload();
+      setNotice("Personage actief voor Nano-beeldgeneratie (referenties + lock-prompt).");
     }
   }
 
@@ -226,7 +269,9 @@ export function BrandCharactersWorkspace({
               >
                 <UserRound className="size-4 shrink-0 opacity-70" aria-hidden />
                 <span className="min-w-0 flex-1 truncate">{c.name || "Naamloos"}</span>
-                <span className="text-xs text-vice-text-muted">{filledSlots(c)}/5</span>
+                <span className="text-xs text-vice-text-muted">
+                  {c.readyStatus === "ready" ? "●" : c.readyStatus === "stale" ? "!" : "○"} {filledSlots(c)}/5
+                </span>
               </button>
             </li>
           ))}
@@ -240,8 +285,8 @@ export function BrandCharactersWorkspace({
         <div>
           <h2 className="font-display text-2xl text-vice-text">Characters</h2>
           <p className="mt-2 max-w-2xl text-sm text-vice-text-muted">
-            Terugkerende personen voor beeld en (later) video. Upload referenties en een vaste prompt zodat AI hetzelfde
-            gezicht kan reproduceren in content.
+            Terugkerende personen voor social en blog. Upload referenties, stel de lock-prompt in en activeer voor
+            Gemini Nano Banana (max. 4 referenties per generatie).
           </p>
         </div>
 
@@ -281,7 +326,7 @@ export function BrandCharactersWorkspace({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button type="button" disabled={Boolean(busy)} onClick={() => void saveMeta()}>
             {draft.id ? "Wijzigingen opslaan" : "Personage aanmaken"}
           </Button>
@@ -291,7 +336,44 @@ export function BrandCharactersWorkspace({
               Verwijderen
             </Button>
           ) : null}
+          {draft.id ? (
+            <>
+              <span
+                className={
+                  draft.readyStatus === "ready"
+                    ? "rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs text-emerald-800 dark:text-emerald-200"
+                    : draft.readyStatus === "stale"
+                      ? "rounded-full bg-amber-500/15 px-2.5 py-1 text-xs text-amber-900 dark:text-amber-100"
+                      : "rounded-full bg-vice-surface px-2.5 py-1 text-xs text-vice-text-muted"
+                }
+              >
+                {readyStatusLabel(draft.readyStatus)}
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={
+                  Boolean(busy)
+                  || !canActivateCharacterForNano({ assets: draft.assets })
+                  || draft.readyStatus === "ready"
+                }
+                onClick={() => void activateForNano()}
+              >
+                {draft.readyStatus === "stale" ? "Opnieuw activeren" : "Activeer voor generatie"}
+              </Button>
+            </>
+          ) : null}
         </div>
+        {draft.id && draft.readyStatus !== "ready" ? (
+          <p className="text-xs text-vice-text-muted">
+            Activeer na minstens face + één extra referentie. Alleen geactiveerde personages verschijnen in content.
+          </p>
+        ) : null}
+        {draft.id && draft.readyStatus === "ready" ? (
+          <p className="text-xs text-vice-text-muted">
+            Wijzig je referenties of lock-prompt? Het personage wordt «stale» tot je opnieuw activeert.
+          </p>
+        ) : null}
 
         <div>
           <h3 className="text-sm font-medium text-vice-text">Referentiebeelden</h3>

@@ -30,7 +30,10 @@ import {
   type JobStatus,
 } from "@/lib/content/social-types";
 import { loadBlogBrandContextAction } from "@/modules/content/blog-actions";
-import { resolveBrandCharacterLockPromptAction } from "@/modules/brand/character-actions";
+import {
+  loadBrandCharacterNanoBundleAction,
+  type BrandCharacterNanoBundle,
+} from "@/modules/brand/character-actions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -424,12 +427,6 @@ export async function planSocialCarouselOutlineAction(
   }
 }
 
-async function characterLockForGeneration(tenantId: string, characterId: string | null | undefined) {
-  if (!characterId) return null;
-  const resolved = await resolveBrandCharacterLockPromptAction(tenantId, characterId);
-  if (!resolved.ok || !resolved.data) return null;
-  return resolved.data;
-}
 
 export async function generateSocialVisualAction(
   conceptId: string,
@@ -455,7 +452,14 @@ export async function generateSocialVisualAction(
 
   const characterId =
     options?.brandCharacterId !== undefined ? options.brandCharacterId || null : concept.brandCharacterId;
-  const characterLock = await characterLockForGeneration(concept.tenantId, characterId);
+  let characterBundle: BrandCharacterNanoBundle | undefined;
+  if (characterId) {
+    const bundle = await loadBrandCharacterNanoBundleAction(concept.tenantId, characterId);
+    if (!bundle.ok || !bundle.data) {
+      return { ok: false, error: bundle.ok ? "Personage kon niet worden geladen." : bundle.error };
+    }
+    characterBundle = bundle.data;
+  }
 
   const supabase = await authed();
   await supabase.schema("app").rpc("save_social_post_concept", {
@@ -506,8 +510,9 @@ export async function generateSocialVisualAction(
         slideTitle: job.slideTitle,
         slideIndex: job.slideIndex,
         slideCount: job.slideCount,
-        characterLockPrompt: characterLock?.lockPrompt,
-        characterName: characterLock?.name,
+        characterLockPrompt: characterBundle?.lockPrompt,
+        characterName: characterBundle?.name,
+        characterReferences: characterBundle?.references,
       });
 
       const ext = image.mime.includes("jpeg") ? "jpg" : image.mime.includes("webp") ? "webp" : "png";

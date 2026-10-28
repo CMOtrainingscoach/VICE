@@ -35,7 +35,10 @@ import {
   type BrandContext,
   type JobStatus,
 } from "@/lib/content/blog-types";
-import { resolveBrandCharacterLockPromptAction } from "@/modules/brand/character-actions";
+import {
+  loadBrandCharacterNanoBundleAction,
+  type BrandCharacterNanoBundle,
+} from "@/modules/brand/character-actions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -522,10 +525,13 @@ export async function generateBlogVisualAction(
     brand.data.styles[0];
 
   const characterId = options?.brandCharacterId ?? concept.brandCharacterId;
-  let characterLock: { name: string; lockPrompt: string } | null = null;
+  let characterBundle: BrandCharacterNanoBundle | undefined;
   if (characterId) {
-    const resolved = await resolveBrandCharacterLockPromptAction(concept.tenantId, characterId);
-    if (resolved.ok && resolved.data) characterLock = resolved.data;
+    const bundle = await loadBrandCharacterNanoBundleAction(concept.tenantId, characterId);
+    if (!bundle.ok || !bundle.data) {
+      return { ok: false, error: bundle.ok ? "Personage kon niet worden geladen." : bundle.error };
+    }
+    characterBundle = bundle.data;
   }
 
   const supabase = await authed();
@@ -553,8 +559,9 @@ export async function generateBlogVisualAction(
       styleName: selectedStyle.name,
       subject: options?.subject,
       tweak: options?.tweak,
-      characterLockPrompt: characterLock?.lockPrompt,
-      characterName: characterLock?.name,
+      characterLockPrompt: characterBundle?.lockPrompt,
+      characterName: characterBundle?.name,
+      characterReferences: characterBundle?.references,
     });
 
     const ext = image.mime.includes("jpeg") ? "jpg" : image.mime.includes("webp") ? "webp" : "png";
