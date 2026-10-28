@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -40,8 +40,13 @@ import {
 import type { BrandContext } from "@/lib/content/blog-types";
 import { flattenBeeldDocument } from "@/lib/content/beeld-export";
 import {
+  beeldLayerIsCanvasDraggable,
+  beeldLayerIsFullBleedImage,
+  clampPercent,
+  detachImageLayerFromCanvas,
+} from "@/lib/content/beeld-layer-geometry";
+import {
   createBeeldCompositionAction,
-  deleteBeeldCompositionAction,
   generateBeeldLayerImageAction,
   saveBeeldCompositionAction,
   uploadBeeldLayerImageAction,
@@ -51,6 +56,7 @@ const fieldClass =
   "w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm text-vice-text outline-none focus:border-vice-gold";
 
 const TYPE_ROLES: TypeRole[] = ["h1", "h2", "h3", "body"];
+const SAVE_DEBOUNCE_MS = 2200;
 
 function fullBleedImageLayer(name: string): BeeldLayer {
   return {
@@ -134,6 +140,22 @@ export function BeeldWorkspace({
   const [error, setError] = useState("");
   const [layerPrompt, setLayerPrompt] = useState("");
   const uploadRef = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const compositionRef = useRef(composition);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<{ patch: Record<string, unknown>; document?: BeeldDocument } | null>(null);
+  const [savePending, setSavePending] = useState(false);
+
+  useEffect(() => {
+    compositionRef.current = composition;
+  }, [composition]);
+
+  useEffect(
+    () => () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    },
+    [],
+  );
 
   const preset = beeldPresetById(composition?.presetId ?? "instagram_feed");
   const selectedLayer = composition?.document.layers.find((l) => l.id === selectedLayerId) ?? null;
@@ -159,8 +181,52 @@ export function BeeldWorkspace({
     if (selectedLayer?.kind === "image") setLayerPrompt(selectedLayer.prompt);
   }, [selectedLayer?.id, selectedLayer?.kind]);
 
-  async function persist(patch: Record<string, unknown>, nextDocument?: BeeldDocument) {
+  const flushSave = useCallback(async () => {
+    const comp = compositionRef.current;
+    const pending = pendingSaveRef.current;
+    if (!comp || !pending) return;
+    pendingSaveRef.current = null;
+    setBusy("save");
+    setError("");
+    const result = await saveBeeldCompositionAction(comp.id, comp.updatedAt, {
+      ...pending.patch,
+      ...(pending.document ? { document: pending.document } : {}),
+    });
+    setBusy("");
+    if (!result.ok || !result.data) {
+      setError(result.ok ? "Opslaan mislukt" : result.error);
+      pendingSaveRef.current = pending;
+      return;
+    }
+    setComposition(result.data);
+    setSavePending(false);
+  }, []);
+
+  const scheduleSave = useCallback(
+    (patch: Record<string, unknown> = {}, document?: BeeldDocument) => {
+      const prev = pendingSaveRef.current;
+      pendingSaveRef.current = {
+        patch: { ...prev?.patch, ...patch },
+        document: document ?? prev?.document,
+      };
+      setSavePending(true);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        saveTimerRef.current = null;
+        void flushSave();
+      }, SAVE_DEBOUNCE_MS);
+    },
+    [flushSave],
+  );
+
+  async function persistNow(patch: Record<string, unknown>, nextDocument?: BeeldDocument) {
     if (!composition) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    pendingSaveRef.current = null;
+    setSavePending(false);
     setBusy("save");
     setError("");
     const result = await saveBeeldCompositionAction(composition.id, composition.updatedAt, {
@@ -187,11 +253,56 @@ export function BeeldWorkspace({
     router.push(`/klanten/${tenantId}/content/beeld/${result.data.id}`);
   }
 
-  function updateDocument(mutator: (doc: BeeldDocument) => BeeldDocument) {
+  function updateDocument(mutator: (doc: BeeldDocument) => BeeldDocument, options?: { immediate?: boolean }) {
     if (!composition) return;
     const next = mutator(composition.document);
-    void persist({}, next);
-    setComposition({ ...composition, document: next });
+    const nextComp = { ...composition, document: next };
+    setComposition(nextComp);
+    compositionRef.current = nextComp;
+    if (options?.immediate) void persistNow({}, next);
+    else scheduleSave({}, next);
+  }
+
+  function commitDocumentSave() {
+    const comp = compositionRef.current;
+    if (!comp) return;
+    scheduleSave({}, comp.document);
+  }
+
+  function patchLayerGeometry(
+    layerId: string,
+    geometry: { x?: number; y?: number; width?: number; height?: number; fontSizePx?: number },
+    persist = true,
+  ) {
+    if (!composition) return;
+    const next: BeeldDocument = {
+      layers: composition.document.layers.map((layer) => {
+        if (layer.id !== layerId) return layer;
+        if (layer.kind === "text") {
+          return {
+            ...layer,
+            x: geometry.x ?? layer.x,
+            y: geometry.y ?? layer.y,
+            width: geometry.width ?? layer.width,
+            fontSizePx: geometry.fontSizePx ?? layer.fontSizePx,
+          };
+        }
+        if (layer.kind === "logo" || layer.kind === "image") {
+          return {
+            ...layer,
+            x: geometry.x ?? layer.x,
+            y: geometry.y ?? layer.y,
+            width: geometry.width ?? layer.width,
+            height: geometry.height ?? layer.height,
+          };
+        }
+        return layer;
+      }),
+    };
+    const nextComp = { ...composition, document: next };
+    setComposition(nextComp);
+    compositionRef.current = nextComp;
+    if (persist) scheduleSave({}, next);
   }
 
   function addLayer(kind: "image" | "logo" | "text") {
@@ -201,8 +312,9 @@ export function BeeldWorkspace({
       kind === "logo" ? logoLayer() : kind === "text" ? textLayer() : fullBleedImageLayer(defaultLayerName("image", imageCount + 1));
     const next: BeeldDocument = { layers: [...composition.document.layers, layer] };
     setSelectedLayerId(layer.id);
-    void persist({}, next);
+    scheduleSave({}, next);
     setComposition({ ...composition, document: next });
+    compositionRef.current = { ...composition, document: next };
   }
 
   function moveLayer(id: string, dir: -1 | 1) {
@@ -213,14 +325,15 @@ export function BeeldWorkspace({
     if (index < 0 || target < 0 || target >= layers.length) return;
     const [item] = layers.splice(index, 1);
     layers.splice(target, 0, item);
-    void persist({}, { layers });
+    scheduleSave({}, { layers });
     setComposition({ ...composition, document: { layers } });
+    compositionRef.current = { ...composition, document: { layers } };
   }
 
   function removeLayer(id: string) {
     if (!composition) return;
     const layers = composition.document.layers.filter((l) => l.id !== id);
-    void persist({}, { layers });
+    void persistNow({}, { layers });
     setComposition({ ...composition, document: { layers } });
     if (selectedLayerId === id) setSelectedLayerId(layers[layers.length - 1]?.id ?? null);
   }
@@ -352,7 +465,7 @@ export function BeeldWorkspace({
                   value={composition.title}
                   disabled={Boolean(busy)}
                   onChange={(e) => setComposition({ ...composition, title: e.target.value })}
-                  onBlur={() => void persist({ title: composition.title })}
+                  onBlur={() => scheduleSave({ title: composition.title })}
                   className="max-w-xs font-medium"
                 />
                 <Button type="button" variant="secondary" disabled={Boolean(busy)} onClick={() => void downloadFlat()}>
@@ -361,7 +474,8 @@ export function BeeldWorkspace({
                 </Button>
               </div>
               <div
-                className={`relative mx-auto w-full max-w-lg overflow-hidden rounded-xl border border-vice-border bg-[#111] ${previewAspect}`}
+                ref={canvasRef}
+                className={`relative mx-auto w-full max-w-lg touch-none overflow-hidden rounded-xl border border-vice-border bg-[#111] ${previewAspect}`}
               >
                 {composition.document.layers.map((layer, index) => (
                   <BeeldLayerPreview
@@ -371,7 +485,10 @@ export function BeeldWorkspace({
                     selected={layer.id === selectedLayerId}
                     logoUrl={clientBrand?.logoUrl}
                     typography={clientBrand?.typography}
+                    canvasRef={canvasRef}
                     onSelect={() => setSelectedLayerId(layer.id)}
+                    onGeometryChange={(geometry, persist) => patchLayerGeometry(layer.id, geometry, persist)}
+                    onGeometryCommit={() => commitDocumentSave()}
                   />
                 ))}
                 {composition.document.layers.length === 0 ? (
@@ -382,7 +499,8 @@ export function BeeldWorkspace({
               </div>
               <p className="text-center text-xs text-vice-text-muted">
                 {preset.label} · {beeldExportDimensions(composition.presetId, composition.imageQuality).width}×
-                {beeldExportDimensions(composition.presetId, composition.imageQuality).height}px export
+                {beeldExportDimensions(composition.presetId, composition.imageQuality).height}px export · sleep tekst/logo om
+                te verplaatsen
               </p>
             </div>
 
@@ -399,7 +517,7 @@ export function BeeldWorkspace({
                       onChange={(e) => {
                         const presetId = e.target.value;
                         setComposition({ ...composition, presetId });
-                        void persist({ presetId });
+                        scheduleSave({ presetId });
                       }}
                     >
                       {BEELD_CANVAS_PRESETS.map((p) => (
@@ -418,7 +536,7 @@ export function BeeldWorkspace({
                       onChange={(e) => {
                         const imageQuality = e.target.value as BeeldImageQuality;
                         setComposition({ ...composition, imageQuality });
-                        void persist({ imageQuality });
+                        scheduleSave({ imageQuality });
                       }}
                     >
                       {BEELD_QUALITY_OPTIONS.map((q) => (
@@ -437,7 +555,7 @@ export function BeeldWorkspace({
                       onChange={(e) => {
                         const styleId = e.target.value;
                         setComposition({ ...composition, styleId });
-                        void persist({ styleId });
+                        scheduleSave({ styleId });
                       }}
                     >
                       {brand.styles.map((s) => (
@@ -455,7 +573,7 @@ export function BeeldWorkspace({
                     onChange={(characterId) => {
                       const brandCharacterId = characterId || null;
                       setComposition({ ...composition, brandCharacterId });
-                      void persist({ brandCharacterId });
+                      scheduleSave({ brandCharacterId });
                     }}
                   />
                 </div>
@@ -564,6 +682,24 @@ export function BeeldWorkspace({
                         <Button type="button" variant="secondary" disabled={Boolean(busy)} onClick={() => uploadRef.current?.click()}>
                           Upload template
                         </Button>
+                        {beeldLayerIsFullBleedImage(selectedLayer) ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={Boolean(busy)}
+                            onClick={() => {
+                              updateDocument((doc) => ({
+                                layers: doc.layers.map((l) =>
+                                  l.id === selectedLayer.id && l.kind === "image"
+                                    ? detachImageLayerFromCanvas(l)
+                                    : l,
+                                ),
+                              }));
+                            }}
+                          >
+                            Vrij plaatsen
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}
@@ -617,11 +753,12 @@ export function BeeldWorkspace({
                           }}
                         />
                       </div>
+                      <p className="text-xs text-vice-text-muted">Sleep op het canvas; gouden hoek = schalen.</p>
                     </div>
                   ) : null}
                   {selectedLayer.kind === "logo" ? (
                     <p className="mt-3 text-xs text-vice-text-muted">
-                      Gebruikt het goedgekeurde merklogo uit Brand. Sleep-positionering volgt in een volgende versie; standaard rechtsboven.
+                      Merklogo uit Brand. Sleep op het canvas; gebruik de hoek om te schalen.
                     </p>
                   ) : null}
                 </section>
@@ -633,9 +770,20 @@ export function BeeldWorkspace({
 
       {error ? <p className="mt-4 text-sm text-red-700 dark:text-red-300">{error}</p> : null}
       {busy === "save" ? <p className="mt-2 text-xs text-vice-text-muted">Opslaan…</p> : null}
+      {composition && busy !== "save" && savePending ? (
+        <p className="mt-2 text-xs text-vice-text-muted">Wijzigingen worden over enkele seconden opgeslagen…</p>
+      ) : null}
     </div>
   );
 }
+
+type LayerGeometryPatch = {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  fontSizePx?: number;
+};
 
 function BeeldLayerPreview({
   layer,
@@ -643,67 +791,193 @@ function BeeldLayerPreview({
   selected,
   logoUrl,
   typography,
+  canvasRef,
   onSelect,
+  onGeometryChange,
+  onGeometryCommit,
 }: {
   layer: BeeldLayer;
   zIndex: number;
   selected: boolean;
   logoUrl?: string | null;
   typography?: ClientBrand["typography"];
+  canvasRef: React.RefObject<HTMLDivElement | null>;
   onSelect: () => void;
+  onGeometryChange: (geometry: LayerGeometryPatch, persist?: boolean) => void;
+  onGeometryCommit: () => void;
 }) {
+  const dragRef = useRef<{
+    mode: "move" | "resize";
+    startClientX: number;
+    startClientY: number;
+    orig: LayerGeometryPatch;
+  } | null>(null);
+
   if (!layer.visible) return null;
 
+  const fullBleed = beeldLayerIsFullBleedImage(layer);
+  const draggable = beeldLayerIsCanvasDraggable(layer);
+
   const boxStyle = {
-    left: `${layer.kind !== "image" || layer.width < 99 ? (layer as { x: number }).x : 0}%`,
-    top: `${layer.kind !== "image" || layer.height < 99 ? (layer as { y: number }).y : 0}%`,
-    width: `${layer.kind === "image" && layer.width >= 99 ? 100 : (layer as { width: number }).width}%`,
-    height: `${layer.kind === "image" && layer.height >= 99 ? 100 : (layer as { height: number }).height}%`,
+    left: `${fullBleed ? 0 : layer.x}%`,
+    top: `${fullBleed ? 0 : layer.y}%`,
+    width: `${fullBleed ? 100 : layer.width}%`,
+    height: `${
+      fullBleed
+        ? 100
+        : layer.kind === "text"
+          ? Math.max(12, layer.fontSizePx * 0.35)
+          : layer.kind === "logo" || layer.kind === "image"
+            ? layer.height
+            : 20
+    }%`,
     opacity: layer.opacity,
   };
 
+  function beginPointer(mode: "move" | "resize", event: React.PointerEvent) {
+    if (!draggable || layer.locked) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onSelect();
+    const orig: LayerGeometryPatch =
+      layer.kind === "text"
+        ? { x: layer.x, y: layer.y, width: layer.width, fontSizePx: layer.fontSizePx }
+        : layer.kind === "logo" || layer.kind === "image"
+          ? { x: layer.x, y: layer.y, width: layer.width, height: layer.height }
+          : {};
+    dragRef.current = {
+      mode,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      orig,
+    };
+    (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
+
+    const onMove = (e: PointerEvent) => {
+      const drag = dragRef.current;
+      const canvas = canvasRef.current;
+      if (!drag || !canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const dx = ((e.clientX - drag.startClientX) / rect.width) * 100;
+      const dy = ((e.clientY - drag.startClientY) / rect.height) * 100;
+
+      if (drag.mode === "move") {
+        onGeometryChange(
+          {
+            x: clampPercent((drag.orig.x ?? 0) + dx, 0, 100 - (drag.orig.width ?? 20)),
+            y: clampPercent((drag.orig.y ?? 0) + dy, 0, 100 - (drag.orig.height ?? 10)),
+          },
+          false,
+        );
+        return;
+      }
+
+      if (layer.kind === "text") {
+        const nextWidth = clampPercent((drag.orig.width ?? 40) + dx, 12, 100 - (drag.orig.x ?? 0));
+        const scale = nextWidth / Math.max(12, drag.orig.width ?? 40);
+        onGeometryChange(
+          {
+            width: nextWidth,
+            fontSizePx: Math.round(Math.max(14, Math.min(120, (drag.orig.fontSizePx ?? 42) * scale))),
+          },
+          false,
+        );
+        return;
+      }
+
+      onGeometryChange(
+        {
+          width: clampPercent((drag.orig.width ?? 30) + dx, 8, 100 - (drag.orig.x ?? 0)),
+          height: clampPercent((drag.orig.height ?? 20) + dy, 8, 100 - (drag.orig.y ?? 0)),
+        },
+        false,
+      );
+    };
+
+    const onUp = (e: PointerEvent) => {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      onGeometryCommit();
+      try {
+        (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  const ringClass = selected ? "ring-2 ring-vice-gold ring-inset" : "";
+
   if (layer.kind === "image") {
-    const full = layer.width >= 99 && layer.height >= 99;
     return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className={`absolute ${full ? "inset-0" : ""} ${selected ? "ring-2 ring-vice-gold ring-inset" : ""}`}
-        style={full ? { opacity: layer.opacity, zIndex } : { ...boxStyle, zIndex }}
+      <div
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") onSelect();
+        }}
+        onPointerDown={(e) => {
+          if (fullBleed) {
+            onSelect();
+            return;
+          }
+          beginPointer("move", e);
+        }}
+        className={`absolute ${fullBleed ? "inset-0 cursor-pointer" : "cursor-move"} ${ringClass}`}
+        style={fullBleed ? { opacity: layer.opacity, zIndex } : { ...boxStyle, zIndex }}
       >
         {layer.url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={layer.url} alt="" className="size-full object-cover" />
+          <img src={layer.url} alt="" className="pointer-events-none size-full object-cover" draggable={false} />
         ) : (
           <span className="flex size-full items-center justify-center bg-vice-surface/20 text-[10px] text-vice-text-muted">
             Geen beeld
           </span>
         )}
-      </button>
+        {selected && draggable && !fullBleed ? (
+          <span
+            className="absolute bottom-0 right-0 size-3 cursor-se-resize rounded-sm bg-vice-gold"
+            onPointerDown={(e) => beginPointer("resize", e)}
+          />
+        ) : null}
+      </div>
     );
   }
 
   if (layer.kind === "logo" && logoUrl) {
     return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className={`absolute flex items-center justify-center ${selected ? "ring-2 ring-vice-gold" : ""}`}
+      <div
+        role="button"
+        tabIndex={0}
+        onPointerDown={(e) => beginPointer("move", e)}
+        className={`absolute flex cursor-move items-center justify-center ${ringClass}`}
         style={{ ...boxStyle, zIndex }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logoUrl} alt="" className="max-h-full max-w-full object-contain" />
-      </button>
+        <img src={logoUrl} alt="" className="pointer-events-none max-h-full max-w-full object-contain" draggable={false} />
+        {selected ? (
+          <span
+            className="absolute bottom-0 right-0 size-3 cursor-se-resize rounded-sm bg-vice-gold"
+            onPointerDown={(e) => beginPointer("resize", e)}
+          />
+        ) : null}
+      </div>
     );
   }
 
   if (layer.kind === "text") {
     const style = typography?.[layer.typeRole];
     return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className={`absolute px-1 text-left ${selected ? "ring-2 ring-vice-gold" : ""}`}
+      <div
+        role="button"
+        tabIndex={0}
+        onPointerDown={(e) => beginPointer("move", e)}
+        className={`absolute cursor-move px-1 text-left ${ringClass}`}
         style={{
           ...boxStyle,
           zIndex,
@@ -714,8 +988,14 @@ function BeeldLayerPreview({
           textAlign: layer.align,
         }}
       >
-        {layer.text}
-      </button>
+        <span className="pointer-events-none whitespace-pre-wrap">{layer.text}</span>
+        {selected ? (
+          <span
+            className="absolute bottom-0 right-0 size-3 cursor-se-resize rounded-sm bg-vice-gold"
+            onPointerDown={(e) => beginPointer("resize", e)}
+          />
+        ) : null}
+      </div>
     );
   }
 
