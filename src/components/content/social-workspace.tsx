@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ImageIcon, LoaderCircle, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
+import { Download, ImageIcon, LoaderCircle, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { SocialPostMockup } from "@/components/content/social-post-mockup";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -368,6 +368,31 @@ export function SocialWorkspace({
   const selected = concept?.selectedAsset ?? concept?.assets[0] ?? null;
   const previewAspect =
     format === "reel" ? "aspect-[9/16] max-w-xs mx-auto" : "aspect-square";
+
+  async function downloadSelectedVisual() {
+    if (!selected?.url) {
+      setError("Geen beeld om te downloaden.");
+      return;
+    }
+    setBusy("download");
+    setError("");
+    try {
+      const response = await fetch(selected.url);
+      if (!response.ok) throw new Error("fetch failed");
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const ext = blob.type.includes("jpeg") ? "jpg" : blob.type.includes("webp") ? "webp" : "png";
+      link.href = objectUrl;
+      link.download = `social-${concept?.id?.slice(0, 8) ?? "visual"}.${ext}`;
+      link.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      setError("Foto downloaden mislukt. Probeer opnieuw of herlaad de pagina.");
+    } finally {
+      setBusy("");
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
@@ -834,6 +859,17 @@ export function SocialWorkspace({
                 ? `Genereer ${carouselSlides.length > 0 ? `${carouselSlides.length} visuals` : "visuals"}`
                 : "Genereer visual"}
             </Button>
+            {selected?.url ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy !== ""}
+                onClick={() => void downloadSelectedVisual()}
+              >
+                {busy === "download" ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
+                Foto downloaden
+              </Button>
+            ) : null}
             {selected && format !== "carousel" ? (
               <Button
                 type="button"
