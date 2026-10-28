@@ -740,6 +740,50 @@ export function BeeldWorkspace({
                         </select>
                       </div>
                       <div>
+                        <Label className="text-xs text-vice-text-muted">
+                          Lettergrootte ({selectedLayer.fontSizePx}px in export)
+                        </Label>
+                        <div className="mt-1 flex items-center gap-3">
+                          <input
+                            type="range"
+                            min={14}
+                            max={120}
+                            step={1}
+                            value={selectedLayer.fontSizePx}
+                            disabled={Boolean(busy)}
+                            className="min-w-0 flex-1 accent-vice-gold"
+                            onChange={(e) => {
+                              const fontSizePx = Number(e.target.value);
+                              updateDocument((doc) => ({
+                                layers: doc.layers.map((l) =>
+                                  l.id === selectedLayer.id && l.kind === "text" ? { ...l, fontSizePx } : l,
+                                ),
+                              }));
+                            }}
+                          />
+                          <Input
+                            type="number"
+                            min={14}
+                            max={120}
+                            step={1}
+                            className="w-20"
+                            value={selectedLayer.fontSizePx}
+                            disabled={Boolean(busy)}
+                            onChange={(e) => {
+                              const fontSizePx = Math.min(
+                                120,
+                                Math.max(14, Number(e.target.value) || selectedLayer.fontSizePx),
+                              );
+                              updateDocument((doc) => ({
+                                layers: doc.layers.map((l) =>
+                                  l.id === selectedLayer.id && l.kind === "text" ? { ...l, fontSizePx } : l,
+                                ),
+                              }));
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div>
                         <Label className="text-xs text-vice-text-muted">Kleur</Label>
                         <Input
                           type="color"
@@ -753,7 +797,9 @@ export function BeeldWorkspace({
                           }}
                         />
                       </div>
-                      <p className="text-xs text-vice-text-muted">Sleep op het canvas; gouden hoek = schalen.</p>
+                      <p className="text-xs text-vice-text-muted">
+                        Sleep op het canvas; gouden hoek = schalen. Lettergrootte geldt in de export (14–120px).
+                      </p>
                     </div>
                   ) : null}
                   {selectedLayer.kind === "logo" ? (
