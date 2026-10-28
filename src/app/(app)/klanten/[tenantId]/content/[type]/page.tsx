@@ -16,6 +16,7 @@ export default async function ContentTypePage({
   if (type === "leadgen" || type === "verkoop") notFound();
   if (type === "blog") redirect(`/klanten/${tenantId}/content/blog`);
   if (type === "social") redirect(`/klanten/${tenantId}/content/social`);
+  if (type === "beeld") redirect(`/klanten/${tenantId}/content/beeld`);
   if (!ALLOWED.has(type as ContentTypeId)) notFound();
 
   const ctx = await getUserAppContext();

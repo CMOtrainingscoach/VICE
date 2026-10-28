@@ -195,6 +195,7 @@ async function generateWithGemini(
   prompt: string,
   aspect: ImageAspectRatio,
   characterReferences?: CharacterImageReference[],
+  imageSizeOverride?: "1K" | "2K" | "4K",
 ): Promise<GeneratedImage> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
@@ -204,7 +205,9 @@ async function generateWithGemini(
   }
 
   const model = resolveGeminiImageModel();
-  const imageSize = (process.env.VICE_GEMINI_IMAGE_SIZE?.trim().toUpperCase() || "1K") as "1K" | "2K" | "4K";
+  const imageSize = (imageSizeOverride
+    || process.env.VICE_GEMINI_IMAGE_SIZE?.trim().toUpperCase()
+    || "1K") as "1K" | "2K" | "4K";
 
   const refs = characterReferences?.filter((ref) => ref.bytes?.length) ?? [];
   const input: { type: string; text?: string; mime_type?: string; data?: string }[] = [
@@ -277,6 +280,7 @@ export async function generateProviderImage(input: {
   aspectRatio?: ImageAspectRatio;
   characterReferences?: CharacterImageReference[];
   characterName?: string;
+  imageSize?: "1K" | "2K" | "4K";
 }): Promise<GeneratedImage> {
   const aspect = input.aspectRatio ?? "16:9";
   const refs = input.characterReferences?.filter((ref) => ref.bytes?.length) ?? [];
@@ -288,12 +292,12 @@ export async function generateProviderImage(input: {
     }
     const name = input.characterName?.trim() || "brand character";
     const prompt = `${buildNanoCharacterIntro(name, refs.length)}\n\n${input.prompt}`;
-    return generateWithGemini(prompt, aspect, refs);
+    return generateWithGemini(prompt, aspect, refs, input.imageSize);
   }
 
   const provider = resolveImageProvider();
   if (provider === "gemini") {
-    return generateWithGemini(input.prompt, aspect);
+    return generateWithGemini(input.prompt, aspect, undefined, input.imageSize);
   }
   return generateWithOpenAi(input.prompt, aspect);
 }
