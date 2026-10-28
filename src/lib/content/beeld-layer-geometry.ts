@@ -7,7 +7,7 @@ export function beeldLayerIsFullBleedImage(layer: BeeldLayer): boolean {
 /** Layers the user can drag on the canvas (not locked full-bleed backgrounds). */
 export function beeldLayerIsCanvasDraggable(layer: BeeldLayer): boolean {
   if (layer.locked || !layer.visible) return false;
-  if (layer.kind === "logo" || layer.kind === "text") return true;
+  if (layer.kind === "logo" || layer.kind === "text" || layer.kind === "ai_label") return true;
   if (layer.kind === "image") return !beeldLayerIsFullBleedImage(layer);
   return false;
 }

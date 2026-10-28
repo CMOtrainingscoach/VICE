@@ -78,6 +78,16 @@ function parseLayer(raw: unknown): BeeldLayer | null {
       height: Number(row.height ?? 12),
     };
   }
+  if (kind === "ai_label") {
+    return {
+      ...base,
+      kind: "ai_label",
+      x: Number(row.x ?? 4),
+      y: Number(row.y ?? 82),
+      width: Number(row.width ?? 11),
+      height: Number(row.height ?? 11),
+    };
+  }
   if (kind === "image") {
     return {
       ...base,

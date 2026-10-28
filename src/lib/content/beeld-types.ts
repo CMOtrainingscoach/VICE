@@ -100,7 +100,10 @@ export function beeldExportDimensions(presetId: string, quality: BeeldImageQuali
   };
 }
 
-export type BeeldLayerKind = "image" | "logo" | "text";
+export type BeeldLayerKind = "image" | "logo" | "text" | "ai_label";
+
+/** EU AI transparency label (bundled in /public/content). */
+export const EU_AI_LABEL_PATH = "/content/eu-ai-label.png";
 
 export type BeeldLayerBase = {
   id: string;
@@ -146,7 +149,15 @@ export type BeeldTextLayer = BeeldLayerBase & {
   fontSizePx: number;
 };
 
-export type BeeldLayer = BeeldImageLayer | BeeldLogoLayer | BeeldTextLayer;
+export type BeeldAiLabelLayer = BeeldLayerBase & {
+  kind: "ai_label";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type BeeldLayer = BeeldImageLayer | BeeldLogoLayer | BeeldTextLayer | BeeldAiLabelLayer;
 
 export type BeeldDocument = {
   layers: BeeldLayer[];
@@ -182,5 +193,6 @@ export function newBeeldLayerId(): string {
 export function defaultLayerName(kind: BeeldLayerKind, index: number): string {
   if (kind === "text") return `Tekst ${index}`;
   if (kind === "logo") return "Logo";
+  if (kind === "ai_label") return "AI-label (EU)";
   return `Beeld ${index}`;
 }

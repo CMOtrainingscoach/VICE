@@ -30,6 +30,7 @@ import {
   beeldExportDimensions,
   beeldPresetById,
   defaultLayerName,
+  EU_AI_LABEL_PATH,
   newBeeldLayerId,
   type BeeldComposition,
   type BeeldCompositionSummary,
@@ -91,6 +92,21 @@ function logoLayer(): BeeldLayer {
     y: 4,
     width: 28,
     height: 14,
+  };
+}
+
+function aiLabelLayer(): BeeldLayer {
+  return {
+    id: newBeeldLayerId(),
+    name: "AI-label (EU)",
+    kind: "ai_label",
+    visible: true,
+    locked: false,
+    opacity: 0.92,
+    x: 4,
+    y: 82,
+    width: 11,
+    height: 11,
   };
 }
 
@@ -287,7 +303,7 @@ export function BeeldWorkspace({
             fontSizePx: geometry.fontSizePx ?? layer.fontSizePx,
           };
         }
-        if (layer.kind === "logo" || layer.kind === "image") {
+        if (layer.kind === "logo" || layer.kind === "image" || layer.kind === "ai_label") {
           return {
             ...layer,
             x: geometry.x ?? layer.x,
@@ -305,11 +321,21 @@ export function BeeldWorkspace({
     if (persist) scheduleSave({}, next);
   }
 
-  function addLayer(kind: "image" | "logo" | "text") {
+  function addLayer(kind: "image" | "logo" | "text" | "ai_label") {
     if (!composition) return;
+    if (kind === "ai_label" && composition.document.layers.some((l) => l.kind === "ai_label")) {
+      setError("Er staat al een AI-label op dit beeld. Verwijder het huidige label om opnieuw toe te voegen.");
+      return;
+    }
     const imageCount = composition.document.layers.filter((l) => l.kind === "image").length;
     const layer =
-      kind === "logo" ? logoLayer() : kind === "text" ? textLayer() : fullBleedImageLayer(defaultLayerName("image", imageCount + 1));
+      kind === "logo"
+        ? logoLayer()
+        : kind === "text"
+          ? textLayer()
+          : kind === "ai_label"
+            ? aiLabelLayer()
+            : fullBleedImageLayer(defaultLayerName("image", imageCount + 1));
     const next: BeeldDocument = { layers: [...composition.document.layers, layer] };
     setSelectedLayerId(layer.id);
     scheduleSave({}, next);
@@ -388,6 +414,7 @@ export function BeeldWorkspace({
         exportWidth: dims.width,
         exportHeight: dims.height,
         logoUrl: clientBrand?.logoUrl,
+        aiLabelUrl: `${window.location.origin}${EU_AI_LABEL_PATH}`,
         typography: clientBrand?.typography ?? {},
       });
       const url = URL.createObjectURL(blob);
@@ -594,6 +621,15 @@ export function BeeldWorkspace({
                     </Button>
                     <Button type="button" variant="secondary" disabled={Boolean(busy)} onClick={() => addLayer("text")}>
                       <Type className="size-3.5" /> Tekst
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={Boolean(busy) || composition.document.layers.some((l) => l.kind === "ai_label")}
+                      title="Optioneel EU AI-transparantielabel"
+                      onClick={() => addLayer("ai_label")}
+                    >
+                      AI-label
                     </Button>
                   </div>
                 </div>
@@ -807,6 +843,37 @@ export function BeeldWorkspace({
                       Merklogo uit Brand. Sleep op het canvas; gebruik de hoek om te schalen.
                     </p>
                   ) : null}
+                  {selectedLayer.kind === "ai_label" ? (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-xs text-vice-text-muted">
+                        Optioneel label voor AI-gegenereerde content (EU). Niet verplicht op elk platform — plaats waar
+                        nodig.
+                      </p>
+                      <div>
+                        <Label className="text-xs text-vice-text-muted">
+                          Dekking ({Math.round(selectedLayer.opacity * 100)}%)
+                        </Label>
+                        <input
+                          type="range"
+                          min={0.15}
+                          max={1}
+                          step={0.01}
+                          value={selectedLayer.opacity}
+                          disabled={Boolean(busy)}
+                          className="mt-1 w-full accent-vice-gold"
+                          onChange={(e) => {
+                            const opacity = Number(e.target.value);
+                            updateDocument((doc) => ({
+                              layers: doc.layers.map((l) =>
+                                l.id === selectedLayer.id ? { ...l, opacity } : l,
+                              ),
+                            }));
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-vice-text-muted">Sleep en schaal op het canvas.</p>
+                    </div>
+                  ) : null}
                 </section>
               ) : null}
             </div>
@@ -873,7 +940,7 @@ function BeeldLayerPreview({
         ? 100
         : layer.kind === "text"
           ? Math.max(12, layer.fontSizePx * 0.35)
-          : layer.kind === "logo" || layer.kind === "image"
+          : layer.kind === "logo" || layer.kind === "image" || layer.kind === "ai_label"
             ? layer.height
             : 20
     }%`,
@@ -888,7 +955,7 @@ function BeeldLayerPreview({
     const orig: LayerGeometryPatch =
       layer.kind === "text"
         ? { x: layer.x, y: layer.y, width: layer.width, fontSizePx: layer.fontSizePx }
-        : layer.kind === "logo" || layer.kind === "image"
+        : layer.kind === "logo" || layer.kind === "image" || layer.kind === "ai_label"
           ? { x: layer.x, y: layer.y, width: layer.width, height: layer.height }
           : {};
     dragRef.current = {
@@ -1006,6 +1073,32 @@ function BeeldLayerPreview({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logoUrl} alt="" className="pointer-events-none max-h-full max-w-full object-contain" draggable={false} />
+        {selected ? (
+          <span
+            className="absolute bottom-0 right-0 size-3 cursor-se-resize rounded-sm bg-vice-gold"
+            onPointerDown={(e) => beginPointer("resize", e)}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
+  if (layer.kind === "ai_label") {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onPointerDown={(e) => beginPointer("move", e)}
+        className={`absolute flex cursor-move items-center justify-center ${ringClass}`}
+        style={{ ...boxStyle, zIndex }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={EU_AI_LABEL_PATH}
+          alt="AI"
+          className="pointer-events-none max-h-full max-w-full object-contain"
+          draggable={false}
+        />
         {selected ? (
           <span
             className="absolute bottom-0 right-0 size-3 cursor-se-resize rounded-sm bg-vice-gold"
