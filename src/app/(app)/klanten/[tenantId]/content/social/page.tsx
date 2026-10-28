@@ -10,7 +10,9 @@ import {
 } from "@/modules/content/blog-actions";
 import { listSocialPostConceptsAction } from "@/modules/content/social-actions";
 import { listContentBuyerPersonasAction } from "@/modules/content/audience-actions";
+import { loadClientBrandAction } from "@/modules/brand/actions";
 import { listBrandCharactersForContentAction } from "@/modules/brand/character-actions";
+import { listBeeldCompositionsAction } from "@/modules/content/beeld-actions";
 
 export const maxDuration = 300;
 
@@ -33,14 +35,17 @@ export default async function SocialContentPage({
     .maybeSingle();
   if (!tenantData) notFound();
 
-  const [brand, concepts, blogs, meetings, buyerPersonas, brandCharacters] = await Promise.all([
-    loadBlogBrandContextAction(tenantId),
-    listSocialPostConceptsAction(tenantId),
-    listBlogConceptsAction(tenantId),
-    listBlogSourceMeetingsAction(tenantId),
-    listContentBuyerPersonasAction(tenantId),
-    listBrandCharactersForContentAction(tenantId),
-  ]);
+  const [brand, concepts, blogs, meetings, buyerPersonas, brandCharacters, clientBrandView, beeldCompositions] =
+    await Promise.all([
+      loadBlogBrandContextAction(tenantId),
+      listSocialPostConceptsAction(tenantId),
+      listBlogConceptsAction(tenantId),
+      listBlogSourceMeetingsAction(tenantId),
+      listContentBuyerPersonasAction(tenantId),
+      listBrandCharactersForContentAction(tenantId),
+      loadClientBrandAction(tenantId),
+      listBeeldCompositionsAction(tenantId),
+    ]);
 
   if (!brand.ok || !brand.data) {
     return (
@@ -62,6 +67,8 @@ export default async function SocialContentPage({
       meetings={meetings.ok ? meetings.data ?? [] : []}
       buyerPersonaOptions={buyerPersonas.ok ? buyerPersonas.data ?? [] : []}
       brandCharacterOptions={brandCharacters.ok ? brandCharacters.data ?? [] : []}
+      beeldCompositions={beeldCompositions.ok ? beeldCompositions.data ?? [] : []}
+      clientBrand={clientBrandView.ok ? clientBrandView.data?.brand ?? null : null}
     />
   );
 }

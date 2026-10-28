@@ -13,12 +13,15 @@ import type {
   BrandContext,
   ContentBuyerPersonaOption,
 } from "@/lib/content/blog-types";
+import { ContentBeeldImportField } from "@/components/content/content-beeld-import-field";
 import { ContentBrandCharacterField } from "@/components/content/content-brand-character-field";
 import {
   ContentBuyerPersonaField,
   resolveDefaultContentBuyerPersonaId,
 } from "@/components/content/content-buyer-persona-field";
 import type { BrandCharacterContentOption } from "@/lib/brand/character-types";
+import type { ClientBrand } from "@/lib/brand/types";
+import type { BeeldCompositionSummary } from "@/lib/content/beeld-types";
 import {
   SOCIAL_CHANNELS,
   SOCIAL_FORMATS,
@@ -54,6 +57,8 @@ export function SocialWorkspace({
   meetings,
   buyerPersonaOptions = [],
   brandCharacterOptions = [],
+  beeldCompositions = [],
+  clientBrand = null,
 }: {
   tenantId: string;
   tenantName: string;
@@ -64,6 +69,8 @@ export function SocialWorkspace({
   meetings: BlogSourceMeeting[];
   buyerPersonaOptions?: ContentBuyerPersonaOption[];
   brandCharacterOptions?: BrandCharacterContentOption[];
+  beeldCompositions?: BeeldCompositionSummary[];
+  clientBrand?: ClientBrand | null;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -642,6 +649,18 @@ export function SocialWorkspace({
               value={brandCharacterId}
               disabled={busy !== ""}
               onChange={setBrandCharacterId}
+            />
+          </div>
+
+          <div className="mt-4">
+            <ContentBeeldImportField
+              tenantId={tenantId}
+              conceptId={concept?.id ?? null}
+              compositions={beeldCompositions}
+              clientBrand={clientBrand}
+              target="social"
+              disabled={busy !== ""}
+              onSocialImported={(next) => setConcept(next)}
             />
           </div>
 

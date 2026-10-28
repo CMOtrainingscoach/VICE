@@ -608,6 +608,57 @@ export async function generateBlogVisualAction(
   }
 }
 
+export async function uploadBlogVisualAction(
+  conceptId: string,
+  formData: FormData,
+): Promise<ActionResult<BlogConcept>> {
+  const loaded = await loadBlogConceptAction(conceptId);
+  if (!loaded.ok || !loaded.data) return loaded;
+  const concept = loaded.data;
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { ok: false, error: "Geen bestand gekozen." };
+  if (file.size > 12 * 1024 * 1024) return { ok: false, error: "Bestand is groter dan 12 MB." };
+  const mime = file.type || "image/jpeg";
+  if (!/^image\/(png|jpeg|webp)$/.test(mime)) {
+    return { ok: false, error: "Alleen PNG, JPEG of WebP." };
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const ext = mime.includes("jpeg") ? "jpg" : mime.includes("webp") ? "webp" : "png";
+  const path = `${concept.tenantId}/blog/${conceptId}/${crypto.randomUUID()}.${ext}`;
+  const admin = createAdminClient();
+  const uploaded = await admin.storage.from("content-assets").upload(path, bytes, {
+    contentType: mime,
+    upsert: false,
+  });
+  if (uploaded.error) {
+    return { ok: false, error: /bucket|mime/i.test(uploaded.error.message) ? BLOG_MIGRATION : uploaded.error.message };
+  }
+
+  const supabase = await authed();
+  const added = await supabase.schema("app").rpc("add_blog_visual", {
+    p_concept_id: conceptId,
+    p_path: path,
+    p_mime: mime,
+    p_width: null,
+    p_height: null,
+    p_prompt: "",
+    p_style_summary: "Beeldmateriaal",
+    p_alt_text: file.name.replace(/\.[^.]+$/, "").slice(0, 120) || "Beeldmateriaal",
+    p_brand_version_number: concept.brandVersionNumber,
+    p_based_on_title: concept.title,
+    p_select: true,
+  });
+  if (added.error || !added.data) {
+    return { ok: false, error: migration(added.error?.message ?? "Upload opslaan mislukt") };
+  }
+  const mapped = await mapConcept(added.data);
+  if (!mapped) return { ok: false, error: "Upload opslaan mislukt" };
+  revalidateBlog(mapped.tenantId, mapped.id);
+  return { ok: true, data: mapped };
+}
+
 export async function selectBlogVisualAction(
   conceptId: string,
   expectedUpdatedAt: string,

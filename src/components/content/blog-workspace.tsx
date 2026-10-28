@@ -18,12 +18,15 @@ import {
   type BrandContext,
   type ContentBuyerPersonaOption,
 } from "@/lib/content/blog-types";
+import { ContentBeeldImportField } from "@/components/content/content-beeld-import-field";
 import { ContentBrandCharacterField } from "@/components/content/content-brand-character-field";
 import {
   ContentBuyerPersonaField,
   resolveDefaultContentBuyerPersonaId,
 } from "@/components/content/content-buyer-persona-field";
 import type { BrandCharacterContentOption } from "@/lib/brand/character-types";
+import type { ClientBrand } from "@/lib/brand/types";
+import type { BeeldCompositionSummary } from "@/lib/content/beeld-types";
 import {
   applyBlogRewriteAction,
   createBlogConceptAction,
@@ -61,6 +64,8 @@ export function BlogWorkspace({
   initialKeyword = null,
   buyerPersonaOptions = [],
   brandCharacterOptions = [],
+  beeldCompositions = [],
+  clientBrand = null,
 }: {
   tenantId: string;
   tenantName: string;
@@ -74,6 +79,8 @@ export function BlogWorkspace({
   initialKeyword?: string | null;
   buyerPersonaOptions?: ContentBuyerPersonaOption[];
   brandCharacterOptions?: BrandCharacterContentOption[];
+  beeldCompositions?: BeeldCompositionSummary[];
+  clientBrand?: ClientBrand | null;
 }) {
   const router = useRouter();
   const [concept, setConcept] = useState<BlogConcept | null>(initial);
@@ -1027,6 +1034,9 @@ export function BlogWorkspace({
             brandCharacterOptions={brandCharacterOptions}
             brandCharacterId={brandCharacterId}
             onBrandCharacterChange={setBrandCharacterId}
+            beeldCompositions={beeldCompositions}
+            clientBrand={clientBrand}
+            onConceptUpdate={setConcept}
             disabledReason={
               !brand.hasVisual
                 ? "Beeldstijl ontbreekt"
@@ -1212,6 +1222,9 @@ export function BlogWorkspace({
             brandCharacterOptions={brandCharacterOptions}
             brandCharacterId={brandCharacterId}
             onBrandCharacterChange={setBrandCharacterId}
+            beeldCompositions={beeldCompositions}
+            clientBrand={clientBrand}
+            onConceptUpdate={setConcept}
             onSelect={(visualId) => {
               if (!concept) return;
               void selectBlogVisualAction(concept.id, concept.updatedAt, visualId).then((result) => {
@@ -1380,6 +1393,9 @@ function VisualCard({
   brandCharacterOptions = [],
   brandCharacterId = "",
   onBrandCharacterChange,
+  beeldCompositions = [],
+  clientBrand = null,
+  onConceptUpdate,
   disabledReason,
 }: {
   tenantId: string;
@@ -1403,6 +1419,9 @@ function VisualCard({
   brandCharacterOptions?: BrandCharacterContentOption[];
   brandCharacterId?: string;
   onBrandCharacterChange?: (id: string) => void;
+  beeldCompositions?: BeeldCompositionSummary[];
+  clientBrand?: ClientBrand | null;
+  onConceptUpdate?: (concept: BlogConcept) => void;
   disabledReason?: string;
 }) {
   const selected = concept?.selectedVisual;
@@ -1455,6 +1474,17 @@ function VisualCard({
         <p className="mt-1 text-xs text-vice-text-muted">
           Leeg = AI kiest op basis van het artikel. Ingevuld = dit onderwerp, altijd in de gekozen beeldstijl.
         </p>
+      </div>
+      <div className="mt-4">
+        <ContentBeeldImportField
+          tenantId={tenantId}
+          conceptId={concept?.id ?? null}
+          compositions={beeldCompositions}
+          clientBrand={clientBrand}
+          target="blog"
+          disabled={busy || deletingVisual}
+          onBlogImported={(next) => onConceptUpdate?.(next)}
+        />
       </div>
       {selected?.url ? (
         <div className="mt-4 space-y-3">
