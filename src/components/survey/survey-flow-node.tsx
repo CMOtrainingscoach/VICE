@@ -18,8 +18,8 @@ export function SurveyFlowNode({ data, selected }: NodeProps) {
     <div
       className={
         selected
-          ? "min-w-[180px] max-w-[220px] rounded-xl border-2 border-vice-gold bg-vice-surface px-3 py-2 shadow-md"
-          : "min-w-[180px] max-w-[220px] rounded-xl border border-vice-border bg-vice-surface px-3 py-2 shadow-sm"
+          ? "min-w-[180px] max-w-[240px] rounded-xl border-2 border-vice-gold bg-vice-surface px-3 py-2 shadow-md"
+          : "min-w-[180px] max-w-[240px] rounded-xl border border-vice-border bg-vice-surface px-3 py-2 shadow-sm"
       }
     >
       {d.surveyType !== "welcome" ? (

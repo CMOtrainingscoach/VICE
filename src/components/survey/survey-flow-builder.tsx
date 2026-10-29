@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
+  useReactFlow,
   type Connection,
   type Edge,
   type Node,
@@ -30,6 +32,8 @@ import {
 
 const nodeTypes = { survey: SurveyFlowNode };
 
+const SURVEY_DRAG_MIME = "application/survey-node";
+
 function toFlowNode(n: SurveyNode): Node {
   const data: SurveyFlowNodeData & { options?: SurveyNode["data"]["options"] } = {
     surveyType: n.type,
@@ -43,42 +47,24 @@ function toFlowNode(n: SurveyNode): Node {
   return {
     id: n.id,
     type: "survey",
-    position: n.position,
+    position: { x: n.position.x, y: n.position.y },
     data,
+    draggable: true,
   };
-}
-
-function fromFlowNodes(nodes: Node[]): SurveyNode[] {
-  return nodes.map((node) => {
-    const d = node.data as SurveyFlowNodeData & { options?: SurveyNode["data"]["options"] };
-    const existingType = d.surveyType;
-    return {
-      id: node.id,
-      type: existingType,
-      position: { x: node.position.x, y: node.position.y },
-      data: {
-        ...defaultNodeData(existingType),
-        screenTitle: d.title,
-        screenDescription: "",
-        questionLabel: d.subtitle,
-        ...(d.options ? { options: d.options } : {}),
-      },
-    };
-  });
 }
 
 function mergeNodeData(oldNodes: SurveyNode[], flowNodes: Node[]): SurveyNode[] {
   const oldMap = new Map(oldNodes.map((n) => [n.id, n]));
   return flowNodes.map((node) => {
     const prev = oldMap.get(node.id);
-    const d = node.data as SurveyFlowNodeData;
+    const d = node.data as SurveyFlowNodeData & { options?: SurveyNode["data"]["options"] };
     if (prev) {
       return {
         ...prev,
         position: { x: node.position.x, y: node.position.y },
         data: {
           ...prev.data,
-          screenTitle: d.title || prev.data.screenTitle,
+          options: d.options ?? prev.data.options,
         },
       };
     }
@@ -112,7 +98,7 @@ function fromFlowEdges(edges: Edge[]): SurveyEdge[] {
   }));
 }
 
-export function SurveyFlowBuilder({
+function SurveyFlowCanvas({
   definition,
   selectedNodeId,
   onDefinitionChange,
@@ -123,14 +109,26 @@ export function SurveyFlowBuilder({
   onDefinitionChange: (def: SurveyDefinition) => void;
   onSelectNode: (id: string | null) => void;
 }) {
+  const { screenToFlowPosition, fitView } = useReactFlow();
+  const didFit = useRef(false);
+
   const nodes = useMemo(
-    () => definition.nodes.map((n) => ({
-      ...toFlowNode(n),
-      selected: n.id === selectedNodeId,
-    })),
+    () =>
+      definition.nodes.map((n) => ({
+        ...toFlowNode(n),
+        selected: n.id === selectedNodeId,
+      })),
     [definition.nodes, selectedNodeId],
   );
   const edges = useMemo(() => toFlowEdges(definition.edges), [definition.edges]);
+
+  useEffect(() => {
+    if (didFit.current || nodes.length === 0) return;
+    didFit.current = true;
+    requestAnimationFrame(() => {
+      void fitView({ padding: 0.2, duration: 200 });
+    });
+  }, [fitView, nodes.length]);
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
@@ -155,31 +153,97 @@ export function SurveyFlowBuilder({
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
-      const next = addEdge(
-        {
-          ...connection,
-          id: crypto.randomUUID(),
-        },
-        edges,
-      );
+      const next = addEdge({ ...connection, id: crypto.randomUUID() }, edges);
       onDefinitionChange({ ...definition, edges: fromFlowEdges(next) });
     },
     [definition, edges, onDefinitionChange],
   );
 
-  const onDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault();
-      const type = event.dataTransfer.getData("application/survey-node") as SurveyNodeType;
-      if (!type) return;
-      const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
-      const x = event.clientX - bounds.left - 90;
-      const y = event.clientY - bounds.top - 40;
+  const addNodeAt = useCallback(
+    (type: SurveyNodeType, clientX: number, clientY: number) => {
+      const position = screenToFlowPosition({ x: clientX, y: clientY });
       const id = crypto.randomUUID();
       const newNode: SurveyNode = {
         id,
         type,
-        position: { x, y },
+        position,
+        data: defaultNodeData(type),
+      };
+      onDefinitionChange({
+        ...definition,
+        nodes: [...definition.nodes, newNode],
+      });
+      onSelectNode(id);
+    },
+    [definition, onDefinitionChange, onSelectNode, screenToFlowPosition],
+  );
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const type = (event.dataTransfer.getData(SURVEY_DRAG_MIME) ||
+        event.dataTransfer.getData("text/plain")) as SurveyNodeType;
+      if (!type || !SURVEY_PALETTE.some((p) => p.type === type)) return;
+      addNodeAt(type, event.clientX, event.clientY);
+    },
+    [addNodeAt],
+  );
+
+  return (
+    <ReactFlow
+      className="survey-flow-canvas bg-vice-bg"
+      style={{ width: "100%", height: "100%" }}
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      nodesDraggable
+      nodesConnectable
+      elementsSelectable
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      onConnect={onConnect}
+      onNodeClick={(_, node) => onSelectNode(node.id)}
+      onPaneClick={() => onSelectNode(null)}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      proOptions={{ hideAttribution: true }}
+      defaultEdgeOptions={{ type: "smoothstep" }}
+    >
+      <Background gap={16} color="var(--vice-border)" />
+      <Controls className="!border-vice-border !bg-vice-surface !shadow-sm [&>button]:!border-vice-border [&>button]:!bg-vice-surface [&>button]:!fill-vice-text" />
+      <MiniMap
+        className="!border-vice-border !bg-vice-surface"
+        nodeColor="var(--vice-gold)"
+        maskColor="color-mix(in srgb, var(--vice-bg) 75%, transparent)"
+      />
+    </ReactFlow>
+  );
+}
+
+export function SurveyFlowBuilder({
+  definition,
+  selectedNodeId,
+  onDefinitionChange,
+  onSelectNode,
+}: {
+  definition: SurveyDefinition;
+  selectedNodeId: string | null;
+  onDefinitionChange: (def: SurveyDefinition) => void;
+  onSelectNode: (id: string | null) => void;
+}) {
+  const addFromPalette = useCallback(
+    (type: SurveyNodeType) => {
+      const id = crypto.randomUUID();
+      const offset = definition.nodes.length * 24;
+      const newNode: SurveyNode = {
+        id,
+        type,
+        position: { x: 120 + offset, y: 160 + offset },
         data: defaultNodeData(type),
       };
       onDefinitionChange({
@@ -192,62 +256,72 @@ export function SurveyFlowBuilder({
   );
 
   return (
-    <div className="flex min-h-[520px] gap-0 overflow-hidden rounded-xl border border-vice-border bg-vice-bg">
-      <aside className="w-44 shrink-0 space-y-3 border-r border-vice-border bg-vice-surface p-3">
-        <p className="text-xs font-medium uppercase text-vice-text-muted">Schermen</p>
-        {SURVEY_PALETTE.filter((p) => p.group === "screen").map((item) => (
-          <PaletteItem key={item.type} type={item.type} label={item.label} />
-        ))}
-        <p className="pt-2 text-xs font-medium uppercase text-vice-text-muted">Vragen</p>
-        {SURVEY_PALETTE.filter((p) => p.group === "question").map((item) => (
-          <PaletteItem key={item.type} type={item.type} label={item.label} />
-        ))}
+    <div className="survey-flow-panel flex min-h-[560px] gap-0 overflow-hidden rounded-xl border border-vice-border bg-vice-bg">
+      <aside className="z-10 w-48 shrink-0 overflow-y-auto border-r border-vice-border bg-vice-surface p-3 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-vice-text">Schermen</p>
+        <p className="mb-2 text-[11px] text-vice-text-muted">Sleep naar het canvas of klik +</p>
+        <div className="space-y-2">
+          {SURVEY_PALETTE.filter((p) => p.group === "screen").map((item) => (
+            <PaletteItem key={item.type} type={item.type} label={item.label} onAdd={() => addFromPalette(item.type)} />
+          ))}
+        </div>
+        <p className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-vice-text">Vragen</p>
+        <div className="space-y-2">
+          {SURVEY_PALETTE.filter((p) => p.group === "question").map((item) => (
+            <PaletteItem key={item.type} type={item.type} label={item.label} onAdd={() => addFromPalette(item.type)} />
+          ))}
+        </div>
       </aside>
-      <div
-        className="min-h-[520px] flex-1"
-        onDragOver={(e) => {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-        }}
-        onDrop={onDrop}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeClick={(_, node) => onSelectNode(node.id)}
-          onPaneClick={() => onSelectNode(null)}
-          fitView
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background gap={16} />
-          <Controls />
-          <MiniMap pannable zoomable />
-        </ReactFlow>
+      <div className="relative h-[560px] min-w-0 flex-1">
+        <ReactFlowProvider>
+          <SurveyFlowCanvas
+            definition={definition}
+            selectedNodeId={selectedNodeId}
+            onDefinitionChange={onDefinitionChange}
+            onSelectNode={onSelectNode}
+          />
+        </ReactFlowProvider>
       </div>
     </div>
   );
 }
 
-function PaletteItem({ type, label }: { type: SurveyNodeType; label: string }) {
+function PaletteItem({
+  type,
+  label,
+  onAdd,
+}: {
+  type: SurveyNodeType;
+  label: string;
+  onAdd: () => void;
+}) {
   return (
-    <div
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData("application/survey-node", type);
-        e.dataTransfer.effectAllowed = "move";
-      }}
-      className="cursor-grab rounded-md border border-dashed border-vice-border bg-vice-bg px-2 py-1.5 text-xs text-vice-text hover:border-vice-gold active:cursor-grabbing"
-    >
-      {label}
+    <div className="flex items-stretch gap-1">
+      <div
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(SURVEY_DRAG_MIME, type);
+          e.dataTransfer.setData("text/plain", type);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        className="flex flex-1 cursor-grab items-center rounded-md border border-vice-border bg-vice-bg px-2.5 py-2 text-sm font-medium text-vice-text shadow-sm hover:border-vice-gold active:cursor-grabbing"
+        title="Sleep naar het canvas"
+      >
+        {label}
+      </div>
+      <button
+        type="button"
+        className="shrink-0 rounded-md border border-vice-border bg-vice-surface px-2 text-sm font-medium text-vice-gold hover:border-vice-gold"
+        title="Toevoegen op canvas"
+        aria-label={`${label} toevoegen`}
+        onClick={onAdd}
+      >
+        +
+      </button>
     </div>
   );
 }
 
-/** Sync inspector edits back into definition */
 export function patchSurveyNode(definition: SurveyDefinition, node: SurveyNode): SurveyDefinition {
   return {
     ...definition,
