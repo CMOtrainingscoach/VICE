@@ -11,6 +11,8 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
   useReactFlow,
+  useNodesState,
+  useEdgesState,
   type Connection,
   type Edge,
   type Node,
@@ -20,6 +22,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { SurveyFlowNode, type SurveyFlowNodeData } from "@/components/survey/survey-flow-node";
+import { normalizeSurveyPosition, surveyDefinitionStructureKey } from "@/lib/survey/survey-parse";
 import {
   defaultNodeData,
   isBranchingQuestion,
@@ -34,22 +37,37 @@ const nodeTypes = { survey: SurveyFlowNode };
 
 const SURVEY_DRAG_MIME = "application/survey-node";
 
-function toFlowNode(n: SurveyNode): Node {
-  const data: SurveyFlowNodeData & { options?: SurveyNode["data"]["options"] } = {
-    surveyType: n.type,
-    title: n.data.screenTitle,
-    subtitle:
-      n.data.questionLabel ||
-      (n.data.screenDescription ? n.data.screenDescription.slice(0, 60) : "") ||
-      "",
-    options: isBranchingQuestion(n.type) ? n.data.options : undefined,
-  };
+function toFlowNode(n: SurveyNode, selected: boolean): Node<SurveyFlowNodeData> {
+  const pos = normalizeSurveyPosition(n.position);
   return {
     id: n.id,
     type: "survey",
-    position: { x: n.position.x, y: n.position.y },
-    data,
+    position: pos,
+    data: {
+      surveyType: n.type,
+      title: n.data.screenTitle,
+      subtitle:
+        n.data.questionLabel ||
+        (n.data.screenDescription ? n.data.screenDescription.slice(0, 60) : "") ||
+        "",
+      options: isBranchingQuestion(n.type) ? n.data.options : undefined,
+    },
     draggable: true,
+    selectable: true,
+    selected,
+  };
+}
+
+function definitionToFlow(definition: SurveyDefinition, selectedNodeId: string | null) {
+  return {
+    nodes: definition.nodes.map((n) => toFlowNode(n, n.id === selectedNodeId)),
+    edges: definition.edges.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle ?? undefined,
+      label: e.label,
+    })),
   };
 }
 
@@ -57,35 +75,25 @@ function mergeNodeData(oldNodes: SurveyNode[], flowNodes: Node[]): SurveyNode[] 
   const oldMap = new Map(oldNodes.map((n) => [n.id, n]));
   return flowNodes.map((node) => {
     const prev = oldMap.get(node.id);
-    const d = node.data as SurveyFlowNodeData & { options?: SurveyNode["data"]["options"] };
+    const d = node.data as SurveyFlowNodeData;
+    const pos = normalizeSurveyPosition(node.position);
     if (prev) {
       return {
         ...prev,
-        position: { x: node.position.x, y: node.position.y },
+        position: pos,
         data: {
           ...prev.data,
           options: d.options ?? prev.data.options,
         },
       };
     }
-    const type = d.surveyType;
     return {
       id: node.id,
-      type,
-      position: { x: node.position.x, y: node.position.y },
-      data: defaultNodeData(type),
+      type: d.surveyType,
+      position: pos,
+      data: defaultNodeData(d.surveyType),
     };
   });
-}
-
-function toFlowEdges(edges: SurveyEdge[]): Edge[] {
-  return edges.map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    sourceHandle: e.sourceHandle ?? undefined,
-    label: e.label,
-  }));
 }
 
 function fromFlowEdges(edges: Edge[]): SurveyEdge[] {
@@ -110,53 +118,82 @@ function SurveyFlowCanvas({
   onSelectNode: (id: string | null) => void;
 }) {
   const { screenToFlowPosition, fitView } = useReactFlow();
-  const didFit = useRef(false);
+  const structureKey = useMemo(() => surveyDefinitionStructureKey(definition), [definition]);
+  const lastStructureKey = useRef(structureKey);
+  const lastSelection = useRef(selectedNodeId);
 
-  const nodes = useMemo(
-    () =>
-      definition.nodes.map((n) => ({
-        ...toFlowNode(n),
-        selected: n.id === selectedNodeId,
-      })),
-    [definition.nodes, selectedNodeId],
-  );
-  const edges = useMemo(() => toFlowEdges(definition.edges), [definition.edges]);
+  const initial = useMemo(() => definitionToFlow(definition, selectedNodeId), []);
+  const [rfNodes, setRfNodes] = useNodesState(initial.nodes);
+  const [rfEdges, setRfEdges] = useEdgesState<Edge>(initial.edges);
 
   useEffect(() => {
-    if (didFit.current || nodes.length === 0) return;
-    didFit.current = true;
-    requestAnimationFrame(() => {
-      void fitView({ padding: 0.2, duration: 200 });
-    });
-  }, [fitView, nodes.length]);
+    const structureChanged = structureKey !== lastStructureKey.current;
+    const selectionChanged = selectedNodeId !== lastSelection.current;
+    lastStructureKey.current = structureKey;
+    lastSelection.current = selectedNodeId;
+
+    if (structureChanged) {
+      const next = definitionToFlow(definition, selectedNodeId);
+      setRfNodes(next.nodes);
+      setRfEdges(next.edges);
+      requestAnimationFrame(() => {
+        void fitView({ padding: 0.25, duration: 250 });
+      });
+      return;
+    }
+
+    if (selectionChanged) {
+      setRfNodes((nodes) =>
+        nodes.map((n) => ({
+          ...n,
+          selected: n.id === selectedNodeId,
+        })),
+      );
+    }
+  }, [definition, structureKey, selectedNodeId, setRfNodes, setRfEdges, fitView]);
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      const nextFlow = applyNodeChanges(changes, nodes);
-      const merged = mergeNodeData(definition.nodes, nextFlow);
-      onDefinitionChange({ ...definition, nodes: merged });
+      setRfNodes((nodes) => {
+        const next = applyNodeChanges(changes, nodes) as Node<SurveyFlowNodeData>[];
+        const hasPosition = changes.some((c) => c.type === "position" && c.dragging === false);
+        const hasRemove = changes.some((c) => c.type === "remove");
+        if (hasPosition || hasRemove) {
+          onDefinitionChange({
+            ...definition,
+            nodes: mergeNodeData(definition.nodes, next),
+          });
+        }
+        return next;
+      });
       for (const ch of changes) {
         if (ch.type === "select" && ch.selected) onSelectNode(ch.id);
         if (ch.type === "select" && !ch.selected && selectedNodeId === ch.id) onSelectNode(null);
       }
     },
-    [definition, nodes, onDefinitionChange, onSelectNode, selectedNodeId],
+    [definition, onDefinitionChange, onSelectNode, selectedNodeId, setRfNodes],
   );
 
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
-      const next = applyEdgeChanges(changes, edges);
-      onDefinitionChange({ ...definition, edges: fromFlowEdges(next) });
+      setRfEdges((edges) => {
+        const next = applyEdgeChanges(changes, edges) as Edge[];
+        onDefinitionChange({ ...definition, edges: fromFlowEdges(next) });
+        return next;
+      });
     },
-    [definition, edges, onDefinitionChange],
+    [definition, onDefinitionChange, setRfEdges],
   );
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
-      const next = addEdge({ ...connection, id: crypto.randomUUID() }, edges);
-      onDefinitionChange({ ...definition, edges: fromFlowEdges(next) });
+      setRfEdges((edges) => {
+        const next = addEdge({ ...connection, id: crypto.randomUUID() }, edges);
+        onDefinitionChange({ ...definition, edges: fromFlowEdges(next) });
+        return next;
+      });
     },
-    [definition, edges, onDefinitionChange],
+    [definition, onDefinitionChange, setRfEdges],
   );
 
   const addNodeAt = useCallback(
@@ -198,8 +235,8 @@ function SurveyFlowCanvas({
     <ReactFlow
       className="survey-flow-canvas bg-vice-bg"
       style={{ width: "100%", height: "100%" }}
-      nodes={nodes}
-      edges={edges}
+      nodes={rfNodes}
+      edges={rfEdges}
       nodeTypes={nodeTypes}
       nodesDraggable
       nodesConnectable

@@ -1,18 +1,20 @@
 "use client";
 
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { memo } from "react";
+import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { isBranchingQuestion, nodeTypeLabel, type SurveyNodeType } from "@/lib/survey/survey-types";
 
 export type SurveyFlowNodeData = {
   surveyType: SurveyNodeType;
   title: string;
   subtitle: string;
+  options?: { id: string; label: string }[];
 };
 
-export function SurveyFlowNode({ data, selected }: NodeProps) {
-  const d = data as SurveyFlowNodeData;
+function SurveyFlowNodeComponent({ data, selected }: NodeProps<Node<SurveyFlowNodeData>>) {
+  const d = data;
   const branching = isBranchingQuestion(d.surveyType);
-  const options = branching ? (data as SurveyFlowNodeData & { options?: { id: string; label: string }[] }).options : undefined;
+  const options = branching ? d.options : undefined;
 
   return (
     <div
@@ -56,7 +58,13 @@ export function SurveyFlowNode({ data, selected }: NodeProps) {
               />
             );
           })}
-          <Handle type="source" position={Position.Bottom} id="default" className="!bg-vice-text-muted" style={{ left: "95%" }} />
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="default"
+            className="!bg-vice-text-muted"
+            style={{ left: "95%" }}
+          />
         </div>
       ) : (
         <Handle type="source" position={Position.Bottom} className="!bg-vice-gold" />
@@ -64,3 +72,5 @@ export function SurveyFlowNode({ data, selected }: NodeProps) {
     </div>
   );
 }
+
+export const SurveyFlowNode = memo(SurveyFlowNodeComponent);

@@ -71,6 +71,12 @@ body {
 
 .survey-flow-canvas .react-flow__node {
   z-index: 1;
+  visibility: visible;
+  opacity: 1;
+}
+
+.survey-flow-canvas .react-flow__node > div {
+  pointer-events: auto;
 }
 
 .survey-flow-canvas .react-flow__edge {

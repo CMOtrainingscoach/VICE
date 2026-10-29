@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
 import type { ClientBrand } from "@/lib/brand/types";
 import { validateSurveyDefinition } from "@/lib/survey/survey-graph";
+import { normalizeSurveyDefinition } from "@/lib/survey/survey-parse";
 import {
   SURVEY_MIGRATION,
   type PublishedSurvey,
@@ -31,15 +32,7 @@ async function authed() {
 }
 
 function parseDefinition(raw: unknown): SurveyDefinition {
-  const row = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  return {
-    version: Number(row.version ?? 1),
-    nodes: Array.isArray(row.nodes) ? (row.nodes as SurveyDefinition["nodes"]) : [],
-    edges: Array.isArray(row.edges) ? (row.edges as SurveyDefinition["edges"]) : [],
-    settings: (row.settings && typeof row.settings === "object"
-      ? row.settings
-      : {}) as SurveyDefinition["settings"],
-  };
+  return normalizeSurveyDefinition(raw);
 }
 
 function parseSummary(raw: Record<string, unknown>, definition?: SurveyDefinition): Survey {
