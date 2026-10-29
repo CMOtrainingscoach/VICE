@@ -240,7 +240,10 @@ function SurveyFlowCanvas({
       nodeTypes={nodeTypes}
       nodesDraggable
       nodesConnectable
+      edgesReconnectable
+      edgesFocusable
       elementsSelectable
+      deleteKeyCode={["Backspace", "Delete"]}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
@@ -296,7 +299,10 @@ export function SurveyFlowBuilder({
     <div className="survey-flow-panel flex min-h-[560px] gap-0 overflow-hidden rounded-xl border border-vice-border bg-vice-bg">
       <aside className="z-10 w-48 shrink-0 overflow-y-auto border-r border-vice-border bg-vice-surface p-3 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-vice-text">Schermen</p>
-        <p className="mb-2 text-[11px] text-vice-text-muted">Sleep naar het canvas of klik +</p>
+        <p className="mb-2 text-[11px] leading-snug text-vice-text-muted">
+          Sleep naar het canvas of klik +. Verbind schermen zelf via de gouden puntjes—geen automatische
+          verbindingen.
+        </p>
         <div className="space-y-2">
           {SURVEY_PALETTE.filter((p) => p.group === "screen").map((item) => (
             <PaletteItem key={item.type} type={item.type} label={item.label} onAdd={() => addFromPalette(item.type)} />
