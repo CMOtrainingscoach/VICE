@@ -20,9 +20,11 @@ const fieldClass =
 export function SurveyNodeInspector({
   node,
   onChange,
+  onPatchData,
 }: {
   node: SurveyNode | null;
   onChange: (next: SurveyNode) => void;
+  onPatchData?: (patch: Partial<SurveyNode["data"]>) => void;
 }) {
   if (!node) {
     return (
@@ -32,6 +34,10 @@ export function SurveyNodeInspector({
 
   function patchData(partial: Partial<SurveyNode["data"]>) {
     if (!node) return;
+    if (onPatchData) {
+      onPatchData(partial);
+      return;
+    }
     onChange({ ...node, data: { ...node.data, ...partial } });
   }
 
@@ -130,7 +136,13 @@ export function SurveyNodeInspector({
             type="button"
             variant="secondary"
             className="mt-2"
-            onClick={() => patchData({ options: [...(node.data.options ?? []), newSurveyOption()] })}
+            onClick={() => {
+              if (onPatchData) {
+                onPatchData({ options: [...(node.data.options ?? []), newSurveyOption()] });
+                return;
+              }
+              patchData({ options: [...(node.data.options ?? []), newSurveyOption()] });
+            }}
           >
             <Plus className="size-4" />
             Optie

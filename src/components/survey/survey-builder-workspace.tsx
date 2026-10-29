@@ -56,12 +56,14 @@ export function SurveyBuilderWorkspace({
       return;
     }
     setSurvey(result.data);
+    surveyRef.current = result.data;
   }, []);
 
   function scheduleSave(patch: { title?: string; definition?: Survey["definition"] }) {
+    const current = surveyRef.current;
     pendingSave.current = {
-      title: patch.title ?? pendingSave.current?.title ?? survey.title,
-      definition: patch.definition ?? pendingSave.current?.definition ?? survey.definition,
+      title: patch.title ?? pendingSave.current?.title ?? current.title,
+      definition: patch.definition ?? pendingSave.current?.definition ?? current.definition,
     };
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => void flushSave(), SAVE_DEBOUNCE_MS);
@@ -74,13 +76,37 @@ export function SurveyBuilderWorkspace({
   }, []);
 
   function updateDefinition(def: Survey["definition"]) {
-    setSurvey((s) => ({ ...s, definition: def }));
+    setSurvey((s) => {
+      const next = { ...s, definition: def };
+      surveyRef.current = next;
+      return next;
+    });
     scheduleSave({ definition: def });
   }
 
+  function updateNodeData(nodeId: string, dataPatch: Partial<SurveyNode["data"]>) {
+    setSurvey((s) => {
+      const def: Survey["definition"] = {
+        ...s.definition,
+        nodes: s.definition.nodes.map((n) =>
+          n.id === nodeId ? { ...n, data: { ...n.data, ...dataPatch } } : n,
+        ),
+      };
+      const next = { ...s, definition: def };
+      surveyRef.current = next;
+      scheduleSave({ definition: def });
+      return next;
+    });
+  }
+
   function updateNode(node: SurveyNode) {
-    const def = patchSurveyNode(survey.definition, node);
-    updateDefinition(def);
+    setSurvey((s) => {
+      const def = patchSurveyNode(s.definition, node);
+      const next = { ...s, definition: def };
+      surveyRef.current = next;
+      scheduleSave({ definition: def });
+      return next;
+    });
   }
 
   async function runPublish() {
@@ -215,7 +241,13 @@ export function SurveyBuilderWorkspace({
         <aside className="rounded-xl border border-vice-border bg-vice-surface p-4">
           <h2 className="text-sm font-medium">Scherm bewerken</h2>
           <div className="mt-4">
-            <SurveyNodeInspector node={selectedNode} onChange={updateNode} />
+            <SurveyNodeInspector
+              node={selectedNode}
+              onChange={updateNode}
+              onPatchData={(patch) => {
+                if (selectedNode) updateNodeData(selectedNode.id, patch);
+              }}
+            />
           </div>
         </aside>
       </div>

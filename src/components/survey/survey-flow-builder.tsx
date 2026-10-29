@@ -78,14 +78,8 @@ function mergeNodeData(oldNodes: SurveyNode[], flowNodes: Node[]): SurveyNode[] 
     const d = node.data as SurveyFlowNodeData;
     const pos = normalizeSurveyPosition(node.position);
     if (prev) {
-      return {
-        ...prev,
-        position: pos,
-        data: {
-          ...prev.data,
-          options: d.options ?? prev.data.options,
-        },
-      };
+      // Canvas nodes only drive position; content (options, labels) lives in definition.
+      return { ...prev, position: pos };
     }
     return {
       id: node.id,

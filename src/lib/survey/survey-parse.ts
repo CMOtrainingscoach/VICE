@@ -93,7 +93,10 @@ export function normalizeSurveyDefinition(raw: unknown): SurveyDefinition {
 
 export function surveyDefinitionStructureKey(def: SurveyDefinition): string {
   const nodes = def.nodes
-    .map((n) => `${n.id}|${n.type}|${n.data.screenTitle}|${n.data.questionLabel ?? ""}`)
+    .map((n) => {
+      const opts = (n.data.options ?? []).map((o) => `${o.id}:${o.label}`).join(",");
+      return `${n.id}|${n.type}|${n.data.screenTitle}|${n.data.questionLabel ?? ""}|${opts}`;
+    })
     .join(";");
   const edges = def.edges.map((e) => `${e.id}|${e.source}|${e.target}|${e.sourceHandle ?? ""}`).join(";");
   return `${nodes}::${edges}`;
