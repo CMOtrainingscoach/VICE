@@ -135,6 +135,10 @@ export function AppShell({
     Boolean(tenantIdFromPath) &&
     (pathname === `/klanten/${tenantIdFromPath}/content` ||
       pathname.startsWith(`/klanten/${tenantIdFromPath}/content/`));
+  const enquetesActive =
+    Boolean(tenantIdFromPath) &&
+    (pathname === `/klanten/${tenantIdFromPath}/enquetes` ||
+      pathname.startsWith(`/klanten/${tenantIdFromPath}/enquetes/`));
 
   const initials = userLabel
     .split(/\s+/)
@@ -216,6 +220,12 @@ export function AppShell({
                 href={`/klanten/${activeClient.tenantId}/content`}
                 label="Content"
                 active={contentActive}
+                indent
+              />
+              <NavLink
+                href={`/klanten/${activeClient.tenantId}/enquetes`}
+                label="Enquêtes"
+                active={enquetesActive}
                 indent
               />
             </div>
