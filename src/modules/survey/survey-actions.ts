@@ -19,10 +19,11 @@ import { createClient } from "@/lib/supabase/server";
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
 const MISSING =
-  /list_surveys|create_survey|get_survey|save_survey|publish_survey|close_survey|delete_survey|survey_responses|surveys|schema cache|does not exist/i;
+  /list_surveys|create_survey|get_survey|save_survey|publish_survey|close_survey|delete_survey|survey_responses|relation "app\.surveys"|schema cache|function app\.|does not exist/i;
 
 function migrationError(message: string): string {
-  return MISSING.test(message) ? SURVEY_MIGRATION : message;
+  if (!MISSING.test(message)) return message;
+  return `${SURVEY_MIGRATION} (${message})`;
 }
 
 async function authed() {
@@ -43,9 +44,9 @@ function parseSummary(raw: Record<string, unknown>, definition?: SurveyDefinitio
     status: (raw.status === "published" || raw.status === "closed" ? raw.status : "draft") as Survey["status"],
     publicSlug: raw.publicSlug ? String(raw.publicSlug) : null,
     responseCount: Number(raw.responseCount ?? 0),
-    publishedAt: raw.publishedAt ? String(raw.publishedAt) : null,
-    updatedAt: String(raw.updatedAt ?? ""),
-    createdAt: String(raw.createdAt ?? ""),
+    publishedAt: raw.publishedAt ? String(raw.publishedAt) : raw.published_at ? String(raw.published_at) : null,
+    updatedAt: String(raw.updatedAt ?? raw.updated_at ?? ""),
+    createdAt: String(raw.createdAt ?? raw.created_at ?? ""),
     definition: definition ?? parseDefinition(raw.definition),
   };
 }
@@ -104,15 +105,17 @@ export async function saveSurveyAction(
   expectedUpdatedAt: string,
   patch: { title?: string; definition?: SurveyDefinition },
 ): Promise<ActionResult<Survey>> {
-  if (patch.definition) {
-    const err = validateSurveyDefinition(patch.definition);
-    if (err) return { ok: false, error: err };
+  if (!expectedUpdatedAt.trim()) {
+    return {
+      ok: false,
+      error: "Versie-stempel ontbreekt. Herlaad de pagina en sla opnieuw op.",
+    };
   }
   const supabase = await authed();
   const { data, error } = await supabase.schema("app").rpc("save_survey", {
     p_survey_id: surveyId,
     p_expected: expectedUpdatedAt,
-    p_patch: patch,
+    p_patch: patch as Record<string, unknown>,
   });
   if (error || !data) return { ok: false, error: migrationError(error?.message ?? "Opslaan mislukt") };
   const survey = parseSummary(data as Record<string, unknown>);

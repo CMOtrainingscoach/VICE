@@ -37,6 +37,8 @@ export function SurveyBuilderWorkspace({
   const [copyMsg, setCopyMsg] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<{ title: string; definition: Survey["definition"] } | null>(null);
+  const surveyRef = useRef(survey);
+  surveyRef.current = survey;
 
   const selectedNode = getSurveyNode(survey.definition, selectedNodeId);
 
@@ -46,14 +48,15 @@ export function SurveyBuilderWorkspace({
     pendingSave.current = null;
     setBusy("save");
     setError("");
-    const result = await saveSurveyAction(survey.id, survey.updatedAt, patch);
+    const current = surveyRef.current;
+    const result = await saveSurveyAction(current.id, current.updatedAt, patch);
     setBusy("");
     if (!result.ok || !result.data) {
       setError(result.ok ? "Opslaan mislukt" : result.error);
       return;
     }
     setSurvey(result.data);
-  }, [survey.id, survey.updatedAt]);
+  }, []);
 
   function scheduleSave(patch: { title?: string; definition?: Survey["definition"] }) {
     pendingSave.current = {
