@@ -6,9 +6,26 @@ import {
   type SurveyNode,
 } from "@/lib/survey/survey-types";
 
-export function validateSurveyDefinition(def: SurveyDefinition): string | null {
+/** Drop edges whose source/target node no longer exists, and option handles that were removed. */
+export function sanitizeSurveyDefinition(def: SurveyDefinition): SurveyDefinition {
   const nodes = def.nodes ?? [];
-  const edges = def.edges ?? [];
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  const edges = (def.edges ?? []).filter((e) => {
+    if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) return false;
+    if (!e.sourceHandle) return true;
+    if (e.sourceHandle === "default") return true;
+    const source = nodes.find((n) => n.id === e.source);
+    if (!source || !isBranchingQuestion(source.type)) return true;
+    return (source.data.options ?? []).some((o) => o.id === e.sourceHandle);
+  });
+  if (edges.length === (def.edges ?? []).length) return def;
+  return { ...def, nodes, edges };
+}
+
+export function validateSurveyDefinition(def: SurveyDefinition): string | null {
+  const sanitized = sanitizeSurveyDefinition(def);
+  const nodes = sanitized.nodes ?? [];
+  const edges = sanitized.edges ?? [];
 
   const welcomeNodes = nodes.filter((n) => n.type === "welcome");
   if (welcomeNodes.length !== 1) {

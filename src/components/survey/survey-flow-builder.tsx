@@ -22,6 +22,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { SurveyFlowNode, type SurveyFlowNodeData } from "@/components/survey/survey-flow-node";
+import { sanitizeSurveyDefinition } from "@/lib/survey/survey-graph";
 import { normalizeSurveyPosition, surveyDefinitionStructureKey } from "@/lib/survey/survey-parse";
 import {
   defaultNodeData,
@@ -153,10 +154,13 @@ function SurveyFlowCanvas({
         const hasPosition = changes.some((c) => c.type === "position" && c.dragging === false);
         const hasRemove = changes.some((c) => c.type === "remove");
         if (hasPosition || hasRemove) {
-          onDefinitionChange({
-            ...definition,
-            nodes: mergeNodeData(definition.nodes, next),
-          });
+          const nodes = mergeNodeData(definition.nodes, next);
+          onDefinitionChange(
+            sanitizeSurveyDefinition({
+              ...definition,
+              nodes,
+            }),
+          );
         }
         return next;
       });

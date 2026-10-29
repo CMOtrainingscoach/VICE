@@ -11,7 +11,7 @@ import {
 import { SurveyNodeInspector } from "@/components/survey/survey-node-inspector";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { validateSurveyDefinition } from "@/lib/survey/survey-graph";
+import { sanitizeSurveyDefinition, validateSurveyDefinition } from "@/lib/survey/survey-graph";
 import type { Survey, SurveyNode } from "@/lib/survey/survey-types";
 import {
   closeSurveyAction,
@@ -76,22 +76,23 @@ export function SurveyBuilderWorkspace({
   }, []);
 
   function updateDefinition(def: Survey["definition"]) {
+    const cleaned = sanitizeSurveyDefinition(def);
     setSurvey((s) => {
-      const next = { ...s, definition: def };
+      const next = { ...s, definition: cleaned };
       surveyRef.current = next;
       return next;
     });
-    scheduleSave({ definition: def });
+    scheduleSave({ definition: cleaned });
   }
 
   function updateNodeData(nodeId: string, dataPatch: Partial<SurveyNode["data"]>) {
     setSurvey((s) => {
-      const def: Survey["definition"] = {
+      const def = sanitizeSurveyDefinition({
         ...s.definition,
         nodes: s.definition.nodes.map((n) =>
           n.id === nodeId ? { ...n, data: { ...n.data, ...dataPatch } } : n,
         ),
-      };
+      });
       const next = { ...s, definition: def };
       surveyRef.current = next;
       scheduleSave({ definition: def });
@@ -101,7 +102,7 @@ export function SurveyBuilderWorkspace({
 
   function updateNode(node: SurveyNode) {
     setSurvey((s) => {
-      const def = patchSurveyNode(s.definition, node);
+      const def = sanitizeSurveyDefinition(patchSurveyNode(s.definition, node));
       const next = { ...s, definition: def };
       surveyRef.current = next;
       scheduleSave({ definition: def });
@@ -111,7 +112,16 @@ export function SurveyBuilderWorkspace({
 
   async function runPublish() {
     setError("");
-    const err = validateSurveyDefinition(survey.definition);
+    const cleaned = sanitizeSurveyDefinition(surveyRef.current.definition);
+    if (cleaned !== surveyRef.current.definition) {
+      setSurvey((s) => {
+        const next = { ...s, definition: cleaned };
+        surveyRef.current = next;
+        return next;
+      });
+      scheduleSave({ definition: cleaned });
+    }
+    const err = validateSurveyDefinition(cleaned);
     if (err) {
       setError(err);
       return;
