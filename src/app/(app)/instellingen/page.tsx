@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
+import { PlatformDataforSeoSection } from "@/components/instellingen/platform-dataforseo-section";
 import { PlatformGoogleAdsSection } from "@/components/instellingen/platform-google-ads-section";
+import { dataforSeoPublicStatus } from "@/lib/integrations/dataforseo";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { getUserAppContext } from "@/lib/auth/context";
 import {
@@ -68,12 +70,15 @@ export default async function SettingsPage({
       </dl>
 
       {ctx.isPlatformAdmin ? (
-        <PlatformGoogleAdsSection
-          status={platformAds}
-          oauthReady={googleAdsOAuthConfigured()}
-          initialFlash={adsFlash}
-          envCustomerId={process.env.GOOGLE_ADS_CUSTOMER_ID ?? ""}
-        />
+        <>
+          <PlatformDataforSeoSection status={dataforSeoPublicStatus()} />
+          <PlatformGoogleAdsSection
+            status={platformAds}
+            oauthReady={googleAdsOAuthConfigured()}
+            initialFlash={adsFlash}
+            envCustomerId={process.env.GOOGLE_ADS_CUSTOMER_ID ?? ""}
+          />
+        </>
       ) : null}
 
       <div className="mt-8">

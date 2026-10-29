@@ -11,6 +11,36 @@ export function microsToCurrency(micros: number | null | undefined): number | nu
   return Math.round((micros / 1_000_000) * 100) / 100;
 }
 
+export function normalizeDataforSeoKeyword(raw: Record<string, unknown>): NormalizedKeywordIdea | null {
+  const keyword = String(raw.keyword ?? "").trim();
+  if (!keyword) return null;
+
+  const searchVolume = Number(raw.search_volume ?? 0);
+  const competition = raw.competition == null ? "UNSPECIFIED" : String(raw.competition);
+
+  const lowBid = raw.low_top_of_page_bid;
+  const highBid = raw.high_top_of_page_bid;
+  const cpc = raw.cpc;
+
+  let cpcLow: number | null = null;
+  let cpcHigh: number | null = null;
+  if (typeof lowBid === "number" && Number.isFinite(lowBid)) cpcLow = Math.round(lowBid * 100) / 100;
+  if (typeof highBid === "number" && Number.isFinite(highBid)) cpcHigh = Math.round(highBid * 100) / 100;
+  if (cpcLow == null && typeof cpc === "number" && Number.isFinite(cpc)) {
+    cpcLow = Math.round(cpc * 100) / 100;
+    cpcHigh = cpcLow;
+  }
+  if (cpcHigh == null && cpcLow != null) cpcHigh = cpcLow;
+
+  return {
+    keyword,
+    avgMonthlySearches: Number.isFinite(searchVolume) ? searchVolume : 0,
+    competition,
+    cpcLow,
+    cpcHigh,
+  };
+}
+
 export function normalizeKeywordIdea(raw: {
   text?: string | null;
   keyword?: string | null;

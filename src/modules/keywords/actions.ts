@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import {
-  formatGoogleAdsError,
+  dataforSeoPublicStatus,
+  formatDataforSeoError,
   generateKeywordIdeas,
-  loadGoogleAdsRuntimeCredentials,
-} from "@/lib/integrations/google-ads";
+} from "@/lib/integrations/dataforseo";
 import { generateKeywordSeedTerms } from "@/lib/keywords/seed-ai";
 import type { KeywordResearchRow, KeywordResearchRun } from "@/lib/keywords/types";
 import { KEYWORD_RESEARCH_MIGRATION } from "@/lib/keywords/types";
@@ -127,11 +127,11 @@ export async function runKeywordResearchAction(
     const session = await requireSession();
     await requirePlatformAdminMfa(session);
 
-    if (!(await loadGoogleAdsRuntimeCredentials())) {
+    if (!dataforSeoPublicStatus().configured) {
       return {
         ok: false,
         error:
-          "Google Ads is niet geconfigureerd. Ga naar Instellingen → Platform · Google Ads om te koppelen en een customer ID op te slaan.",
+          "DataForSEO is niet geconfigureerd. Zet DATAFORSEO_LOGIN en DATAFORSEO_PASSWORD in Vercel (Instellingen → DataForSEO).",
       };
     }
 
@@ -152,6 +152,7 @@ export async function runKeywordResearchAction(
     const ideas = await generateKeywordIdeas({
       seeds,
       countryCode: input.countryCode,
+      scope: input.scope,
       city: input.scope === "local" ? input.city : null,
       language: input.language ?? String((tenant as { language?: string })?.language ?? "nl"),
       siteUrl: (tenant as { website?: string })?.website ?? null,
@@ -227,7 +228,7 @@ export async function runKeywordResearchAction(
       },
     };
   } catch (error) {
-    return { ok: false, error: formatGoogleAdsError(error) };
+    return { ok: false, error: formatDataforSeoError(error) };
   }
 }
 

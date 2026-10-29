@@ -3,9 +3,26 @@ import {
   COUNTRY_GEO,
   LANGUAGE_CONSTANT,
   microsToCurrency,
+  normalizeDataforSeoKeyword,
   normalizeKeywordIdea,
   parseSeedTerms,
 } from "@/lib/keywords/normalize";
+
+describe("normalizeDataforSeoKeyword", () => {
+  it("maps DataForSEO keyword rows", () => {
+    const row = normalizeDataforSeoKeyword({
+      keyword: "seo bureau",
+      search_volume: 880,
+      competition: "HIGH",
+      low_top_of_page_bid: 1.2,
+      high_top_of_page_bid: 4.5,
+    });
+    expect(row?.keyword).toBe("seo bureau");
+    expect(row?.avgMonthlySearches).toBe(880);
+    expect(row?.cpcLow).toBe(1.2);
+    expect(row?.cpcHigh).toBe(4.5);
+  });
+});
 
 describe("normalizeKeywordIdea", () => {
   it("maps API metrics to UI fields", () => {

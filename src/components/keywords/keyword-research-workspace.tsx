@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import type { GoogleAdsPublicStatus } from "@/lib/integrations/google-ads";
+import type { DataforSeoPublicStatus } from "@/lib/integrations/dataforseo";
 import type { KeywordResearchRow, KeywordResearchRun } from "@/lib/keywords/types";
 import {
   listKeywordResearchAction,
@@ -14,13 +14,13 @@ import {
 export function KeywordResearchWorkspace({
   tenantId,
   tenantName,
-  adsStatus,
+  dataforSeoStatus,
   initialRun,
   initialRows,
 }: {
   tenantId: string;
   tenantName: string;
-  adsStatus: GoogleAdsPublicStatus;
+  dataforSeoStatus: DataforSeoPublicStatus;
   initialRun: KeywordResearchRun | null;
   initialRows: KeywordResearchRow[];
 }) {
@@ -100,19 +100,20 @@ export function KeywordResearchWorkspace({
       <p className="text-sm text-vice-text-muted">Klanten / {tenantName}</p>
       <h1 className="mt-1 text-2xl font-semibold text-vice-text md:text-3xl">Zoekwoorden</h1>
       <p className="mt-2 max-w-prose text-sm text-vice-text-muted">
-        Keyword Planner via Google Ads (opgeslagen per run). Geen live Google-opvraging bij scrollen.
+        Zoekvolume en suggesties via DataForSEO (Google Ads Keywords Data), opgeslagen per run.
       </p>
 
-      {!adsStatus.configured ? (
+      {!dataforSeoStatus.configured ? (
         <div className="mt-6 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
-          <p className="font-medium">Google Ads nog niet geconfigureerd</p>
+          <p className="font-medium">DataForSEO nog niet geconfigureerd</p>
           <p className="mt-1">
             Platformbeheerder: ga naar{" "}
             <a href="/instellingen" className="font-medium underline">
               Instellingen
             </a>{" "}
-            → <strong>Platform · Google Ads</strong>, koppel je account en sla het customer ID op. Schakel de
-            Google Ads API in je Cloud-project in (Test/Explorer via Cloud Console).
+            → <strong>Platform · DataForSEO</strong> en zet{" "}
+            <code className="text-xs">DATAFORSEO_LOGIN</code> / <code className="text-xs">DATAFORSEO_PASSWORD</code>{" "}
+            in Vercel.
           </p>
         </div>
       ) : null}
@@ -196,7 +197,7 @@ export function KeywordResearchWorkspace({
           </Button>
           <Button
             type="button"
-            disabled={busy !== "" || seeds.length === 0 || !adsStatus.configured}
+            disabled={busy !== "" || seeds.length === 0 || !dataforSeoStatus.configured}
             onClick={() => void runResearch()}
           >
             {busy === "run" ? "Zoeken…" : "Zoek keywords"}

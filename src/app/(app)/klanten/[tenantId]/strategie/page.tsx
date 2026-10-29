@@ -9,11 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
 import { loadBlogBrandContextAction } from "@/modules/content/blog-actions";
 import { KeywordResearchWorkspace } from "@/components/keywords/keyword-research-workspace";
-import { buildGoogleAdsUiStatus } from "@/lib/integrations/google-ads";
-import {
-  PLATFORM_GOOGLE_ADS_PROVIDER,
-  parsePlatformGoogleAdsPublic,
-} from "@/lib/integrations/platform-google-ads";
+import { dataforSeoPublicStatus } from "@/lib/integrations/dataforseo";
 import { listKeywordResearchAction } from "@/modules/keywords/actions";
 import { loadTenantMetricsAction } from "@/modules/metrics/actions";
 import { IcpWorkspace } from "@/components/strategy/icp-workspace";
@@ -109,12 +105,7 @@ export default async function StrategyDocumentPage({
 
   if (tab === "zoekwoorden") {
     const research = await listKeywordResearchAction(tenantId, { minVolume: 0, limit: 300 });
-    const adsRpc = await supabase.schema("app").rpc("get_platform_integration_public", {
-      p_provider: PLATFORM_GOOGLE_ADS_PROVIDER,
-    });
-    const adsStatus = buildGoogleAdsUiStatus(
-      adsRpc.error ? null : parsePlatformGoogleAdsPublic(adsRpc.data),
-    );
+    const dataforSeoStatus = dataforSeoPublicStatus();
 
     return (
       <div className="mx-auto max-w-6xl px-6 pt-8 md:px-10">
@@ -128,7 +119,7 @@ export default async function StrategyDocumentPage({
           <KeywordResearchWorkspace
             tenantId={tenantId}
             tenantName={tenantName}
-            adsStatus={adsStatus}
+            dataforSeoStatus={dataforSeoStatus}
             initialRun={research.data?.run ?? null}
             initialRows={research.data?.rows ?? []}
           />

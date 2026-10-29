@@ -12,7 +12,7 @@ import {
 } from "@/modules/integrations/platform-google-ads-actions";
 
 const FLASH: Record<string, string> = {
-  connected: "Google Ads gekoppeld. Vul hieronder het customer ID in voor Keyword Planner.",
+  connected: "Google Ads gekoppeld. Vul hieronder het customer ID in (campagnes/ads; zoekwoorden via DataForSEO).",
   denied: "Google-toegang geweigerd.",
   invalid: "Ongeldige OAuth-terugkoppeling.",
   state: "OAuth-sessie verlopen. Probeer opnieuw.",
@@ -80,7 +80,7 @@ export function PlatformGoogleAdsSection({
     <section className="mt-8 rounded-lg border border-vice-border bg-vice-surface p-6">
       <h2 className="text-lg font-semibold text-vice-text">Platform · Google Ads</h2>
       <p className="mt-1 text-sm text-vice-text-muted">
-        Keyword Planner voor alle klanten (Zoekwoorden-tab). OAuth via VICE — geen OAuth Playground nodig.
+        Optionele platformkoppeling voor Google Ads-campagnes. Zoekwoordonderzoek loopt via DataForSEO.
       </p>
 
       {message ? (
