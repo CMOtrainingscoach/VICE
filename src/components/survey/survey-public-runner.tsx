@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { LoaderCircle } from "lucide-react";
-import { SurveyBrandedShell, surveyHeadingStyle } from "@/components/survey/survey-branded-shell";
+import {
+  SurveyBrandedShell,
+  surveyHeadingStyle,
+  surveyBrandButtonClassName,
+} from "@/components/survey/survey-branded-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { findWelcomeNode, resolveNextNodeId } from "@/lib/survey/survey-graph";
@@ -14,7 +18,7 @@ import {
 import { submitSurveyResponseAction } from "@/modules/survey/survey-actions";
 
 const fieldClass =
-  "w-full rounded-md border border-[color:var(--survey-primary)]/30 bg-white/80 px-3 py-2 text-sm outline-none focus:border-[color:var(--survey-primary)] dark:bg-vice-surface";
+  "w-full rounded-md border border-[color:var(--survey-field-border)] bg-[color:var(--survey-field-bg)] px-3 py-2 text-sm text-[color:var(--survey-field-text)] outline-none focus:border-[color:var(--survey-primary)]";
 
 export function SurveyPublicRunner({
   slug,
@@ -157,12 +161,12 @@ export function SurveyPublicRunner({
           {welcome.data.screenTitle}
         </h1>
         {welcome.data.screenDescription ? (
-          <p className="mt-3 text-sm opacity-90">{welcome.data.screenDescription}</p>
+          <p className="mt-3 text-sm text-[color:var(--survey-text-muted)]">{welcome.data.screenDescription}</p>
         ) : null}
         {survey.definition.settings?.privacyText ? (
-          <p className="mt-4 text-xs opacity-70">{survey.definition.settings.privacyText}</p>
+          <p className="mt-4 text-xs text-[color:var(--survey-text-muted)]">{survey.definition.settings.privacyText}</p>
         ) : null}
-        <Button type="button" className="mt-8" onClick={begin}>
+        <Button type="button" className={surveyBrandButtonClassName("mt-8")} onClick={begin}>
           {welcome.data.buttonLabel || "Start"}
         </Button>
       </SurveyBrandedShell>
@@ -183,9 +187,9 @@ export function SurveyPublicRunner({
         <h1 className="text-2xl font-semibold" style={surveyHeadingStyle(brand?.typography)}>
           {current.data.screenTitle}
         </h1>
-        <p className="mt-3 text-sm opacity-90">{current.data.screenDescription}</p>
+        <p className="mt-3 text-sm text-[color:var(--survey-text-muted)]">{current.data.screenDescription}</p>
         {submitted ? (
-          <p className="mt-4 text-xs text-vice-text-muted">Je antwoorden zijn opgeslagen.</p>
+          <p className="mt-4 text-xs text-[color:var(--survey-text-muted)]">Je antwoorden zijn opgeslagen.</p>
         ) : null}
       </SurveyBrandedShell>
     );
@@ -193,9 +197,9 @@ export function SurveyPublicRunner({
 
   return (
     <SurveyBrandedShell brand={brand} embed={embed}>
-      <p className="text-xs uppercase tracking-wide opacity-60">{current.data.screenTitle}</p>
+      <p className="text-xs uppercase tracking-wide text-[color:var(--survey-text-muted)]">{current.data.screenTitle}</p>
       {current.data.screenDescription ? (
-        <p className="mt-2 text-sm opacity-80">{current.data.screenDescription}</p>
+        <p className="mt-2 text-sm text-[color:var(--survey-text-muted)]">{current.data.screenDescription}</p>
       ) : null}
 
       <div className="mt-6">
@@ -278,8 +282,8 @@ export function SurveyPublicRunner({
                   type="button"
                   className={
                     Number(draft) === n
-                      ? "size-10 rounded-full border-2 border-[color:var(--survey-primary)] bg-[color:var(--survey-primary)]/15 font-medium"
-                      : "size-10 rounded-full border border-[color:var(--survey-primary)]/40"
+                      ? "size-10 rounded-full border-2 border-[color:var(--survey-primary)] bg-[color:var(--survey-field-bg)] font-medium text-[color:var(--survey-text)]"
+                      : "size-10 rounded-full border border-[color:var(--survey-field-border)] text-[color:var(--survey-text)]"
                   }
                   onClick={() => setDraft(String(n))}
                 >
@@ -287,7 +291,7 @@ export function SurveyPublicRunner({
                 </button>
               ))}
             </div>
-            <div className="flex justify-between text-xs opacity-70">
+            <div className="flex justify-between text-xs text-[color:var(--survey-text-muted)]">
               <span>{current.data.scaleMinLabel}</span>
               <span>{current.data.scaleMaxLabel}</span>
             </div>
@@ -308,9 +312,9 @@ export function SurveyPublicRunner({
         ) : null}
       </div>
 
-      {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
+      {error ? <p className="mt-3 text-sm text-[color:var(--survey-error)]">{error}</p> : null}
 
-      <Button type="button" className="mt-8" disabled={busy} onClick={() => void goNext()}>
+      <Button type="button" className={surveyBrandButtonClassName("mt-8")} disabled={busy} onClick={() => void goNext()}>
         {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
         Volgende
       </Button>
