@@ -19,10 +19,13 @@ import { createClient } from "@/lib/supabase/server";
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
 const MISSING =
-  /list_surveys|create_survey|get_survey|save_survey|publish_survey|close_survey|delete_survey|survey_responses|relation "app\.surveys"|schema cache|function app\.|does not exist/i;
+  /list_surveys|create_survey|get_survey|save_survey|publish_survey|close_survey|delete_survey|survey_responses|relation "app\.surveys"|schema cache|function app\.(list_surveys|create_survey|get_survey|save_survey|publish_survey)/i;
 
 function migrationError(message: string): string {
   if (!MISSING.test(message)) return message;
+  if (/gen_random_bytes/i.test(message)) {
+    return "Publiceren mislukt: database-extensie ontbreekt. Voer migratie 20260330136412 uit (survey slug).";
+  }
   return `${SURVEY_MIGRATION} (${message})`;
 }
 

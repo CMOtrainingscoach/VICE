@@ -41,8 +41,9 @@ create or replace function app._survey_slug()
 returns text
 language sql
 volatile
+set search_path = app, public
 as $$
-  select replace(replace(encode(gen_random_bytes(12), 'base64'), '/', '_'), '+', '-');
+  select substr(replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''), 1, 16);
 $$;
 
 create or replace function app._survey_json(p_row app.surveys, p_include_definition boolean default true)
