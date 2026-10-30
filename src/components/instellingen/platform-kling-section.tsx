@@ -38,10 +38,10 @@ export function PlatformKlingSection({ status }: { status: PlatformKlingPublicSt
 
   return (
     <section className="mt-8 rounded-lg border border-vice-border bg-vice-surface p-6">
-      <h2 className="text-lg font-medium text-vice-text">Video — Kling credits</h2>
+      <h2 className="text-lg font-medium text-vice-text">Video — Kling API (fallback)</h2>
       <p className="mt-2 text-sm text-vice-text-muted">
-        Image-to-video gebruikt je Kling resource package. Laad hier het saldo bij wanneer je units hebt
-        gekocht bij Kling (geen vast VICE-abonnement).
+        Alleen nodig wanneer OpenArt niet gekoppeld is. Platform-units voor directe Kling API-calls; klantfacturatie
+        loopt via video-tegoed per klant.
       </p>
 
       <dl className="mt-4 space-y-2 text-sm">

@@ -4,10 +4,19 @@ import { revalidatePath } from "next/cache";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
 import {
   createKlingImageToVideoTask,
-  estimateKlingUnits,
   klingApiConfigured,
   queryKlingTask,
 } from "@/lib/integrations/kling";
+import {
+  aspectPresetToOpenArtRatio,
+  estimateVideoCredits,
+  getOpenArtAccessToken,
+  loadOpenArtProjectId,
+  openArtPlatformConnected,
+  pollOpenArtResource,
+  submitOpenArtKlingImageToVideo,
+  uploadOpenArtReferenceImage,
+} from "@/lib/integrations/openart";
 import {
   VIDEO_MIGRATION,
   type VideoAspectPreset,
@@ -75,7 +84,9 @@ async function mapConcept(raw: unknown): Promise<VideoConcept | null> {
     outputVideoPath,
     outputMimeType: String(row.outputMimeType ?? "video/mp4"),
     jobStatus: String(row.jobStatus ?? "idle") as VideoJobStatus,
+    videoProvider: (row.videoProvider === "kling" ? "kling" : "openart") as VideoConcept["videoProvider"],
     klingTaskId: String(row.klingTaskId ?? ""),
+    openartResourceId: String(row.openartResourceId ?? ""),
     jobError: String(row.jobError ?? ""),
     unitsEstimated: row.unitsEstimated != null ? Number(row.unitsEstimated) : null,
     unitsCharged: row.unitsCharged != null ? Number(row.unitsCharged) : null,
@@ -237,12 +248,43 @@ export async function uploadVideoSourceImageAction(
     jobError: "",
     outputVideoPath: "",
     klingTaskId: "",
+    openartResourceId: "",
   });
 }
 
+async function resolveVideoProvider(): Promise<"openart" | "kling" | null> {
+  if (await openArtPlatformConnected()) return "openart";
+  if (klingApiConfigured()) return "kling";
+  return null;
+}
+
+async function ensureTenantVideoCredits(
+  tenantId: string,
+  amount: number,
+): Promise<ActionResult<{ balance: number }>> {
+  const supabase = await authed();
+  const loaded = await supabase.schema("app").rpc("get_tenant_video_wallet", {
+    p_tenant_id: tenantId,
+  });
+  if (loaded.error) return { ok: false, error: migration(loaded.error.message) };
+  const balance = Number((loaded.data as { creditsBalance?: number })?.creditsBalance) || 0;
+  if (balance < amount) {
+    return {
+      ok: false,
+      error: `Onvoldoende video-tegoed voor deze klant (nodig ~${amount}, saldo ${balance}). Vraag platformbeheer om bij te laden.`,
+    };
+  }
+  return { ok: true, data: { balance } };
+}
+
 export async function startVideoGenerationAction(conceptId: string): Promise<ActionResult<VideoConcept>> {
-  if (!klingApiConfigured()) {
-    return { ok: false, error: "KLING_API_KEY ontbreekt in de serveromgeving." };
+  const provider = await resolveVideoProvider();
+  if (!provider) {
+    return {
+      ok: false,
+      error:
+        "Geen video-provider: koppel OpenArt in Instellingen of zet KLING_API_KEY voor directe Kling.",
+    };
   }
 
   const loaded = await loadVideoConceptAction(conceptId);
@@ -259,18 +301,81 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
     return { ok: false, error: "Er loopt al een generatie." };
   }
 
+  const units = estimateVideoCredits(concept.durationSeconds, concept.resolution);
+
+  if (provider === "openart") {
+    const credits = await ensureTenantVideoCredits(concept.tenantId, units);
+    if (!credits.ok) return credits;
+
+    const accessToken = await getOpenArtAccessToken();
+    const projectId = await loadOpenArtProjectId();
+    if (!accessToken || !projectId) {
+      return { ok: false, error: "OpenArt-sessie verlopen. Koppel opnieuw in Instellingen." };
+    }
+
+    const admin = createAdminClient();
+    const object = await admin.storage.from("content-assets").download(concept.sourceImagePath);
+    if (object.error || !object.data) {
+      return { ok: false, error: "Startbeeld kon niet worden gelezen voor OpenArt." };
+    }
+    const bytes = new Uint8Array(await object.data.arrayBuffer());
+    const ext = concept.sourceMimeType.includes("png")
+      ? "png"
+      : concept.sourceMimeType.includes("webp")
+        ? "webp"
+        : "jpg";
+
+    try {
+      const uploaded = await uploadOpenArtReferenceImage({
+        accessToken,
+        projectId,
+        bytes,
+        contentType: concept.sourceMimeType || "image/jpeg",
+        filename: `vice-${conceptId}.${ext}`,
+      });
+      const submitted = await submitOpenArtKlingImageToVideo({
+        accessToken,
+        projectId,
+        prompt: concept.motionPrompt,
+        imageUrl: uploaded.url,
+        imageAssetId: uploaded.assetId,
+        durationSeconds: concept.durationSeconds,
+        resolution: concept.resolution,
+        aspectRatio: aspectPresetToOpenArtRatio(concept.aspectPreset),
+      });
+
+      return saveVideoConceptAction(conceptId, concept.updatedAt, {
+        jobStatus: "processing",
+        videoProvider: "openart",
+        openartResourceId: submitted.resourceId,
+        klingTaskId: "",
+        jobError: "",
+        unitsEstimated: units,
+        outputVideoPath: "",
+      });
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "OpenArt start mislukt" };
+    }
+  }
+
   const imageUrl = await signedUrl(concept.sourceImagePath, 60 * 60);
   if (!imageUrl) return { ok: false, error: "Startbeeld kon niet worden gedeeld met Kling." };
 
-  const units = estimateKlingUnits(concept.durationSeconds, concept.resolution);
+  const credits = await ensureTenantVideoCredits(concept.tenantId, units);
+  if (!credits.ok) return credits;
 
   const admin = createAdminClient();
-  const balanceRow = await admin.schema("app").from("platform_kling_credits").select("units_balance").eq("id", 1).maybeSingle();
-  const balance = Number(balanceRow.data?.units_balance) || 0;
-  if (balance < units) {
+  const balanceRow = await admin
+    .schema("app")
+    .from("platform_kling_credits")
+    .select("units_balance")
+    .eq("id", 1)
+    .maybeSingle();
+  const platformBalance = Number(balanceRow.data?.units_balance) || 0;
+  if (platformBalance < units) {
     return {
       ok: false,
-      error: `Onvoldoende Kling-units (nodig ~${units}, saldo ${balance}). Laad op in Instellingen.`,
+      error: `Onvoldoende Kling-units op platform (nodig ~${units}, saldo ${platformBalance}). Laad op in Instellingen.`,
     };
   }
 
@@ -285,7 +390,9 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
 
     return saveVideoConceptAction(conceptId, concept.updatedAt, {
       jobStatus: "processing",
+      videoProvider: "kling",
       klingTaskId: task.taskId,
+      openartResourceId: "",
       jobError: "",
       unitsEstimated: units,
       outputVideoPath: "",
@@ -306,7 +413,70 @@ export async function pollVideoGenerationAction(conceptId: string): Promise<Acti
   if (!loaded.ok || !loaded.data) return loaded;
   const concept = loaded.data;
 
-  if (concept.jobStatus !== "processing" || !concept.klingTaskId) {
+  if (concept.jobStatus !== "processing") {
+    return { ok: true, data: concept };
+  }
+
+  if (concept.videoProvider === "openart" && concept.openartResourceId) {
+    try {
+      const accessToken = await getOpenArtAccessToken();
+      if (!accessToken) {
+        return saveVideoConceptAction(conceptId, concept.updatedAt, {
+          jobStatus: "failed",
+          jobError: "OpenArt-sessie verlopen. Koppel opnieuw in Instellingen.",
+        });
+      }
+      const resource = await pollOpenArtResource(accessToken, concept.openartResourceId);
+      if (resource.status === "processing" || resource.status === "pending") {
+        return { ok: true, data: concept };
+      }
+      if (resource.status === "failed") {
+        return saveVideoConceptAction(conceptId, concept.updatedAt, {
+          jobStatus: "failed",
+          jobError: resource.message || "OpenArt-generatie mislukt",
+        });
+      }
+      const bytes = await downloadMp4(resource.url);
+      const path = `${concept.tenantId}/video/${conceptId}/${crypto.randomUUID()}.mp4`;
+      const admin = createAdminClient();
+      const uploaded = await admin.storage.from("content-assets").upload(path, bytes, {
+        contentType: "video/mp4",
+        upsert: false,
+      });
+      if (uploaded.error) {
+        return saveVideoConceptAction(conceptId, concept.updatedAt, {
+          jobStatus: "failed",
+          jobError: uploaded.error.message,
+        });
+      }
+      const units =
+        concept.unitsEstimated ?? estimateVideoCredits(concept.durationSeconds, concept.resolution);
+      const deducted = await admin.schema("app").rpc("try_deduct_tenant_video_credits", {
+        p_tenant_id: concept.tenantId,
+        p_amount: units,
+        p_video_concept_id: conceptId,
+        p_note: `Video ${concept.internalName || conceptId} (OpenArt)`,
+      });
+      if (deducted.error) {
+        await admin.storage.from("content-assets").remove([path]);
+        return { ok: false, error: deducted.error.message };
+      }
+      return saveVideoConceptAction(conceptId, concept.updatedAt, {
+        jobStatus: "ready",
+        jobError: "",
+        outputVideoPath: path,
+        outputMimeType: "video/mp4",
+        unitsCharged: units,
+      });
+    } catch (err) {
+      return saveVideoConceptAction(conceptId, concept.updatedAt, {
+        jobStatus: "failed",
+        jobError: err instanceof Error ? err.message : "OpenArt poll mislukt",
+      });
+    }
+  }
+
+  if (!concept.klingTaskId) {
     return { ok: true, data: concept };
   }
 
@@ -345,7 +515,18 @@ export async function pollVideoGenerationAction(conceptId: string): Promise<Acti
       });
     }
 
-    const units = concept.unitsEstimated ?? estimateKlingUnits(concept.durationSeconds, concept.resolution);
+    const units =
+      concept.unitsEstimated ?? estimateVideoCredits(concept.durationSeconds, concept.resolution);
+    const deductedTenant = await admin.schema("app").rpc("try_deduct_tenant_video_credits", {
+      p_tenant_id: concept.tenantId,
+      p_amount: units,
+      p_video_concept_id: conceptId,
+      p_note: `Video ${concept.internalName || conceptId} (Kling)`,
+    });
+    if (deductedTenant.error) {
+      await admin.storage.from("content-assets").remove([path]);
+      return { ok: false, error: deductedTenant.error.message };
+    }
     const deducted = await admin.schema("app").rpc("try_deduct_platform_kling_credits", {
       p_amount: units,
       p_video_concept_id: conceptId,
@@ -374,10 +555,12 @@ export async function pollVideoGenerationAction(conceptId: string): Promise<Acti
   }
 }
 
-export async function getKlingCreditsBalanceForVideoAction(): Promise<ActionResult<{ balance: number }>> {
+export async function getTenantVideoCreditsForVideoAction(
+  tenantId: string,
+): Promise<ActionResult<{ balance: number }>> {
   const supabase = await authed();
-  const loaded = await supabase.schema("app").rpc("get_platform_kling_credits_public");
+  const loaded = await supabase.schema("app").rpc("get_tenant_video_wallet", { p_tenant_id: tenantId });
   if (loaded.error) return { ok: false, error: migration(loaded.error.message) };
   const row = (loaded.data ?? {}) as Record<string, unknown>;
-  return { ok: true, data: { balance: Number(row.unitsBalance) || 0 } };
+  return { ok: true, data: { balance: Number(row.creditsBalance) || 0 } };
 }

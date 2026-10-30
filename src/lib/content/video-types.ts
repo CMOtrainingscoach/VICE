@@ -10,6 +10,7 @@ export type VideoJobStatus = "idle" | "processing" | "ready" | "failed";
 export type VideoDurationSeconds = 5 | 10;
 export type VideoResolution = "720p" | "1080p";
 export type VideoSourceKind = "upload" | "beeld";
+export type VideoProvider = "openart" | "kling";
 
 export type VideoConcept = {
   id: string;
@@ -27,7 +28,9 @@ export type VideoConcept = {
   outputVideoPath: string;
   outputMimeType: string;
   jobStatus: VideoJobStatus;
+  videoProvider: VideoProvider;
   klingTaskId: string;
+  openartResourceId: string;
   jobError: string;
   unitsEstimated: number | null;
   unitsCharged: number | null;
@@ -54,7 +57,7 @@ export type VideoConceptSummary = {
 };
 
 export const VIDEO_MIGRATION =
-  "Pas migratie 20260330136416_video_concepts.sql toe in Supabase (na 20260330136415).";
+  "Pas migraties 20260330136416_video_concepts.sql en 20260330136417_openart_video_billing.sql toe in Supabase.";
 
 export const VIDEO_INTENDED_USES: { id: VideoIntendedUse; label: string }[] = [
   { id: "social", label: "Social" },

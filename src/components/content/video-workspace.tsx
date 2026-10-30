@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { beeldCompositionToJpegFile } from "@/lib/content/beeld-import";
 import type { BeeldCompositionSummary } from "@/lib/content/beeld-types";
-import { estimateKlingUnits } from "@/lib/integrations/kling";
+import { estimateVideoCredits } from "@/lib/integrations/openart";
 import {
   VIDEO_ASPECT_PRESETS,
   VIDEO_INTENDED_USES,
@@ -25,7 +25,7 @@ import { loadBeeldCompositionAction } from "@/modules/content/beeld-actions";
 import {
   createVideoConceptAction,
   deleteVideoConceptAction,
-  getKlingCreditsBalanceForVideoAction,
+  getTenantVideoCreditsForVideoAction,
   pollVideoGenerationAction,
   saveVideoConceptAction,
   startVideoGenerationAction,
@@ -67,13 +67,13 @@ export function VideoWorkspace({
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState("");
 
-  const estimatedUnits = estimateKlingUnits(durationSeconds, resolution);
+  const estimatedUnits = estimateVideoCredits(durationSeconds, resolution);
 
   useEffect(() => {
-    void getKlingCreditsBalanceForVideoAction().then((result) => {
+    void getTenantVideoCreditsForVideoAction(tenantId).then((result) => {
       if (result.ok && result.data) setUnitsBalance(result.data.balance);
     });
-  }, []);
+  }, [tenantId]);
 
   useEffect(() => {
     if (!concept || concept.jobStatus !== "processing") return;
@@ -82,7 +82,7 @@ export function VideoWorkspace({
         if (result.ok && result.data) {
           setConcept(result.data);
           if (result.data.jobStatus !== "processing") {
-            void getKlingCreditsBalanceForVideoAction().then((b) => {
+            void getTenantVideoCreditsForVideoAction(tenantId).then((b) => {
               if (b.ok && b.data) setUnitsBalance(b.data.balance);
             });
           }
@@ -215,8 +215,7 @@ export function VideoWorkspace({
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-vice-gold">Video v1</p>
           <h1 className="mt-2 font-display text-3xl tracking-tight text-vice-text md:text-4xl">Video</h1>
           <p className="mt-2 max-w-2xl text-sm text-vice-text-muted">
-            Animateer een startbeeld met Kling (max 10 s, MP4). Geschikt voor social, ads en hero — koppeling volgt in
-            latere releases.
+            Image-to-video via het platform OpenArt-abonnement (Kling 2.6) of directe Kling API. Max 10 s MP4.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -234,12 +233,9 @@ export function VideoWorkspace({
 
       {unitsBalance != null ? (
         <p className="mt-3 text-xs text-vice-text-muted">
-          Kling-saldo: <span className="tabular-nums font-medium text-vice-text">{unitsBalance.toFixed(2)}</span> units
-          · geschatte kosten deze render: ~{estimatedUnits} units (
-          <Link href="/instellingen" className="text-vice-gold underline">
-            bijladen
-          </Link>
-          )
+          Video-tegoed klant:{" "}
+          <span className="tabular-nums font-medium text-vice-text">{unitsBalance.toFixed(2)}</span> credits · geschat
+          deze render: ~{estimatedUnits}
         </p>
       ) : null}
 
@@ -329,7 +325,7 @@ export function VideoWorkspace({
               <p className="text-sm text-red-700">{concept.jobError}</p>
             ) : null}
             {processing ? (
-              <p className="text-sm text-vice-text-muted">Kling werkt… dit kan enkele minuten duren.</p>
+              <p className="text-sm text-vice-text-muted">Generatie loopt… dit kan enkele minuten duren.</p>
             ) : null}
           </section>
 

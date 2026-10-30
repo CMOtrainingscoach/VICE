@@ -1,9 +1,11 @@
 import { notFound, redirect } from "next/navigation";
+import { TenantVideoCreditsPanel } from "@/components/content/tenant-video-credits-panel";
 import { VideoWorkspace } from "@/components/content/video-workspace";
 import { getUserAppContext } from "@/lib/auth/context";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
 import { listVideoConceptsAction, loadVideoConceptAction } from "@/modules/content/video-actions";
+import { getTenantVideoWalletAction } from "@/modules/integrations/platform-openart-actions";
 import { loadClientBrandAction } from "@/modules/brand/actions";
 import { listBeeldCompositionsAction } from "@/modules/content/beeld-actions";
 
@@ -28,11 +30,12 @@ export default async function VideoConceptPage({
     .maybeSingle();
   if (!tenantData) notFound();
 
-  const [concept, concepts, beeldCompositions, clientBrandView] = await Promise.all([
+  const [concept, concepts, beeldCompositions, clientBrandView, wallet] = await Promise.all([
     loadVideoConceptAction(videoId),
     listVideoConceptsAction(tenantId),
     listBeeldCompositionsAction(tenantId),
     loadClientBrandAction(tenantId),
+    getTenantVideoWalletAction(tenantId),
   ]);
 
   if (!concept.ok || !concept.data) {
@@ -48,14 +51,21 @@ export default async function VideoConceptPage({
     redirect(`/klanten/${concept.data.tenantId}/content/video/${videoId}`);
   }
 
+  const walletBalance = wallet.ok && wallet.data ? wallet.data.creditsBalance : 0;
+
   return (
-    <VideoWorkspace
-      tenantId={tenantId}
-      tenantName={(tenantData as Pick<TenantRow, "name">).name}
-      initial={concept.data}
-      concepts={concepts.ok ? concepts.data ?? [] : []}
-      beeldCompositions={beeldCompositions.ok ? beeldCompositions.data ?? [] : []}
-      clientBrand={clientBrandView.ok ? clientBrandView.data?.brand ?? null : null}
-    />
+    <>
+      <div className="mx-auto max-w-6xl px-6 pt-8 md:px-10">
+        <TenantVideoCreditsPanel tenantId={tenantId} initialBalance={walletBalance} />
+      </div>
+      <VideoWorkspace
+        tenantId={tenantId}
+        tenantName={(tenantData as Pick<TenantRow, "name">).name}
+        initial={concept.data}
+        concepts={concepts.ok ? concepts.data ?? [] : []}
+        beeldCompositions={beeldCompositions.ok ? beeldCompositions.data ?? [] : []}
+        clientBrand={clientBrandView.ok ? clientBrandView.data?.brand ?? null : null}
+      />
+    </>
   );
 }

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { PlatformDataforSeoSection } from "@/components/instellingen/platform-dataforseo-section";
 import { PlatformGoogleAdsSection } from "@/components/instellingen/platform-google-ads-section";
 import { PlatformKlingSection } from "@/components/instellingen/platform-kling-section";
+import { PlatformOpenArtSection } from "@/components/instellingen/platform-openart-section";
 import { loadPlatformKlingStatusAction } from "@/modules/integrations/platform-kling-actions";
 import { dataforSeoPublicStatus } from "@/lib/integrations/dataforseo";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
@@ -11,18 +12,23 @@ import {
   googleAdsOAuthConfigured,
   parsePlatformGoogleAdsPublic,
 } from "@/lib/integrations/platform-google-ads";
+import {
+  PLATFORM_OPENART_PROVIDER,
+  parsePlatformOpenArtPublic,
+} from "@/lib/integrations/platform-openart";
 import { createClient } from "@/lib/supabase/server";
 import { SignOutButton } from "./sign-out-button";
 
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ads?: string }>;
+  searchParams: Promise<{ ads?: string; openart?: string }>;
 }) {
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
   const query = await searchParams;
   const adsFlash = typeof query.ads === "string" ? query.ads : null;
+  const openartFlash = typeof query.openart === "string" ? query.openart : null;
 
   const supabase = await createClient();
   const { data: profile } = await supabase
@@ -33,6 +39,7 @@ export default async function SettingsPage({
     .maybeSingle();
 
   let platformAds = parsePlatformGoogleAdsPublic(null);
+  let platformOpenArt = parsePlatformOpenArtPublic(null);
   let platformKling = { unitsBalance: 0, apiKeyConfigured: false };
   if (ctx.isPlatformAdmin) {
     const adsRpc = await supabase.schema("app").rpc("get_platform_integration_public", {
@@ -40,6 +47,12 @@ export default async function SettingsPage({
     });
     if (!adsRpc.error) {
       platformAds = parsePlatformGoogleAdsPublic(adsRpc.data);
+    }
+    const openartRpc = await supabase.schema("app").rpc("get_platform_integration_public", {
+      p_provider: PLATFORM_OPENART_PROVIDER,
+    });
+    if (!openartRpc.error) {
+      platformOpenArt = parsePlatformOpenArtPublic(openartRpc.data);
     }
     const kling = await loadPlatformKlingStatusAction();
     if (kling.ok && kling.data) platformKling = kling.data;
@@ -83,6 +96,7 @@ export default async function SettingsPage({
             initialFlash={adsFlash}
             envCustomerId={process.env.GOOGLE_ADS_CUSTOMER_ID ?? ""}
           />
+          <PlatformOpenArtSection status={platformOpenArt} initialFlash={openartFlash} />
           <PlatformKlingSection status={platformKling} />
         </>
       ) : null}
