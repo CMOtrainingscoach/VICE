@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { PlatformDataforSeoSection } from "@/components/instellingen/platform-dataforseo-section";
 import { PlatformGoogleAdsSection } from "@/components/instellingen/platform-google-ads-section";
+import { PlatformKlingSection } from "@/components/instellingen/platform-kling-section";
+import { loadPlatformKlingStatusAction } from "@/modules/integrations/platform-kling-actions";
 import { dataforSeoPublicStatus } from "@/lib/integrations/dataforseo";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { getUserAppContext } from "@/lib/auth/context";
@@ -31,6 +33,7 @@ export default async function SettingsPage({
     .maybeSingle();
 
   let platformAds = parsePlatformGoogleAdsPublic(null);
+  let platformKling = { unitsBalance: 0, apiKeyConfigured: false };
   if (ctx.isPlatformAdmin) {
     const adsRpc = await supabase.schema("app").rpc("get_platform_integration_public", {
       p_provider: PLATFORM_GOOGLE_ADS_PROVIDER,
@@ -38,6 +41,8 @@ export default async function SettingsPage({
     if (!adsRpc.error) {
       platformAds = parsePlatformGoogleAdsPublic(adsRpc.data);
     }
+    const kling = await loadPlatformKlingStatusAction();
+    if (kling.ok && kling.data) platformKling = kling.data;
   }
 
   return (
@@ -78,6 +83,7 @@ export default async function SettingsPage({
             initialFlash={adsFlash}
             envCustomerId={process.env.GOOGLE_ADS_CUSTOMER_ID ?? ""}
           />
+          <PlatformKlingSection status={platformKling} />
         </>
       ) : null}
 
