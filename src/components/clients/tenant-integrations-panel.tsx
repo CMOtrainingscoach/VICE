@@ -7,6 +7,8 @@ import { GoogleIntegrationSection } from "@/components/clients/google-integratio
 import type { BloggerBlog, BloggerPublicStatus } from "@/lib/integrations/blogger";
 import type { GoogleAnalyticsPublicStatus } from "@/lib/integrations/google-analytics";
 import type { SearchConsolePublicStatus } from "@/lib/integrations/search-console";
+import type { WordPressPublicStatus } from "@/lib/integrations/wordpress";
+import { Input } from "@/components/ui/input";
 import {
   disconnectBloggerAction,
   listTenantBloggerBlogsAction,
@@ -22,6 +24,10 @@ import {
   listTenantSearchConsoleSitesAction,
   selectSearchConsoleSiteAction,
 } from "@/modules/integrations/search-console-actions";
+import {
+  connectWordPressAction,
+  disconnectWordPressAction,
+} from "@/modules/integrations/wordpress-actions";
 
 const BLOGGER_FLASH: Record<string, string> = {
   connected: "Google Blogger is gekoppeld. Kies hieronder welke blog je wilt gebruiken.",
@@ -61,6 +67,7 @@ export function TenantIntegrationsPanel({
   initialBlogger,
   initialSearchConsole,
   initialGoogleAnalytics,
+  initialWordPress,
   bloggerFlash,
   gscFlash,
   gaFlash,
@@ -69,6 +76,7 @@ export function TenantIntegrationsPanel({
   initialBlogger: BloggerPublicStatus;
   initialSearchConsole: SearchConsolePublicStatus;
   initialGoogleAnalytics: GoogleAnalyticsPublicStatus;
+  initialWordPress: WordPressPublicStatus;
   bloggerFlash?: string | null;
   gscFlash?: string | null;
   gaFlash?: string | null;
@@ -77,6 +85,10 @@ export function TenantIntegrationsPanel({
   const [blogger, setBlogger] = useState(initialBlogger);
   const [searchConsole, setSearchConsole] = useState(initialSearchConsole);
   const [googleAnalytics, setGoogleAnalytics] = useState(initialGoogleAnalytics);
+  const [wordpress, setWordPress] = useState(initialWordPress);
+  const [wpSiteUrl, setWpSiteUrl] = useState(initialWordPress.siteUrl ?? "");
+  const [wpUsername, setWpUsername] = useState(initialWordPress.accountEmail ?? "");
+  const [wpAppPassword, setWpAppPassword] = useState("");
   const [blogs, setBlogs] = useState<BloggerBlog[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(
@@ -95,6 +107,12 @@ export function TenantIntegrationsPanel({
   useEffect(() => {
     setGoogleAnalytics(initialGoogleAnalytics);
   }, [initialGoogleAnalytics]);
+
+  useEffect(() => {
+    setWordPress(initialWordPress);
+    setWpSiteUrl(initialWordPress.siteUrl ?? "");
+    setWpUsername(initialWordPress.accountEmail ?? "");
+  }, [initialWordPress]);
 
   useEffect(() => {
     if (!blogger.connected) return;
@@ -124,6 +142,47 @@ export function TenantIntegrationsPanel({
     }
     if (result.data) setBlogger(result.data);
     setMessage(`Blog «${blog.name}» is geselecteerd voor publicatie.`);
+    router.refresh();
+  }
+
+  async function connectWordPress() {
+    setBusy("wp-connect");
+    setError(null);
+    const result = await connectWordPressAction(tenantId, {
+      siteUrl: wpSiteUrl,
+      username: wpUsername,
+      applicationPassword: wpAppPassword,
+    });
+    setBusy("");
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (result.data) setWordPress(result.data);
+    setWpAppPassword("");
+    setMessage("WordPress is gekoppeld.");
+    router.refresh();
+  }
+
+  async function disconnectWordPress() {
+    setBusy("wp-disconnect");
+    setError(null);
+    const result = await disconnectWordPressAction(tenantId);
+    setBusy("");
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setWordPress({
+      connected: false,
+      status: "disconnected",
+      accountEmail: "",
+      siteUrl: null,
+      siteName: null,
+      lastError: "",
+    });
+    setWpAppPassword("");
+    setMessage("WordPress ontkoppeld.");
     router.refresh();
   }
 
@@ -272,6 +331,82 @@ export function TenantIntegrationsPanel({
 
             <Button type="button" variant="ghost" disabled={busy !== ""} onClick={() => void disconnectBlogger()}>
               {busy === "disconnect" ? "Bezig…" : "Ontkoppelen"}
+            </Button>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-vice-border bg-vice-surface p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-medium text-vice-text">WordPress</h3>
+            <p className="mt-1 max-w-prose text-sm text-vice-text-muted">
+              Publiceer blogposts via de WordPress REST API met een application password (Gebruikers → Profiel).
+            </p>
+          </div>
+          {wordpress.connected ? (
+            <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800">
+              Gekoppeld
+            </span>
+          ) : (
+            <span className="rounded-md bg-vice-bg px-2 py-1 text-xs font-medium text-vice-text-muted">
+              Niet gekoppeld
+            </span>
+          )}
+        </div>
+
+        {wordpress.lastError ? <p className="mt-2 text-sm text-red-700">{wordpress.lastError}</p> : null}
+
+        {wordpress.connected ? (
+          <div className="mt-5 space-y-3">
+            <p className="text-sm text-vice-text">
+              Site:{" "}
+              <strong>{wordpress.siteName ?? wordpress.siteUrl}</strong>
+              {wordpress.siteUrl ? (
+                <>
+                  {" "}
+                  (
+                  <a href={wordpress.siteUrl} target="_blank" rel="noreferrer" className="underline">
+                    {wordpress.siteUrl}
+                  </a>
+                  )
+                </>
+              ) : null}
+            </p>
+            <p className="text-sm text-vice-text-muted">
+              Gebruiker: <span className="text-vice-text">{wordpress.accountEmail || "—"}</span>
+            </p>
+            <Button type="button" variant="ghost" disabled={busy !== ""} onClick={() => void disconnectWordPress()}>
+              {busy === "wp-disconnect" ? "Bezig…" : "Ontkoppelen"}
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-5 space-y-3 max-w-md">
+            <label className="block text-sm">
+              <span className="text-vice-text-muted">Site-URL</span>
+              <Input
+                className="mt-1"
+                placeholder="https://voorbeeld.be"
+                value={wpSiteUrl}
+                onChange={(e) => setWpSiteUrl(e.target.value)}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-vice-text-muted">WordPress-gebruikersnaam</span>
+              <Input className="mt-1" value={wpUsername} onChange={(e) => setWpUsername(e.target.value)} />
+            </label>
+            <label className="block text-sm">
+              <span className="text-vice-text-muted">Application password</span>
+              <Input
+                className="mt-1 font-mono text-sm"
+                type="password"
+                autoComplete="new-password"
+                value={wpAppPassword}
+                onChange={(e) => setWpAppPassword(e.target.value)}
+              />
+            </label>
+            <Button type="button" disabled={busy !== ""} onClick={() => void connectWordPress()}>
+              {busy === "wp-connect" ? "Verbinden…" : "Koppel WordPress"}
             </Button>
           </div>
         )}

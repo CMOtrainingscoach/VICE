@@ -4,6 +4,7 @@ import { getUserAppContext } from "@/lib/auth/context";
 import { createClient } from "@/lib/supabase/server";
 import type { TenantRow } from "@/lib/types/tenant";
 import { parseBloggerPublic } from "@/lib/integrations/blogger";
+import { parseWordPressPublic } from "@/lib/integrations/wordpress";
 import {
   listBlogConceptsAction,
   listBlogSourceMeetingsAction,
@@ -58,11 +59,18 @@ export default async function BlogContentPage({
     );
   }
 
-  const bloggerStatus = await supabase.schema("app").rpc("get_tenant_integration_public", {
-    p_tenant_id: tenantId,
-    p_provider: "blogger",
-  });
+  const [bloggerStatus, wpStatus] = await Promise.all([
+    supabase.schema("app").rpc("get_tenant_integration_public", {
+      p_tenant_id: tenantId,
+      p_provider: "blogger",
+    }),
+    supabase.schema("app").rpc("get_tenant_integration_public", {
+      p_tenant_id: tenantId,
+      p_provider: "wordpress",
+    }),
+  ]);
   const blogger = !bloggerStatus.error ? parseBloggerPublic(bloggerStatus.data) : null;
+  const wordpress = !wpStatus.error ? parseWordPressPublic(wpStatus.data) : null;
 
   return (
     <BlogWorkspace
@@ -74,6 +82,8 @@ export default async function BlogContentPage({
       sourceMeetings={meetings.ok ? meetings.data ?? [] : []}
       bloggerReady={Boolean(blogger?.connected && blogger.blogId)}
       bloggerBlogName={blogger?.blogName ?? null}
+      wordpressReady={Boolean(wordpress?.connected && wordpress.siteUrl)}
+      wordpressSiteLabel={wordpress?.siteName ?? wordpress?.siteUrl ?? null}
       initialKeyword={keyword ?? null}
       buyerPersonaOptions={buyerPersonas.ok ? buyerPersonas.data ?? [] : []}
       brandCharacterOptions={brandCharacters.ok ? brandCharacters.data ?? [] : []}

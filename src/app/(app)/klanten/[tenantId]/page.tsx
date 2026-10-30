@@ -12,6 +12,7 @@ import {
   emptySearchConsoleStatus,
   parseSearchConsolePublic,
 } from "@/lib/integrations/search-console";
+import { emptyWordPressStatus, parseWordPressPublic } from "@/lib/integrations/wordpress";
 import { createClient } from "@/lib/supabase/server";
 import { TENANT_STATUS_LABELS, type TenantRow } from "@/lib/types/tenant";
 
@@ -48,8 +49,9 @@ export default async function TenantDetailPage({
   let blogger = emptyBloggerStatus();
   let searchConsole = emptySearchConsoleStatus();
   let googleAnalytics = emptyGoogleAnalyticsStatus();
+  let wordpress = emptyWordPressStatus();
   if (isAdmin) {
-    const [bloggerStatus, gscStatus, gaStatus] = await Promise.all([
+    const [bloggerStatus, gscStatus, gaStatus, wpStatus] = await Promise.all([
       supabase.schema("app").rpc("get_tenant_integration_public", {
         p_tenant_id: tenantId,
         p_provider: "blogger",
@@ -62,6 +64,10 @@ export default async function TenantDetailPage({
         p_tenant_id: tenantId,
         p_provider: "google_analytics",
       }),
+      supabase.schema("app").rpc("get_tenant_integration_public", {
+        p_tenant_id: tenantId,
+        p_provider: "wordpress",
+      }),
     ]);
     if (!bloggerStatus.error) {
       blogger = parseBloggerPublic(bloggerStatus.data);
@@ -71,6 +77,9 @@ export default async function TenantDetailPage({
     }
     if (!gaStatus.error) {
       googleAnalytics = parseGoogleAnalyticsPublic(gaStatus.data);
+    }
+    if (!wpStatus.error) {
+      wordpress = parseWordPressPublic(wpStatus.data);
     }
   }
 
@@ -129,6 +138,7 @@ export default async function TenantDetailPage({
             blogger={blogger}
             searchConsole={searchConsole}
             googleAnalytics={googleAnalytics}
+            wordpress={wordpress}
             bloggerFlash={bloggerFlash}
             gscFlash={gscFlash}
             gaFlash={gaFlash}

@@ -42,6 +42,7 @@ import {
   updateBlogVisualAltAction,
 } from "@/modules/content/blog-actions";
 import { publishBlogConceptToBloggerAction } from "@/modules/integrations/blogger-actions";
+import { publishBlogConceptToWordPressAction } from "@/modules/integrations/wordpress-actions";
 import { formatKeywordSourceExcerpt } from "@/lib/keywords/format";
 import type { KeywordResearchRow, KeywordResearchRun } from "@/lib/keywords/types";
 import {
@@ -60,6 +61,8 @@ export function BlogWorkspace({
   sourceMeetings = [],
   bloggerReady = false,
   bloggerBlogName = null,
+  wordpressReady = false,
+  wordpressSiteLabel = null,
   openRewrite = false,
   initialKeyword = null,
   buyerPersonaOptions = [],
@@ -75,6 +78,8 @@ export function BlogWorkspace({
   sourceMeetings?: BlogSourceMeeting[];
   bloggerReady?: boolean;
   bloggerBlogName?: string | null;
+  wordpressReady?: boolean;
+  wordpressSiteLabel?: string | null;
   openRewrite?: boolean;
   initialKeyword?: string | null;
   buyerPersonaOptions?: ContentBuyerPersonaOption[];
@@ -710,31 +715,35 @@ export function BlogWorkspace({
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function saveConceptBeforePublish(): Promise<string | null> {
+    if (!concept) return null;
+    if (!dirtyRef.current) return concept.id;
+    setBusy("save");
+    setError("");
+    const html = editorRef.current?.innerHTML ?? bodyHtml;
+    const saved = await saveBlogConceptAction(concept.id, concept.updatedAt, {
+      title: extractTitleClient(html) || title,
+      bodyHtml: html,
+      mode,
+      language,
+      lengthKey,
+      sourceText,
+    }, { quiet: true });
+    setBusy("");
+    if (!saved.ok || !saved.data) {
+      setError(saved.ok ? "Opslaan voor publicatie mislukt" : saved.error);
+      return null;
+    }
+    setConcept(saved.data);
+    dirtyRef.current = false;
+    setSaveState("saved");
+    return saved.data.id;
+  }
+
   async function publishToBlogger(asDraft: boolean) {
     if (!concept) return;
-    let conceptId = concept.id;
-    if (dirtyRef.current) {
-      setBusy("save");
-      setError("");
-      const html = editorRef.current?.innerHTML ?? bodyHtml;
-      const saved = await saveBlogConceptAction(concept.id, concept.updatedAt, {
-        title: extractTitleClient(html) || title,
-        bodyHtml: html,
-        mode,
-        language,
-        lengthKey,
-        sourceText,
-      }, { quiet: true });
-      setBusy("");
-      if (!saved.ok || !saved.data) {
-        setError(saved.ok ? "Opslaan voor publicatie mislukt" : saved.error);
-        return;
-      }
-      setConcept(saved.data);
-      conceptId = saved.data.id;
-      dirtyRef.current = false;
-      setSaveState("saved");
-    }
+    const conceptId = await saveConceptBeforePublish();
+    if (!conceptId) return;
     if (
       !asDraft &&
       !window.confirm(
@@ -749,6 +758,40 @@ export function BlogWorkspace({
     setError("");
     setPublishUrl(null);
     const result = await publishBlogConceptToBloggerAction(conceptId, { asDraft });
+    setBusy("");
+    if (!result.ok || !result.data) {
+      setError(result.ok ? "Publiceren mislukt" : result.error);
+      return;
+    }
+    setPublishUrl(result.data.url || null);
+    if (!asDraft) {
+      void getContentPerformanceAction(tenantId).then((perf) => {
+        if (!perf.ok || !perf.data) return;
+        setSearchOpportunities(perf.data.opportunities);
+        setPostPerformance(new Map(perf.data.posts.map((post) => [post.conceptId, post])));
+      });
+      router.refresh();
+    }
+  }
+
+  async function publishToWordPress(asDraft: boolean) {
+    if (!concept) return;
+    const conceptId = await saveConceptBeforePublish();
+    if (!conceptId) return;
+    if (
+      !asDraft &&
+      !window.confirm(
+        wordpressSiteLabel
+          ? `Dit artikel live publiceren op «${wordpressSiteLabel}» (WordPress)?`
+          : "Dit artikel live publiceren op WordPress?",
+      )
+    ) {
+      return;
+    }
+    setBusy(asDraft ? "draft-wp" : "publish-wp");
+    setError("");
+    setPublishUrl(null);
+    const result = await publishBlogConceptToWordPressAction(conceptId, { asDraft });
     setBusy("");
     if (!result.ok || !result.data) {
       setError(result.ok ? "Publiceren mislukt" : result.error);
@@ -1161,18 +1204,44 @@ export function BlogWorkspace({
                     Als concept op Blogger
                   </Button>
                 </>
-              ) : (
+              ) : null}
+              {wordpressReady ? (
+                <>
+                  <Button
+                    type="button"
+                    disabled={busy !== "" || !concept}
+                    onClick={() => void publishToWordPress(false)}
+                  >
+                    {busy === "publish-wp" ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <Upload className="size-4" />
+                    )}
+                    Publiceer op WordPress
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={busy !== "" || !concept}
+                    onClick={() => void publishToWordPress(true)}
+                  >
+                    {busy === "draft-wp" ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                    Als concept op WordPress
+                  </Button>
+                </>
+              ) : null}
+              {!bloggerReady && !wordpressReady ? (
                 <Link
                   href={`/klanten/${tenantId}?tab=instellingen`}
                   className="inline-flex items-center gap-2 rounded-md border border-vice-border bg-vice-surface px-4 py-2 text-sm font-medium text-vice-text-muted hover:text-vice-text"
                 >
-                  Koppel Blogger in Instellingen
+                  Koppel Blogger of WordPress in Instellingen
                 </Link>
-              )}
+              ) : null}
             </div>
             {publishUrl ? (
               <p className="mt-3 text-sm text-emerald-800">
-                Gepubliceerd op Blogger:{" "}
+                Gepubliceerd:{" "}
                 <a href={publishUrl} target="_blank" rel="noreferrer" className="underline">
                   {publishUrl}
                 </a>

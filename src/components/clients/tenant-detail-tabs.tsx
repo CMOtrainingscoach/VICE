@@ -8,6 +8,7 @@ import { TenantIntegrationsPanel } from "@/components/clients/tenant-integration
 import type { BloggerPublicStatus } from "@/lib/integrations/blogger";
 import type { GoogleAnalyticsPublicStatus } from "@/lib/integrations/google-analytics";
 import type { SearchConsolePublicStatus } from "@/lib/integrations/search-console";
+import type { WordPressPublicStatus } from "@/lib/integrations/wordpress";
 import type { TenantRow } from "@/lib/types/tenant";
 
 export type TenantDetailTab = "gegevens" | "instellingen";
@@ -18,6 +19,7 @@ export function TenantDetailTabs({
   blogger,
   searchConsole,
   googleAnalytics,
+  wordpress,
   bloggerFlash,
   gscFlash,
   gaFlash,
@@ -27,6 +29,7 @@ export function TenantDetailTabs({
   blogger: BloggerPublicStatus;
   searchConsole: SearchConsolePublicStatus;
   googleAnalytics: GoogleAnalyticsPublicStatus;
+  wordpress: WordPressPublicStatus;
   bloggerFlash?: string | null;
   gscFlash?: string | null;
   gaFlash?: string | null;
@@ -62,6 +65,7 @@ export function TenantDetailTabs({
           initialBlogger={blogger}
           initialSearchConsole={searchConsole}
           initialGoogleAnalytics={googleAnalytics}
+          initialWordPress={wordpress}
           bloggerFlash={bloggerFlash}
           gscFlash={gscFlash}
           gaFlash={gaFlash}
