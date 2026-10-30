@@ -18,7 +18,9 @@ import {
   type VideoConceptSummary,
   type VideoDurationSeconds,
   type VideoIntendedUse,
+  type VideoProvider,
   type VideoResolution,
+  VIDEO_PROVIDERS,
 } from "@/lib/content/video-types";
 import type { ClientBrand } from "@/lib/brand/types";
 import { loadBeeldCompositionAction } from "@/modules/content/beeld-actions";
@@ -26,6 +28,7 @@ import {
   createVideoConceptAction,
   deleteVideoConceptAction,
   getTenantVideoCreditsForVideoAction,
+  getVideoProviderAvailabilityAction,
   pollVideoGenerationAction,
   saveVideoConceptAction,
   startVideoGenerationAction,
@@ -61,6 +64,10 @@ export function VideoWorkspace({
   const [durationSeconds, setDurationSeconds] = useState<VideoDurationSeconds>(initial?.durationSeconds ?? 5);
   const [resolution, setResolution] = useState<VideoResolution>(initial?.resolution ?? "720p");
   const [motionPrompt, setMotionPrompt] = useState(initial?.motionPrompt ?? "");
+  const [videoProvider, setVideoProvider] = useState<VideoProvider>(initial?.videoProvider ?? "openart");
+  const [providerAvailability, setProviderAvailability] = useState<{ openart: boolean; kling: boolean } | null>(
+    null,
+  );
   const [beeldCompositionId, setBeeldCompositionId] = useState(initial?.beeldCompositionId ?? "");
   const [unitsBalance, setUnitsBalance] = useState<number | null>(null);
   const [busy, setBusy] = useState("");
@@ -73,7 +80,23 @@ export function VideoWorkspace({
     void getTenantVideoCreditsForVideoAction(tenantId).then((result) => {
       if (result.ok && result.data) setUnitsBalance(result.data.balance);
     });
+    void getVideoProviderAvailabilityAction().then((result) => {
+      if (!result.ok || !result.data) return;
+      setProviderAvailability(result.data);
+      setVideoProvider((current) => {
+        const currentOk =
+          current === "openart" ? result.data!.openart : result.data!.kling;
+        if (currentOk) return current;
+        if (result.data!.openart) return "openart";
+        if (result.data!.kling) return "kling";
+        return current;
+      });
+    });
   }, [tenantId]);
+
+  useEffect(() => {
+    if (concept?.videoProvider) setVideoProvider(concept.videoProvider);
+  }, [concept?.id, concept?.videoProvider]);
 
   useEffect(() => {
     if (!concept || concept.jobStatus !== "processing") return;
@@ -101,6 +124,7 @@ export function VideoWorkspace({
       durationSeconds,
       resolution,
       motionPrompt,
+      videoProvider,
     });
     if (!saved.ok || !saved.data) {
       setError(saved.ok ? "Opslaan mislukt" : saved.error);
@@ -215,7 +239,7 @@ export function VideoWorkspace({
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-vice-gold">Video v1</p>
           <h1 className="mt-2 font-display text-3xl tracking-tight text-vice-text md:text-4xl">Video</h1>
           <p className="mt-2 max-w-2xl text-sm text-vice-text-muted">
-            Image-to-video via het platform OpenArt-abonnement (Kling 2.6) of directe Kling API. Max 10 s MP4.
+            Image-to-video (max 10 s MP4). Kies OpenArt of directe Kling API per concept.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -247,6 +271,40 @@ export function VideoWorkspace({
             <div>
               <Label className="text-xs text-vice-text-muted">Interne naam</Label>
               <input className={`${fieldClass} mt-1`} value={internalName} onChange={(e) => setInternalName(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs text-vice-text-muted">Provider</Label>
+              <select
+                className={`${fieldClass} mt-1`}
+                value={videoProvider}
+                disabled={processing}
+                onChange={(e) => setVideoProvider(e.target.value as VideoProvider)}
+              >
+                {VIDEO_PROVIDERS.map((item) => {
+                  const available =
+                    providerAvailability == null
+                      ? true
+                      : item.id === "openart"
+                        ? providerAvailability.openart
+                        : providerAvailability.kling;
+                  return (
+                    <option key={item.id} value={item.id} disabled={!available}>
+                      {item.label}
+                      {!available ? " (niet beschikbaar)" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+              <p className="mt-1 text-xs text-vice-text-muted">
+                {VIDEO_PROVIDERS.find((p) => p.id === videoProvider)?.hint}
+                {providerAvailability &&
+                ((videoProvider === "openart" && !providerAvailability.openart) ||
+                  (videoProvider === "kling" && !providerAvailability.kling)) ? (
+                  <span className="block text-red-600">
+                    Deze provider is nu niet beschikbaar — pas de keuze aan of configureer in Instellingen.
+                  </span>
+                ) : null}
+              </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
@@ -311,7 +369,15 @@ export function VideoWorkspace({
             </div>
             <Button
               type="button"
-              disabled={busy !== "" || processing || !concept.sourceImagePath || !motionPrompt.trim()}
+              disabled={
+                busy !== "" ||
+                processing ||
+                !concept.sourceImagePath ||
+                !motionPrompt.trim() ||
+                (providerAvailability != null &&
+                  ((videoProvider === "openart" && !providerAvailability.openart) ||
+                    (videoProvider === "kling" && !providerAvailability.kling)))
+              }
               onClick={() => void generate()}
             >
               {busy === "gen" || processing ? (
@@ -325,7 +391,10 @@ export function VideoWorkspace({
               <p className="text-sm text-red-700">{concept.jobError}</p>
             ) : null}
             {processing ? (
-              <p className="text-sm text-vice-text-muted">Generatie loopt… dit kan enkele minuten duren.</p>
+              <p className="text-sm text-vice-text-muted">
+                Generatie via {concept.videoProvider === "kling" ? "Kling API" : "OpenArt"}… dit kan enkele minuten
+                duren.
+              </p>
             ) : null}
           </section>
 

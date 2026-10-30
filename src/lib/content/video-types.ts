@@ -59,6 +59,19 @@ export type VideoConceptSummary = {
 export const VIDEO_MIGRATION =
   "Pas migraties 20260330136416_video_concepts.sql en 20260330136417_openart_video_billing.sql toe in Supabase.";
 
+export const VIDEO_PROVIDERS: { id: VideoProvider; label: string; hint: string }[] = [
+  {
+    id: "openart",
+    label: "OpenArt",
+    hint: "Jouw platform-abonnement (Kling 2.6 image-to-video)",
+  },
+  {
+    id: "kling",
+    label: "Kling API",
+    hint: "Directe API-key; platform Kling-units in Instellingen",
+  },
+];
+
 export const VIDEO_INTENDED_USES: { id: VideoIntendedUse; label: string }[] = [
   { id: "social", label: "Social" },
   { id: "ads", label: "Advertenties" },

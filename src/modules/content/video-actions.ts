@@ -252,10 +252,38 @@ export async function uploadVideoSourceImageAction(
   });
 }
 
-async function resolveVideoProvider(): Promise<"openart" | "kling" | null> {
-  if (await openArtPlatformConnected()) return "openart";
-  if (klingApiConfigured()) return "kling";
-  return null;
+export async function getVideoProviderAvailabilityAction(): Promise<
+  ActionResult<{ openart: boolean; kling: boolean }>
+> {
+  await authed();
+  return {
+    ok: true,
+    data: {
+      openart: await openArtPlatformConnected(),
+      kling: klingApiConfigured(),
+    },
+  };
+}
+
+async function assertVideoProviderReady(
+  provider: "openart" | "kling",
+): Promise<ActionResult<"openart" | "kling">> {
+  if (provider === "openart") {
+    if (!(await openArtPlatformConnected())) {
+      return {
+        ok: false,
+        error: "OpenArt is niet gekoppeld. Kies Kling API of koppel OpenArt in Instellingen.",
+      };
+    }
+    return { ok: true, data: "openart" };
+  }
+  if (!klingApiConfigured()) {
+    return {
+      ok: false,
+      error: "KLING_API_KEY ontbreekt. Kies OpenArt of configureer Kling in de serveromgeving.",
+    };
+  }
+  return { ok: true, data: "kling" };
 }
 
 async function ensureTenantVideoCredits(
@@ -278,18 +306,14 @@ async function ensureTenantVideoCredits(
 }
 
 export async function startVideoGenerationAction(conceptId: string): Promise<ActionResult<VideoConcept>> {
-  const provider = await resolveVideoProvider();
-  if (!provider) {
-    return {
-      ok: false,
-      error:
-        "Geen video-provider: koppel OpenArt in Instellingen of zet KLING_API_KEY voor directe Kling.",
-    };
-  }
-
   const loaded = await loadVideoConceptAction(conceptId);
   if (!loaded.ok || !loaded.data) return loaded;
   const concept = loaded.data;
+
+  const providerChoice = concept.videoProvider === "kling" ? "kling" : "openart";
+  const providerReady = await assertVideoProviderReady(providerChoice);
+  if (!providerReady.ok) return providerReady;
+  const provider = providerReady.data;
 
   if (!concept.sourceImagePath) {
     return { ok: false, error: "Upload eerst een startbeeld of importeer beeldmateriaal." };
