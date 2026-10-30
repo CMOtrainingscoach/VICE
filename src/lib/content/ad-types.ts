@@ -100,7 +100,7 @@ export type AdConceptSummary = {
 };
 
 export const AD_MIGRATION =
-  "Pas migratie 20260330136414_ad_concepts.sql toe in Supabase (na 20260330136413).";
+  "Pas migraties 20260330136414_ad_concepts.sql en 20260330136415_ad_concepts_list_visibility.sql toe in Supabase.";
 
 export const AD_PLATFORMS: { id: AdPlatform; label: string }[] = [
   { id: "google_search", label: "Google Search" },

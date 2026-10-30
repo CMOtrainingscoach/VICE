@@ -1,9 +1,20 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, LoaderCircle, Megaphone, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Download,
+  LoaderCircle,
+  Megaphone,
+  Pencil,
+  Plus,
+  Sparkles,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { ContentBeeldImportField } from "@/components/content/content-beeld-import-field";
 import { ContentBrandCharacterField } from "@/components/content/content-brand-character-field";
 import {
@@ -15,6 +26,11 @@ import type { ClientBrand } from "@/lib/brand/types";
 import type { BeeldCompositionSummary } from "@/lib/content/beeld-types";
 import type { ContentBuyerPersonaOption } from "@/lib/content/blog-types";
 import { AD_TEMPLATES } from "@/lib/content/ad-templates";
+import {
+  buildAdExportManifest,
+  downloadAdConceptJson,
+  downloadAdConceptZip,
+} from "@/lib/content/ad-export";
 import {
   AD_STATUSES,
   META_LIMITS,
@@ -39,10 +55,13 @@ import {
   createAdConceptAction,
   deleteAdAssetAction,
   deleteAdConceptAction,
+  generateAdCopyAction,
+  listAdConceptsAction,
   saveAdConceptAction,
   selectAdAssetAction,
   uploadAdAssetAction,
   upsertAdFolderAction,
+  type AdListVisibility,
 } from "@/modules/content/ad-actions";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -118,6 +137,23 @@ export function AdsWorkspace({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [deletingId, setDeletingId] = useState("");
   const [listFolderFilter, setListFolderFilter] = useState<string>("");
+  const [listVisibility, setListVisibility] = useState<AdListVisibility>("active");
+  const [aiBrief, setAiBrief] = useState("");
+
+  const personaRequired = buyerPersonaOptions.length > 0;
+  const personaReady = !personaRequired || Boolean(buyerPersonaId);
+  const isArchived = status === "archived";
+
+  useEffect(() => {
+    let cancelled = false;
+    void listAdConceptsAction(tenantId, listFolderFilter || null, listVisibility).then((result) => {
+      if (cancelled || !result.ok || !result.data) return;
+      setConceptList(result.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, listFolderFilter, listVisibility]);
 
   const editingPayload = useMemo(() => {
     if (!multiLanguageEnabled || activeLocale === primaryLanguage) return payload;
@@ -246,45 +282,86 @@ export function AdsWorkspace({
     setNewFolderName("");
   }
 
-  function exportPackage() {
-    if (!concept) return;
-    const pack = {
-      exportedAt: new Date().toISOString(),
-      concept: {
-        internalName,
-        platform: concept.platform,
-        format: concept.format,
-        metaPlacements,
-        status,
-        tags: parseTags(),
-        multiLanguageEnabled,
-        primaryLanguage,
-        legalReviewRequired,
-        legalReviewCleared,
-        legalNote,
-        payload,
-        localePayloads,
-        assets: concept.assets.map((a) => ({
-          id: a.id,
-          altText: a.altText,
-          mimeType: a.mimeType,
-          url: a.url,
-          storagePath: a.storagePath,
-        })),
-      },
-    };
-    const blob = new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${(internalName || "advertentie").replace(/[^\w\-]+/g, "_")}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+  function buildManifestForExport() {
+    if (!concept) return null;
+    return buildAdExportManifest({
+      concept,
+      internalName,
+      status,
+      metaPlacements,
+      tags: parseTags(),
+      multiLanguageEnabled,
+      primaryLanguage,
+      legalReviewRequired,
+      legalReviewCleared,
+      legalNote,
+      payload,
+      localePayloads,
+    });
   }
 
-  const filteredList = listFolderFilter
-    ? conceptList.filter((item) => item.folderId === listFolderFilter)
-    : conceptList;
+  function exportJson() {
+    const manifest = buildManifestForExport();
+    if (!manifest) return;
+    downloadAdConceptJson(manifest, internalName || "advertentie");
+  }
+
+  async function exportZip() {
+    if (!concept) return;
+    const manifest = buildManifestForExport();
+    if (!manifest) return;
+    setBusy("zip");
+    setError("");
+    try {
+      await downloadAdConceptZip({
+        manifest,
+        downloadBaseName: internalName || "advertentie",
+        assets: manifest.concept.assets.map((row, index) => ({
+          fileName: row.fileName,
+          url: concept.assets[index]?.url ?? null,
+        })),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ZIP-export mislukt");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function setArchived(nextArchived: boolean) {
+    if (!concept) return;
+    const nextStatus: AdStatus = nextArchived ? "archived" : "draft";
+    setStatus(nextStatus);
+    const saved = await saveAdConceptAction(concept.id, concept.updatedAt, { status: nextStatus });
+    if (!saved.ok || !saved.data) {
+      setError(saved.ok ? "Opslaan mislukt" : saved.error);
+      return;
+    }
+    setConcept(saved.data);
+    setStatus(saved.data.status);
+    if (nextArchived && listVisibility === "active") {
+      setListVisibility("archived");
+    }
+  }
+
+  async function generateCopy() {
+    if (!concept) return;
+    setBusy("ai");
+    setError("");
+    const saved = await saveCurrent({ quiet: true });
+    const current = saved ?? concept;
+    const result = await generateAdCopyAction(current.id, aiBrief);
+    setBusy("");
+    if (!result.ok || !result.data) {
+      setError(result.ok ? "AI-generatie mislukt" : result.error);
+      return;
+    }
+    setConcept(result.data);
+    setPayload(result.data.payload);
+    setLocalePayloads(result.data.localePayloads);
+  }
+
+  const filteredList = conceptList;
 
   const needsVisual = concept && (concept.format === "single_image" || concept.format === "carousel");
   const selected = concept?.selectedAsset ?? concept?.assets[0] ?? null;
@@ -300,12 +377,12 @@ export function AdsWorkspace({
       </p>
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-vice-gold">Fase 1</p>
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-vice-gold">Fase 2a</p>
           <h1 className="mt-2 font-display text-3xl tracking-tight text-vice-text md:text-4xl">
             Advertentie-creatives
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-vice-text-muted">
-            Bereid Google Search (RSA) en Meta-beelden voor. Publiceren naar ad-platforms volgt in een latere fase.
+            Voorbereiden, AI-copy, ZIP-export en archief. Publiceren naar ad-platforms volgt in fase 2b.
           </p>
         </div>
         {concept ? (
@@ -313,10 +390,25 @@ export function AdsWorkspace({
             <span className="text-xs text-vice-text-muted">
               {saveState === "saving" ? "Opslaan…" : saveState === "saved" ? "Opgeslagen" : null}
             </span>
-            <Button type="button" variant="secondary" disabled={busy !== ""} onClick={() => void exportPackage()}>
+            <Button type="button" variant="secondary" disabled={busy !== ""} onClick={() => exportJson()}>
               <Download className="size-4" />
-              Export JSON
+              JSON
             </Button>
+            <Button type="button" variant="secondary" disabled={busy !== ""} onClick={() => void exportZip()}>
+              {busy === "zip" ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
+              ZIP
+            </Button>
+            {isArchived ? (
+              <Button type="button" variant="secondary" disabled={busy !== ""} onClick={() => void setArchived(false)}>
+                <ArchiveRestore className="size-4" />
+                Herstellen
+              </Button>
+            ) : (
+              <Button type="button" variant="secondary" disabled={busy !== ""} onClick={() => void setArchived(true)}>
+                <Archive className="size-4" />
+                Archiveren
+              </Button>
+            )}
             <Button type="button" disabled={busy !== ""} onClick={() => void saveCurrent()}>
               Opslaan
             </Button>
@@ -325,6 +417,12 @@ export function AdsWorkspace({
       </div>
 
       {error ? <p className="mt-4 text-sm text-red-700">{error}</p> : null}
+
+      {concept && isArchived ? (
+        <p className="mt-4 rounded-lg border border-amber-600/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
+          Deze advertentie staat in het archief. Herstel om verder te bewerken of laat staan als referentie.
+        </p>
+      ) : null}
 
       {!concept ? (
         <section className="mt-10">
@@ -361,13 +459,21 @@ export function AdsWorkspace({
               </div>
               <div>
                 <Label className="text-xs text-vice-text-muted">Status</Label>
-                <select className={`${fieldClass} mt-1`} value={status} onChange={(e) => setStatus(e.target.value as AdStatus)}>
+                <select
+                  className={`${fieldClass} mt-1`}
+                  value={isArchived ? "draft" : status}
+                  disabled={isArchived}
+                  onChange={(e) => setStatus(e.target.value as AdStatus)}
+                >
                   {AD_STATUSES.filter((item) => item.id !== "archived").map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.label}
                     </option>
                   ))}
                 </select>
+                {isArchived ? (
+                  <p className="mt-1 text-xs text-vice-text-muted">Status in archief — gebruik Herstellen om te wijzigen.</p>
+                ) : null}
               </div>
             </div>
 
@@ -508,7 +614,29 @@ export function AdsWorkspace({
           </section>
 
           <section className="space-y-6 rounded-2xl border border-vice-border bg-vice-surface p-5">
-            <h2 className="text-sm font-medium text-vice-text">Copy &amp; creative</h2>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <h2 className="text-sm font-medium text-vice-text">Copy &amp; creative</h2>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy !== "" || isArchived || !personaReady}
+                title={!personaReady ? "Kies een buyer persona" : undefined}
+                onClick={() => void generateCopy()}
+              >
+                {busy === "ai" ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                Genereer copy
+              </Button>
+            </div>
+            <div>
+              <Label className="text-xs text-vice-text-muted">Briefing voor AI (optioneel)</Label>
+              <textarea
+                className={`${fieldClass} mt-1 min-h-[4rem]`}
+                value={aiBrief}
+                disabled={isArchived}
+                placeholder="Bijv. lancering nieuwe dienst, focus op ROI, geen prijsvermelding…"
+                onChange={(e) => setAiBrief(e.target.value)}
+              />
+            </div>
             {isGoogleRsa(editingPayload) ? (
               <GoogleRsaEditor payload={editingPayload} onChange={setEditingPayload} />
             ) : isMetaSingle(editingPayload) ? (
@@ -601,18 +729,29 @@ export function AdsWorkspace({
       <section className="mt-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-vice-text">Opgeslagen creatives</h2>
-          <select
-            className={`${fieldClass} w-auto min-w-[10rem]`}
-            value={listFolderFilter}
-            onChange={(e) => setListFolderFilter(e.target.value)}
-          >
-            <option value="">Alle mappen</option>
-            {folderList.map((folder) => (
-              <option key={folder.id} value={folder.id}>
-                {folder.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-wrap gap-2">
+            <select
+              className={`${fieldClass} w-auto min-w-[9rem]`}
+              value={listVisibility}
+              onChange={(e) => setListVisibility(e.target.value as AdListVisibility)}
+            >
+              <option value="active">Actief</option>
+              <option value="archived">Archief</option>
+              <option value="all">Alles</option>
+            </select>
+            <select
+              className={`${fieldClass} w-auto min-w-[10rem]`}
+              value={listFolderFilter}
+              onChange={(e) => setListFolderFilter(e.target.value)}
+            >
+              <option value="">Alle mappen</option>
+              {folderList.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         {filteredList.length > 0 ? (
           <ul className="mt-3 divide-y divide-vice-border rounded-xl border border-vice-border bg-vice-surface">
@@ -625,6 +764,7 @@ export function AdsWorkspace({
                   <span className="block truncate">{item.internalName || "Naamloze advertentie"}</span>
                   <span className="mt-0.5 block text-xs text-vice-text-muted">
                     {platformFormatLabel(item.platform, item.format)}
+                    {item.status === "archived" ? " · archief" : ""}
                     {item.legalReviewRequired && !item.legalReviewCleared ? " · legal open" : ""}
                     {" · "}
                     {new Date(item.updatedAt).toLocaleString("nl-BE", { timeZone: "Europe/Brussels" })}

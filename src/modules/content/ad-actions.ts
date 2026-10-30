@@ -14,8 +14,15 @@ import {
   type AdPlatform,
   type AdStatus,
   type MetaPlacement,
+  isGoogleRsa,
 } from "@/lib/content/ad-types";
+import { generateAdCopy } from "@/lib/content/ad-ai";
 import { adTemplateByKey, payloadForNewAd } from "@/lib/content/ad-templates";
+import {
+  assertBuyerPersonaForGeneration,
+  fetchAudiencePromptBlockForTenant,
+} from "@/modules/content/audience-actions";
+import { fetchContentLearningPromptBlock } from "@/lib/content/content-learning";
 import { loadBlogBrandContextAction } from "@/modules/content/blog-actions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -192,14 +199,18 @@ export async function upsertAdFolderAction(
   };
 }
 
+export type AdListVisibility = "active" | "archived" | "all";
+
 export async function listAdConceptsAction(
   tenantId: string,
   folderId?: string | null,
+  visibility: AdListVisibility = "active",
 ): Promise<ActionResult<AdConceptSummary[]>> {
   const supabase = await authed();
   const listed = await supabase.schema("app").rpc("list_ad_concepts", {
     p_tenant_id: tenantId,
     p_folder_id: folderId ?? null,
+    p_visibility: visibility,
   });
   if (listed.error) return { ok: false, error: migration(listed.error.message) };
   const rows = Array.isArray(listed.data) ? listed.data : [];
@@ -389,4 +400,46 @@ export async function selectAdAssetAction(conceptId: string, assetId: string): P
   const loaded = await loadAdConceptAction(conceptId);
   if (!loaded.ok || !loaded.data) return loaded;
   return saveAdConceptAction(conceptId, loaded.data.updatedAt, { selectedAssetId: assetId }, { quiet: true });
+}
+
+export async function generateAdCopyAction(
+  conceptId: string,
+  brief: string,
+): Promise<ActionResult<AdConcept>> {
+  const loaded = await loadAdConceptAction(conceptId);
+  if (!loaded.ok || !loaded.data) {
+    return { ok: false, error: loaded.ok ? "Advertentie niet gevonden" : loaded.error };
+  }
+  const concept = loaded.data;
+  if (!concept.brandVoiceSnapshot || concept.brandVoiceSnapshot.trim().length < 20) {
+    return { ok: false, error: "Tone of voice ontbreekt. Vul die eerst aan bij Brand." };
+  }
+  const personaCheck = await assertBuyerPersonaForGeneration(concept.tenantId, concept.buyerPersonaId);
+  if (!personaCheck.ok) return personaCheck;
+
+  const topic = brief.trim() || concept.internalName.trim() || "Advertentie";
+  const supabase = await authed();
+  const [contentLearnings, audienceContext] = await Promise.all([
+    fetchContentLearningPromptBlock(supabase, concept.tenantId),
+    fetchAudiencePromptBlockForTenant(concept.tenantId, concept.buyerPersonaId),
+  ]);
+
+  try {
+    const generated = await generateAdCopy({
+      platform: concept.platform,
+      format: concept.format,
+      language: concept.primaryLanguage,
+      topic,
+      voice: concept.brandVoiceSnapshot,
+      audienceContext,
+      contentLearnings,
+      existingFinalUrl: isGoogleRsa(concept.payload) ? concept.payload.finalUrl : undefined,
+    });
+    return saveAdConceptAction(conceptId, concept.updatedAt, { payload: generated });
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "AI-generatie mislukt",
+    };
+  }
 }
