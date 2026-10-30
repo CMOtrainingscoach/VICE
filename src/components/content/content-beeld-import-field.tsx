@@ -10,6 +10,7 @@ import type { BeeldCompositionSummary } from "@/lib/content/beeld-types";
 import type { ClientBrand } from "@/lib/brand/types";
 import { loadBeeldCompositionAction } from "@/modules/content/beeld-actions";
 import { uploadBlogVisualAction } from "@/modules/content/blog-actions";
+import { uploadAdAssetAction } from "@/modules/content/ad-actions";
 import { uploadSocialAssetAction } from "@/modules/content/social-actions";
 
 const fieldClass =
@@ -24,15 +25,17 @@ export function ContentBeeldImportField({
   disabled,
   onSocialImported,
   onBlogImported,
+  onAdsImported,
 }: {
   tenantId: string;
   conceptId: string | null;
   compositions: BeeldCompositionSummary[];
   clientBrand: ClientBrand | null;
-  target: "social" | "blog";
+  target: "social" | "blog" | "ads";
   disabled?: boolean;
   onSocialImported?: (concept: import("@/lib/content/social-types").SocialPostConcept) => void;
   onBlogImported?: (concept: import("@/lib/content/blog-types").BlogConcept) => void;
+  onAdsImported?: (concept: import("@/lib/content/ad-types").AdConcept) => void;
 }) {
   const [compositionId, setCompositionId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -71,6 +74,12 @@ export function ContentBeeldImportField({
           throw new Error(result.ok ? "Importeren mislukt" : result.error);
         }
         onSocialImported?.(result.data);
+      } else if (target === "ads") {
+        const result = await uploadAdAssetAction(conceptId, form);
+        if (!result.ok || !result.data) {
+          throw new Error(result.ok ? "Importeren mislukt" : result.error);
+        }
+        onAdsImported?.(result.data);
       } else {
         const result = await uploadBlogVisualAction(conceptId, form);
         if (!result.ok || !result.data) {
