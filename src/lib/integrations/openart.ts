@@ -22,6 +22,9 @@ const OPENART_CLIENT_HEADERS = {
 
 const OPENART_I2V_CAPABILITY = "kling2-6:image2video";
 
+export const OPENART_RECONNECT_MESSAGE =
+  "OpenArt-sessie verlopen of ongeldig. Ga naar Instellingen → OpenArt opnieuw koppelen.";
+
 function unwrapOpenArtRecord(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== "object") return {};
   const row = raw as Record<string, unknown>;
@@ -296,18 +299,40 @@ export async function openArtPlatformConnected(): Promise<boolean> {
   return Boolean(row?.refresh_token?.trim());
 }
 
-export async function getOpenArtAccessToken(): Promise<string | null> {
+function openArtOAuthClientId(row: OpenArtIntegrationRow): string {
+  return String(row.metadata?.oauthClientId ?? "") || process.env.OPENART_OAUTH_CLIENT_ID?.trim() || "";
+}
+
+function isOpenArtAuthFailure(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("unknown token") ||
+    msg.includes("invalid token") ||
+    msg.includes("unauthorized") ||
+    msg.includes("invalid_grant") ||
+    msg.includes("token refresh mislukt") ||
+    msg.includes("token exchange mislukt")
+  );
+}
+
+async function markOpenArtAuthFailure(reason: unknown): Promise<void> {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  const admin = createAdminClient();
+  await admin
+    .schema("app")
+    .from("platform_integrations")
+    .update({
+      last_error: message.slice(0, 500),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("provider", PLATFORM_OPENART_PROVIDER);
+}
+
+async function forceRefreshOpenArtAccessToken(): Promise<string | null> {
   const row = await loadOpenArtRow();
   if (!row?.refresh_token?.trim()) return null;
-
-  const clientId =
-    String(row.metadata?.oauthClientId ?? "") || process.env.OPENART_OAUTH_CLIENT_ID?.trim() || "";
+  const clientId = openArtOAuthClientId(row);
   if (!clientId) return null;
-
-  const expiresAt = row.token_expires_at ? Date.parse(row.token_expires_at) : 0;
-  const stillValid = row.access_token && expiresAt - Date.now() > 60_000;
-  if (stillValid) return row.access_token;
-
   try {
     const refreshed = await refreshOpenArtAccessToken({
       refreshToken: row.refresh_token,
@@ -320,14 +345,36 @@ export async function getOpenArtAccessToken(): Promise<string | null> {
       expiresAt: expires,
     });
     return refreshed.accessToken;
-  } catch {
+  } catch (err) {
+    await markOpenArtAuthFailure(err);
     return null;
   }
 }
 
+export async function getOpenArtAccessToken(): Promise<string | null> {
+  const row = await loadOpenArtRow();
+  if (!row?.refresh_token?.trim()) return null;
+
+  const clientId = openArtOAuthClientId(row);
+  if (!clientId) return null;
+
+  const expiresAt = row.token_expires_at ? Date.parse(row.token_expires_at) : 0;
+  const hasExpiry = Number.isFinite(expiresAt) && expiresAt > 0;
+  const stillValid = Boolean(row.access_token && hasExpiry && expiresAt - Date.now() > 60_000);
+  if (stillValid) return row.access_token;
+
+  return forceRefreshOpenArtAccessToken();
+}
+
+export function isOpenArtReconnectError(err: unknown): boolean {
+  if (isOpenArtAuthFailure(err)) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes(OPENART_RECONNECT_MESSAGE);
+}
+
 async function warmOpenArtSession(accessToken: string): Promise<void> {
   await Promise.allSettled([
-    openArtJson(accessToken, "/user/my-info", { method: "POST", body: "{}" }),
+    openArtJsonWithRetry(accessToken, "/user/my-info", { method: "POST", body: "{}" }),
     fetch(`${OPENART_API_BASE}/user/last-active`, {
       method: "GET",
       headers: { ...OPENART_HEADERS, ...OPENART_CLIENT_HEADERS, Authorization: `Bearer ${accessToken}` },
@@ -404,7 +451,7 @@ async function requestOpenArtUploadSign(input: {
   let lastError = "OpenArt upload/sign mislukt.";
   for (const body of bodies) {
     try {
-      const signedRaw = await openArtJson<unknown>(input.accessToken, "/upload/sign", {
+      const signedRaw = await openArtJsonWithRetry<unknown>(input.accessToken, "/upload/sign", {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -414,6 +461,9 @@ async function requestOpenArtUploadSign(input: {
     } catch (err) {
       lastError = err instanceof Error ? err.message : lastError;
     }
+  }
+  if (isOpenArtAuthFailure(new Error(lastError))) {
+    throw new Error(OPENART_RECONNECT_MESSAGE);
   }
   throw new Error(lastError.startsWith("OpenArt") ? lastError : `OpenArt upload/sign: ${lastError}`);
 }
@@ -437,6 +487,22 @@ async function openArtJson<T>(
     throw new Error(formatOpenArtError(json, res.status));
   }
   return json;
+}
+
+async function openArtJsonWithRetry<T>(
+  accessToken: string,
+  path: string,
+  init?: RequestInit,
+  retried = false,
+): Promise<T> {
+  try {
+    return await openArtJson<T>(accessToken, path, init);
+  } catch (err) {
+    if (retried || !isOpenArtAuthFailure(err)) throw err;
+    const fresh = await forceRefreshOpenArtAccessToken();
+    if (!fresh) throw new Error(OPENART_RECONNECT_MESSAGE);
+    return openArtJsonWithRetry<T>(fresh, path, init, true);
+  }
 }
 
 async function persistOpenArtUpload(input: {
@@ -478,7 +544,7 @@ async function persistOpenArtUpload(input: {
   let lastError = "OpenArt upload/persist mislukt.";
   for (const body of attempts) {
     try {
-      const raw = await openArtJson<unknown>(input.accessToken, "/upload/persist", {
+      const raw = await openArtJsonWithRetry<unknown>(input.accessToken, "/upload/persist", {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -496,7 +562,7 @@ async function persistOpenArtUpload(input: {
 }
 
 export async function fetchOpenArtUserInfo(accessToken: string) {
-  return openArtJson<{
+  return openArtJsonWithRetry<{
     displayName?: string;
     username?: string;
     free_credit_balance?: number;
@@ -505,7 +571,7 @@ export async function fetchOpenArtUserInfo(accessToken: string) {
 }
 
 export async function fetchOpenArtDefaultProjectId(accessToken: string): Promise<string> {
-  const json = await openArtJson<{ data?: { projectId?: string }; projectId?: string }>(
+  const json = await openArtJsonWithRetry<{ data?: { projectId?: string }; projectId?: string }>(
     accessToken,
     "/projects/default",
   );
@@ -596,7 +662,7 @@ export async function submitOpenArtKlingImageToVideo(input: {
   let lastSubmitError = "OpenArt image-to-video submit mislukt.";
   for (const body of submitBodies) {
     try {
-      submitRaw = await openArtJson<unknown>(input.accessToken, `/forms/creations/${capability}`, {
+      submitRaw = await openArtJsonWithRetry<unknown>(input.accessToken, `/forms/creations/${capability}`, {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -619,7 +685,7 @@ export async function submitOpenArtKlingImageToVideo(input: {
     : [];
   const resourceId = pickString(submit, ["resourceId", "resource_id"]) || resourceIds[0] || "";
   if (!resourceId && historyId) {
-    const history = await openArtJson<{ history?: { resourceIds?: string[] } }>(
+    const history = await openArtJsonWithRetry<{ history?: { resourceIds?: string[] } }>(
       input.accessToken,
       `/history/${historyId}`,
     );
@@ -644,7 +710,7 @@ export async function pollOpenArtResource(
   accessToken: string,
   resourceId: string,
 ): Promise<OpenArtResourcePoll> {
-  const raw = await openArtJson<unknown>(accessToken, `/resources/${resourceId}`);
+  const raw = await openArtJsonWithRetry<unknown>(accessToken, `/resources/${resourceId}`);
   const row = unwrapOpenArtRecord(raw);
   const statusRaw = pickString(row, ["status"]).toLowerCase();
   const url = pickString(row, ["url"]);

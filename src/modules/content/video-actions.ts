@@ -12,8 +12,10 @@ import {
   buildOpenArtVisualReference,
   estimateVideoCredits,
   getOpenArtAccessToken,
+  isOpenArtReconnectError,
   loadOpenArtProjectId,
   openArtPlatformConnected,
+  OPENART_RECONNECT_MESSAGE,
   pollOpenArtResource,
   submitOpenArtKlingImageToVideo,
   uploadOpenArtReferenceImage,
@@ -383,8 +385,11 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
       if (publicImageUrl) {
         try {
           submitted = await trySubmit(publicImageUrl, "");
-        } catch {
-          /* fall back to OpenArt upload/sign */
+        } catch (err) {
+          if (isOpenArtReconnectError(err)) {
+            return { ok: false, error: OPENART_RECONNECT_MESSAGE };
+          }
+          /* fall back to OpenArt upload/sign for reference/upload issues */
         }
       }
 
@@ -409,6 +414,9 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
         outputVideoPath: "",
       });
     } catch (err) {
+      if (isOpenArtReconnectError(err)) {
+        return { ok: false, error: OPENART_RECONNECT_MESSAGE };
+      }
       return { ok: false, error: err instanceof Error ? err.message : "OpenArt start mislukt" };
     }
   }
