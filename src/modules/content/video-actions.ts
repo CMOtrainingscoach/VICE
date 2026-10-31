@@ -9,6 +9,7 @@ import {
 } from "@/lib/integrations/kling";
 import {
   aspectPresetToOpenArtRatio,
+  buildOpenArtVisualReference,
   estimateVideoCredits,
   getOpenArtAccessToken,
   loadOpenArtProjectId,
@@ -350,12 +351,21 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
         : "jpg";
 
     try {
+      const contentType = concept.sourceMimeType || "image/jpeg";
+      const filename = `vice-${conceptId}.${ext}`;
       const uploaded = await uploadOpenArtReferenceImage({
         accessToken,
         projectId,
         bytes,
-        contentType: concept.sourceMimeType || "image/jpeg",
-        filename: `vice-${conceptId}.${ext}`,
+        contentType,
+        filename,
+      });
+      const imageReference = buildOpenArtVisualReference({
+        url: uploaded.url,
+        resourceId: uploaded.assetId,
+        contentType,
+        filename,
+        bytes,
       });
       const submitted = await submitOpenArtKlingImageToVideo({
         accessToken,
@@ -363,6 +373,7 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
         prompt: concept.motionPrompt,
         imageUrl: uploaded.url,
         imageAssetId: uploaded.assetId,
+        imageReference,
         durationSeconds: concept.durationSeconds,
         resolution: concept.resolution,
         aspectRatio: aspectPresetToOpenArtRatio(concept.aspectPreset),
