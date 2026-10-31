@@ -353,31 +353,51 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
     try {
       const contentType = concept.sourceMimeType || "image/jpeg";
       const filename = `vice-${conceptId}.${ext}`;
-      const uploaded = await uploadOpenArtReferenceImage({
-        accessToken,
-        projectId,
-        bytes,
-        contentType,
-        filename,
-      });
-      const imageReference = buildOpenArtVisualReference({
-        url: uploaded.url,
-        resourceId: uploaded.assetId,
-        contentType,
-        filename,
-        bytes,
-      });
-      const submitted = await submitOpenArtKlingImageToVideo({
+      const submitArgs = {
         accessToken,
         projectId,
         prompt: concept.motionPrompt,
-        imageUrl: uploaded.url,
-        imageAssetId: uploaded.assetId,
-        imageReference,
         durationSeconds: concept.durationSeconds,
         resolution: concept.resolution,
         aspectRatio: aspectPresetToOpenArtRatio(concept.aspectPreset),
-      });
+      };
+
+      const trySubmit = async (imageUrl: string, imageAssetId: string) => {
+        const imageReference = buildOpenArtVisualReference({
+          url: imageUrl,
+          resourceId: imageAssetId,
+          contentType,
+          filename,
+          bytes,
+        });
+        return submitOpenArtKlingImageToVideo({
+          ...submitArgs,
+          imageUrl,
+          imageAssetId,
+          imageReference,
+        });
+      };
+
+      let submitted;
+      const publicImageUrl = await signedUrl(concept.sourceImagePath, 60 * 60);
+      if (publicImageUrl) {
+        try {
+          submitted = await trySubmit(publicImageUrl, "");
+        } catch {
+          /* fall back to OpenArt upload/sign */
+        }
+      }
+
+      if (!submitted) {
+        const uploaded = await uploadOpenArtReferenceImage({
+          accessToken,
+          projectId,
+          bytes,
+          contentType,
+          filename,
+        });
+        submitted = await trySubmit(uploaded.url, uploaded.assetId);
+      }
 
       return saveVideoConceptAction(conceptId, concept.updatedAt, {
         jobStatus: "processing",

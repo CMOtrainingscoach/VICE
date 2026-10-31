@@ -12,6 +12,14 @@ const OPENART_HEADERS = {
   "Content-Type": "application/json",
 };
 
+/** OpenArt’s suite API validates some routes like the in-browser client. */
+const OPENART_CLIENT_HEADERS = {
+  Origin: "https://openart.ai",
+  Referer: "https://openart.ai/suite/create-video",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+};
+
 const OPENART_I2V_CAPABILITY = "kling2-6:image2video";
 
 function unwrapOpenArtRecord(raw: unknown): Record<string, unknown> {
@@ -183,6 +191,30 @@ export function buildOpenArtVisualReference(input: {
   return ref;
 }
 
+/** Frame / reference object shape used by OpenArt I2V + upload/sign (2026 suite). */
+export function toOpenArtFramePayload(
+  ref: OpenArtVisualReference,
+  input?: { resourceId?: string; url?: string },
+): Record<string, unknown> {
+  const url = (input?.url ?? ref.url).trim();
+  const resourceId = (input?.resourceId ?? ref.resourceId ?? "").trim();
+  const width = ref.metadata.width;
+  const height = ref.metadata.height;
+  const size = ref.metadata.size ?? 0;
+  return {
+    type: "image",
+    tool: "create-video",
+    url,
+    width,
+    height,
+    size,
+    mimeType: ref.metadata.mime_type,
+    mediaType: "image",
+    metadata: ref.metadata,
+    ...(resourceId ? { id: resourceId, resourceId } : {}),
+  };
+}
+
 function formatOpenArtError(json: unknown, status: number): string {
   if (!json || typeof json !== "object") return `OpenArt API ${status}`;
   const row = json as Record<string, unknown>;
@@ -293,6 +325,99 @@ export async function getOpenArtAccessToken(): Promise<string | null> {
   }
 }
 
+async function warmOpenArtSession(accessToken: string): Promise<void> {
+  await Promise.allSettled([
+    openArtJson(accessToken, "/user/my-info", { method: "POST", body: "{}" }),
+    fetch(`${OPENART_API_BASE}/user/last-active`, {
+      method: "GET",
+      headers: { ...OPENART_HEADERS, ...OPENART_CLIENT_HEADERS, Authorization: `Bearer ${accessToken}` },
+    }),
+  ]);
+}
+
+function buildUploadSignBodies(input: {
+  projectId: string;
+  filename: string;
+  contentType: string;
+  width: number;
+  height: number;
+  size: number;
+}): Record<string, unknown>[] {
+  const { projectId, filename, contentType, width, height, size } = input;
+  const resource = {
+    type: "image",
+    tool: "create-video",
+    width,
+    height,
+    size,
+    filename,
+    contentType,
+  };
+  return [
+    { projectId, ...resource },
+    {
+      projectId,
+      filename,
+      contentType,
+      resourceType: "image",
+      requestFormId: "create-video",
+      width,
+      height,
+      size,
+    },
+    {
+      projectId,
+      fileName: filename,
+      mimeType: contentType,
+      mediaType: "image",
+      requestFormId: "create-video",
+      width,
+      height,
+      byteSize: size,
+    },
+    { projectId, resource },
+    { projectId, asset: resource },
+    { projectId, file: resource },
+    { filename, contentType, projectId },
+  ];
+}
+
+async function requestOpenArtUploadSign(input: {
+  accessToken: string;
+  projectId: string;
+  filename: string;
+  contentType: string;
+  bytes: Uint8Array;
+}): Promise<{ uploadUrl: string; assetUrl: string }> {
+  await warmOpenArtSession(input.accessToken);
+  const dims =
+    readRasterImageDimensions(input.bytes, input.contentType) ?? ({ width: 1024, height: 1024 } as const);
+  const bodies = buildUploadSignBodies({
+    projectId: input.projectId,
+    filename: input.filename,
+    contentType: input.contentType,
+    width: dims.width,
+    height: dims.height,
+    size: input.bytes.byteLength,
+  });
+
+  let lastError = "OpenArt upload/sign mislukt.";
+  for (const body of bodies) {
+    try {
+      const signedRaw = await openArtJson<unknown>(input.accessToken, "/upload/sign", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const urls = extractSignedUploadUrls(signedRaw);
+      if (urls.uploadUrl && urls.assetUrl) return urls;
+      lastError = "OpenArt upload/sign gaf geen URL terug.";
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : lastError;
+    }
+  }
+  throw new Error(lastError.startsWith("OpenArt") ? lastError : `OpenArt upload/sign: ${lastError}`);
+}
+
 async function openArtJson<T>(
   accessToken: string,
   path: string,
@@ -302,6 +427,7 @@ async function openArtJson<T>(
     ...init,
     headers: {
       ...OPENART_HEADERS,
+      ...OPENART_CLIENT_HEADERS,
       Authorization: `Bearer ${accessToken}`,
       ...(init?.headers ?? {}),
     },
@@ -393,17 +519,13 @@ export async function uploadOpenArtReferenceImage(input: {
   contentType: string;
   filename: string;
 }): Promise<{ url: string; assetId: string }> {
-  const signedRaw = await openArtJson<unknown>(input.accessToken, "/upload/sign", {
-    method: "POST",
-    body: JSON.stringify({
-      filename: input.filename,
-      contentType: input.contentType,
-    }),
+  const { uploadUrl, assetUrl } = await requestOpenArtUploadSign({
+    accessToken: input.accessToken,
+    projectId: input.projectId,
+    filename: input.filename,
+    contentType: input.contentType,
+    bytes: input.bytes,
   });
-  const { uploadUrl, assetUrl } = extractSignedUploadUrls(signedRaw);
-  if (!uploadUrl || !assetUrl) {
-    throw new Error("OpenArt upload/sign gaf geen URL terug.");
-  }
 
   const put = await fetch(uploadUrl, {
     method: "PUT",
@@ -461,11 +583,11 @@ export async function submitOpenArtKlingImageToVideo(input: {
     generateAudio: false,
   };
 
-  const refObject = { ...ref, url: refUrl || ref.url, ...(refId ? { resourceId: refId } : {}) };
+  const frame = toOpenArtFramePayload(ref, { url: refUrl, resourceId: refId });
   const submitBodies: Record<string, unknown>[] = [
-    { ...base, startFrame: refObject },
-    { ...base, startFrame: refObject, visualReferences: [refObject] },
-    { ...base, visualReferences: [refObject] },
+    { ...base, startFrame: frame },
+    { ...base, startFrame: frame, visualReferences: [frame] },
+    { ...base, visualReferences: [frame] },
     ...(refId ? [{ ...base, startFrameResourceId: refId, visualReferences: [refId] }] : []),
     ...(refUrl ? [{ ...base, startFrameUrl: refUrl, visualReferences: [refUrl] }] : []),
   ];
