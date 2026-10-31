@@ -12,6 +12,35 @@ const OPENART_HEADERS = {
   "Content-Type": "application/json",
 };
 
+const OPENART_I2V_CAPABILITY = "kling2-6:image2video";
+
+function unwrapOpenArtRecord(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object") return {};
+  const row = raw as Record<string, unknown>;
+  const nested = row.data;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    return { ...(nested as Record<string, unknown>), ...row };
+  }
+  return row;
+}
+
+function pickString(row: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return "";
+}
+
+function formatOpenArtError(json: unknown, status: number): string {
+  if (!json || typeof json !== "object") return `OpenArt API ${status}`;
+  const row = json as Record<string, unknown>;
+  const message = row.message ?? row.error ?? row.errorMessage;
+  if (typeof message === "string" && message.trim()) return message;
+  if (Array.isArray(message)) return message.map(String).join(", ");
+  return `OpenArt API ${status}`;
+}
+
 export function estimateVideoCredits(
   durationSeconds: VideoDurationSeconds,
   resolution: VideoResolution,
@@ -126,15 +155,44 @@ async function openArtJson<T>(
       ...(init?.headers ?? {}),
     },
   });
-  const json = (await res.json()) as T & { error?: string; message?: string };
+  const json = (await res.json()) as T;
   if (!res.ok) {
-    const msg =
-      (json as { message?: string }).message ??
-      (json as { error?: string }).error ??
-      `OpenArt API ${res.status}`;
-    throw new Error(msg);
+    throw new Error(formatOpenArtError(json, res.status));
   }
   return json;
+}
+
+async function persistOpenArtUpload(input: {
+  accessToken: string;
+  projectId: string;
+  assetUrl: string;
+}): Promise<{ id: string; url: string }> {
+  const attempts: Record<string, unknown>[] = [
+    { url: input.assetUrl, projectId: input.projectId },
+    {
+      url: input.assetUrl,
+      projectId: input.projectId,
+      type: "image",
+      tool: "create-video",
+    },
+  ];
+
+  let lastError = "OpenArt upload/persist mislukt.";
+  for (const body of attempts) {
+    try {
+      const raw = await openArtJson<unknown>(input.accessToken, "/upload/persist", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const row = unwrapOpenArtRecord(raw);
+      const url = pickString(row, ["url", "assetUrl"]) || input.assetUrl;
+      const id = pickString(row, ["id", "resourceId", "assetId"]);
+      if (url) return { id, url };
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : lastError;
+    }
+  }
+  throw new Error(lastError);
 }
 
 export async function fetchOpenArtUserInfo(accessToken: string) {
@@ -161,38 +219,38 @@ export async function uploadOpenArtReferenceImage(input: {
   contentType: string;
   filename: string;
 }): Promise<{ url: string; assetId: string }> {
-  const signed = await openArtJson<{ uploadUrl?: string; assetUrl?: string }>(
-    input.accessToken,
-    "/upload/sign",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        filename: input.filename,
-        contentType: input.contentType,
-      }),
-    },
-  );
-  if (!signed.uploadUrl || !signed.assetUrl) {
+  const signedRaw = await openArtJson<unknown>(input.accessToken, "/upload/sign", {
+    method: "POST",
+    body: JSON.stringify({
+      filename: input.filename,
+      contentType: input.contentType,
+    }),
+  });
+  const signed = unwrapOpenArtRecord(signedRaw);
+  const uploadUrl = pickString(signed, ["uploadUrl", "upload_url"]);
+  const assetUrl = pickString(signed, ["assetUrl", "asset_url", "url"]);
+  if (!uploadUrl || !assetUrl) {
     throw new Error("OpenArt upload/sign gaf geen URL terug.");
   }
 
-  const put = await fetch(signed.uploadUrl, {
+  const put = await fetch(uploadUrl, {
     method: "PUT",
     headers: { "Content-Type": input.contentType },
     body: Buffer.from(input.bytes),
   });
   if (!put.ok) throw new Error("Upload naar OpenArt storage mislukt.");
 
-  const persisted = await openArtJson<{ id?: string; url?: string }>(input.accessToken, "/upload/persist", {
-    method: "POST",
-    body: JSON.stringify({
-      url: signed.assetUrl,
+  try {
+    const persisted = await persistOpenArtUpload({
+      accessToken: input.accessToken,
       projectId: input.projectId,
-    }),
-  });
-
-  const url = String(persisted.url ?? signed.assetUrl);
-  return { url, assetId: String(persisted.id ?? "") };
+      assetUrl,
+    });
+    return { url: persisted.url, assetId: persisted.id };
+  } catch {
+    // Genoeg om de asset-URL als visual reference mee te sturen.
+    return { url: assetUrl, assetId: "" };
+  }
 }
 
 export async function submitOpenArtKlingImageToVideo(input: {
@@ -205,37 +263,39 @@ export async function submitOpenArtKlingImageToVideo(input: {
   resolution: VideoResolution;
   aspectRatio: string;
 }): Promise<{ resourceId: string; historyId: string }> {
-  const capability = encodeURIComponent("kling2-6:image2video");
+  const capability = encodeURIComponent(OPENART_I2V_CAPABILITY);
+  const visualRef = input.imageAssetId?.trim() || input.imageUrl.trim();
+  if (!visualRef) {
+    throw new Error("OpenArt startbeeld ontbreekt na upload.");
+  }
+
   const body: Record<string, unknown> = {
     prompt: input.prompt,
     model: "kling2-6",
     projectId: input.projectId,
+    folderId: null,
     duration: input.durationSeconds,
     resolution: input.resolution,
     aspectRatio: input.aspectRatio,
     videoCount: 1,
     enableUnlimited: true,
     autoEnhancePrompt: false,
-    imageUrl: input.imageUrl,
+    generateAudio: false,
+    visualReferences: [visualRef],
   };
-  if (input.imageAssetId) {
-    body.uploadedAssetId = input.imageAssetId;
-    body.referenceImageUrl = input.imageUrl;
-  }
 
-  const json = await openArtJson<{
-    historyId?: string;
-    resourceIds?: string[];
-    resourceId?: string;
-    data?: { historyId?: string; resourceIds?: string[] };
-  }>(input.accessToken, `/forms/creations/${capability}`, {
+  const submitRaw = await openArtJson<unknown>(input.accessToken, `/forms/creations/${capability}`, {
     method: "POST",
     body: JSON.stringify(body),
   });
+  const submit = unwrapOpenArtRecord(submitRaw);
 
-  const historyId = String(json.historyId ?? json.data?.historyId ?? "");
-  const resourceIds = json.resourceIds ?? json.data?.resourceIds ?? [];
-  const resourceId = String(json.resourceId ?? resourceIds[0] ?? "");
+  const historyId = pickString(submit, ["historyId", "history_id"]);
+  const resourceIdsRaw = submit.resourceIds ?? submit.resource_ids;
+  const resourceIds = Array.isArray(resourceIdsRaw)
+    ? resourceIdsRaw.map(String).filter(Boolean)
+    : [];
+  const resourceId = pickString(submit, ["resourceId", "resource_id"]) || resourceIds[0] || "";
   if (!resourceId && historyId) {
     const history = await openArtJson<{ history?: { resourceIds?: string[] } }>(
       input.accessToken,
@@ -262,12 +322,10 @@ export async function pollOpenArtResource(
   accessToken: string,
   resourceId: string,
 ): Promise<OpenArtResourcePoll> {
-  const json = await openArtJson<{ data?: { status?: string; url?: string } }>(
-    accessToken,
-    `/resources/${resourceId}`,
-  );
-  const statusRaw = String(json.data?.status ?? "").toLowerCase();
-  const url = String(json.data?.url ?? "");
+  const raw = await openArtJson<unknown>(accessToken, `/resources/${resourceId}`);
+  const row = unwrapOpenArtRecord(raw);
+  const statusRaw = pickString(row, ["status"]).toLowerCase();
+  const url = pickString(row, ["url"]);
   if (statusRaw === "completed" && url) {
     return { status: "completed", url, message: "" };
   }
