@@ -377,10 +377,12 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
           imageUrl,
           imageAssetId,
           imageReference,
+          startFrameLabel: filename,
         });
       };
 
       let submitted;
+      let directSubmitError = "";
       const publicImageUrl = await signedUrl(concept.sourceImagePath, 60 * 60);
       if (publicImageUrl) {
         try {
@@ -389,19 +391,31 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
           if (isOpenArtReconnectError(err)) {
             return { ok: false, error: OPENART_RECONNECT_MESSAGE };
           }
-          /* fall back to OpenArt upload/sign for reference/upload issues */
+          directSubmitError =
+            err instanceof Error ? err.message : "OpenArt submit met signed URL mislukt";
         }
       }
 
       if (!submitted) {
-        const uploaded = await uploadOpenArtReferenceImage({
-          accessToken,
-          projectId,
-          bytes,
-          contentType,
-          filename,
-        });
-        submitted = await trySubmit(uploaded.url, uploaded.assetId);
+        try {
+          const uploaded = await uploadOpenArtReferenceImage({
+            accessToken,
+            projectId,
+            bytes,
+            contentType,
+            filename,
+          });
+          submitted = await trySubmit(uploaded.url, uploaded.assetId);
+        } catch (err) {
+          if (isOpenArtReconnectError(err)) {
+            return { ok: false, error: OPENART_RECONNECT_MESSAGE };
+          }
+          const uploadMessage = err instanceof Error ? err.message : "OpenArt upload mislukt";
+          const detail = directSubmitError
+            ? `${uploadMessage} (eerder met signed URL: ${directSubmitError})`
+            : uploadMessage;
+          return { ok: false, error: detail };
+        }
       }
 
       return saveVideoConceptAction(conceptId, concept.updatedAt, {

@@ -1,3 +1,5 @@
+import { randomUUID } from "crypto";
+
 import type { VideoAspectPreset, VideoDurationSeconds, VideoResolution } from "@/lib/content/video-types";
 import { estimateKlingUnits } from "@/lib/integrations/kling";
 import {
@@ -21,6 +23,10 @@ const OPENART_CLIENT_HEADERS = {
 };
 
 const OPENART_I2V_CAPABILITY = "kling2-6:image2video";
+
+/** Matches OpenArt suite `UPLOADED_ASSET_*` enums (2026 upload/sign). */
+const OPENART_UPLOAD_RESOURCE_TYPE_IMAGE = "image";
+const OPENART_UPLOAD_BUSINESS_TYPE_CREATE_VIDEO = "create-video";
 
 export const OPENART_RECONNECT_MESSAGE =
   "OpenArt-sessie verlopen of ongeldig. Ga naar Instellingen → OpenArt opnieuw koppelen.";
@@ -109,19 +115,34 @@ function mimeToFormat(contentType: string, filename: string): string {
   return "jpg";
 }
 
-function extractSignedUploadUrls(raw: unknown): { uploadUrl: string; assetUrl: string } {
+type OpenArtUploadSignResult = {
+  uploadUrl: string;
+  assetUrl: string;
+  uploadId: string;
+};
+
+function extractOpenArtUploadSign(raw: unknown): OpenArtUploadSignResult {
   const roots: unknown[] = [raw];
   if (raw && typeof raw === "object") {
     roots.push(unwrapOpenArtRecord(raw));
   }
 
   const seen = new Set<unknown>();
-  function walk(node: unknown, depth: number): { uploadUrl: string; assetUrl: string } | null {
+  function walk(node: unknown, depth: number): OpenArtUploadSignResult | null {
     if (!node || typeof node !== "object" || depth > 6 || seen.has(node)) return null;
     seen.add(node);
     const row = node as Record<string, unknown>;
-    const uploadUrl = pickString(row, ["uploadUrl", "upload_url", "signedUrl", "signed_url"]);
+    const uploadUrl = pickString(row, [
+      "signURL",
+      "signUrl",
+      "uploadUrl",
+      "upload_url",
+      "signedUrl",
+      "signed_url",
+    ]);
     const assetUrl = pickString(row, [
+      "accessURL",
+      "accessUrl",
       "assetUrl",
       "asset_url",
       "publicUrl",
@@ -131,12 +152,13 @@ function extractSignedUploadUrls(raw: unknown): { uploadUrl: string; assetUrl: s
       "fileUrl",
       "file_url",
     ]);
-    if (uploadUrl && assetUrl) return { uploadUrl, assetUrl };
-    if (uploadUrl && !assetUrl) {
-      const fallbackAsset = pickString(row, ["url"]);
-      if (fallbackAsset && fallbackAsset !== uploadUrl) {
-        return { uploadUrl, assetUrl: fallbackAsset };
-      }
+    const uploadId = pickString(row, ["uploadId", "upload_id"]);
+    if (uploadUrl) {
+      return {
+        uploadUrl,
+        assetUrl,
+        uploadId,
+      };
     }
     for (const value of Object.values(row)) {
       if (value && typeof value === "object") {
@@ -151,7 +173,7 @@ function extractSignedUploadUrls(raw: unknown): { uploadUrl: string; assetUrl: s
     const found = walk(root, 0);
     if (found) return found;
   }
-  return { uploadUrl: "", assetUrl: "" };
+  return { uploadUrl: "", assetUrl: "", uploadId: "" };
 }
 
 export type OpenArtVisualReference = {
@@ -194,28 +216,26 @@ export function buildOpenArtVisualReference(input: {
   return ref;
 }
 
-/** Frame / reference object shape used by OpenArt I2V + upload/sign (2026 suite). */
-export function toOpenArtFramePayload(
-  ref: OpenArtVisualReference,
-  input?: { resourceId?: string; url?: string },
-): Record<string, unknown> {
-  const url = (input?.url ?? ref.url).trim();
-  const resourceId = (input?.resourceId ?? ref.resourceId ?? "").trim();
-  const width = ref.metadata.width;
-  const height = ref.metadata.height;
-  const size = ref.metadata.size ?? 0;
+/** Kling 2.6 image2video `startFrame` shape (OpenArt suite form schema). */
+export function buildOpenArtKlingStartFrame(input: {
+  url: string;
+  label: string;
+  reference: OpenArtVisualReference;
+  resourceId?: string;
+}): Record<string, unknown> {
+  const url = input.url.trim();
+  const id = (input.resourceId ?? input.reference.resourceId ?? "").trim() || randomUUID();
   return {
     type: "image",
-    tool: "create-video",
+    id,
     url,
-    width,
-    height,
-    size,
-    mimeType: ref.metadata.mime_type,
-    mediaType: "image",
-    metadata: ref.metadata,
-    ...(resourceId ? { id: resourceId, resourceId } : {}),
+    label: input.label.trim() || "start-frame",
+    metadata: input.reference.metadata,
   };
+}
+
+function openArtKling26Resolution(resolution: VideoResolution): "std" | "pro" {
+  return resolution === "720p" ? "std" : "pro";
 }
 
 function formatOpenArtError(json: unknown, status: number): string {
@@ -382,51 +402,38 @@ async function warmOpenArtSession(accessToken: string): Promise<void> {
   ]);
 }
 
-function buildUploadSignBodies(input: {
+function buildUploadSignBody(input: {
   projectId: string;
   filename: string;
   contentType: string;
-  width: number;
-  height: number;
   size: number;
-}): Record<string, unknown>[] {
-  const { projectId, filename, contentType, width, height, size } = input;
-  const resource = {
-    type: "image",
-    tool: "create-video",
-    width,
-    height,
-    size,
-    filename,
-    contentType,
+}): Record<string, unknown> {
+  return {
+    filename: input.filename,
+    contentType: input.contentType,
+    size: input.size,
+    resourceType: OPENART_UPLOAD_RESOURCE_TYPE_IMAGE,
+    businessType: OPENART_UPLOAD_BUSINESS_TYPE_CREATE_VIDEO,
+    needThumbnail: true,
+    projectId: input.projectId,
   };
-  return [
-    { projectId, ...resource },
-    {
-      projectId,
-      filename,
-      contentType,
-      resourceType: "image",
-      requestFormId: "create-video",
-      width,
-      height,
-      size,
-    },
-    {
-      projectId,
-      fileName: filename,
-      mimeType: contentType,
-      mediaType: "image",
-      requestFormId: "create-video",
-      width,
-      height,
-      byteSize: size,
-    },
-    { projectId, resource },
-    { projectId, asset: resource },
-    { projectId, file: resource },
-    { filename, contentType, projectId },
-  ];
+}
+
+async function waitForOpenArtUploadValidation(accessToken: string, uploadId: string): Promise<void> {
+  if (!uploadId.trim()) return;
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const raw = await openArtJsonWithRetry<unknown>(accessToken, `/uploaded-assets/${uploadId}/status`);
+    const row = unwrapOpenArtRecord(raw);
+    const status = pickString(row, ["status"]).toUpperCase();
+    if (status === "SUCCESS") return;
+    if (status === "FAILED") {
+      const reason =
+        pickString(row, ["errorReason", "error_reason", "message"]) || "Upload failed validation";
+      throw new Error(reason);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
 }
 
 async function requestOpenArtUploadSign(input: {
@@ -435,18 +442,18 @@ async function requestOpenArtUploadSign(input: {
   filename: string;
   contentType: string;
   bytes: Uint8Array;
-}): Promise<{ uploadUrl: string; assetUrl: string }> {
+}): Promise<OpenArtUploadSignResult> {
   await warmOpenArtSession(input.accessToken);
-  const dims =
-    readRasterImageDimensions(input.bytes, input.contentType) ?? ({ width: 1024, height: 1024 } as const);
-  const bodies = buildUploadSignBodies({
-    projectId: input.projectId,
-    filename: input.filename,
-    contentType: input.contentType,
-    width: dims.width,
-    height: dims.height,
-    size: input.bytes.byteLength,
-  });
+  const size = input.bytes.byteLength;
+  const bodies: Record<string, unknown>[] = [
+    buildUploadSignBody({
+      projectId: input.projectId,
+      filename: input.filename,
+      contentType: input.contentType,
+      size,
+    }),
+    { filename: input.filename, contentType: input.contentType },
+  ];
 
   let lastError = "OpenArt upload/sign mislukt.";
   for (const body of bodies) {
@@ -455,9 +462,9 @@ async function requestOpenArtUploadSign(input: {
         method: "POST",
         body: JSON.stringify(body),
       });
-      const urls = extractSignedUploadUrls(signedRaw);
-      if (urls.uploadUrl && urls.assetUrl) return urls;
-      lastError = "OpenArt upload/sign gaf geen URL terug.";
+      const signed = extractOpenArtUploadSign(signedRaw);
+      if (signed.uploadUrl) return signed;
+      lastError = "OpenArt upload/sign gaf geen upload-URL terug.";
     } catch (err) {
       lastError = err instanceof Error ? err.message : lastError;
     }
@@ -585,7 +592,7 @@ export async function uploadOpenArtReferenceImage(input: {
   contentType: string;
   filename: string;
 }): Promise<{ url: string; assetId: string }> {
-  const { uploadUrl, assetUrl } = await requestOpenArtUploadSign({
+  const signed = await requestOpenArtUploadSign({
     accessToken: input.accessToken,
     projectId: input.projectId,
     filename: input.filename,
@@ -593,12 +600,31 @@ export async function uploadOpenArtReferenceImage(input: {
     bytes: input.bytes,
   });
 
-  const put = await fetch(uploadUrl, {
+  const put = await fetch(signed.uploadUrl, {
     method: "PUT",
     headers: { "Content-Type": input.contentType },
     body: Buffer.from(input.bytes),
   });
   if (!put.ok) throw new Error("Upload naar OpenArt storage mislukt.");
+
+  await waitForOpenArtUploadValidation(input.accessToken, signed.uploadId);
+
+  let assetUrl = signed.assetUrl;
+  if (!assetUrl) {
+    try {
+      const persisted = await persistOpenArtUpload({
+        accessToken: input.accessToken,
+        projectId: input.projectId,
+        assetUrl: signed.assetUrl || signed.uploadUrl.split("?")[0] || "",
+        filename: input.filename,
+        contentType: input.contentType,
+        bytes: input.bytes,
+      });
+      return { url: persisted.url, assetId: persisted.id };
+    } catch {
+      throw new Error("OpenArt upload: geen publieke asset-URL na upload.");
+    }
+  }
 
   try {
     const persisted = await persistOpenArtUpload({
@@ -609,10 +635,9 @@ export async function uploadOpenArtReferenceImage(input: {
       contentType: input.contentType,
       bytes: input.bytes,
     });
-    return { url: persisted.url, assetId: persisted.id };
+    return { url: persisted.url || assetUrl, assetId: persisted.id || signed.uploadId };
   } catch {
-    // Genoeg om de asset-URL als visual reference mee te sturen.
-    return { url: assetUrl, assetId: "" };
+    return { url: assetUrl, assetId: signed.uploadId };
   }
 }
 
@@ -623,6 +648,7 @@ export async function submitOpenArtKlingImageToVideo(input: {
   imageUrl: string;
   imageAssetId?: string;
   imageReference: OpenArtVisualReference;
+  startFrameLabel: string;
   durationSeconds: VideoDurationSeconds;
   resolution: VideoResolution;
   aspectRatio: string;
@@ -631,46 +657,40 @@ export async function submitOpenArtKlingImageToVideo(input: {
   const ref = input.imageReference;
   const refId = input.imageAssetId?.trim() || ref.resourceId?.trim() || "";
   const refUrl = input.imageUrl.trim() || ref.url.trim();
-  if (!refUrl && !refId) {
+  if (!refUrl) {
     throw new Error("OpenArt startbeeld ontbreekt na upload.");
   }
 
-  const base: Record<string, unknown> = {
+  const startFrame = buildOpenArtKlingStartFrame({
+    url: refUrl,
+    label: input.startFrameLabel,
+    reference: ref,
+    resourceId: refId,
+  });
+
+  const body: Record<string, unknown> = {
     prompt: input.prompt,
-    model: "kling2-6",
     projectId: input.projectId,
     folderId: null,
-    duration: input.durationSeconds,
-    resolution: input.resolution,
-    aspectRatio: input.aspectRatio,
     videoCount: 1,
+    startFrame,
+    duration: input.durationSeconds,
+    sound: false,
+    resolution: openArtKling26Resolution(input.resolution),
     enableUnlimited: true,
     autoEnhancePrompt: false,
-    generateAudio: false,
   };
-
-  const frame = toOpenArtFramePayload(ref, { url: refUrl, resourceId: refId });
-  const submitBodies: Record<string, unknown>[] = [
-    { ...base, startFrame: frame },
-    { ...base, startFrame: frame, visualReferences: [frame] },
-    { ...base, visualReferences: [frame] },
-    ...(refId ? [{ ...base, startFrameResourceId: refId, visualReferences: [refId] }] : []),
-    ...(refUrl ? [{ ...base, startFrameUrl: refUrl, visualReferences: [refUrl] }] : []),
-  ];
 
   let submitRaw: unknown;
   let lastSubmitError = "OpenArt image-to-video submit mislukt.";
-  for (const body of submitBodies) {
-    try {
-      submitRaw = await openArtJsonWithRetry<unknown>(input.accessToken, `/forms/creations/${capability}`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      lastSubmitError = "";
-      break;
-    } catch (err) {
-      lastSubmitError = err instanceof Error ? err.message : lastSubmitError;
-    }
+  try {
+    submitRaw = await openArtJsonWithRetry<unknown>(input.accessToken, `/forms/creations/${capability}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    lastSubmitError = "";
+  } catch (err) {
+    lastSubmitError = err instanceof Error ? err.message : lastSubmitError;
   }
   if (lastSubmitError || submitRaw === undefined) {
     throw new Error(lastSubmitError);
