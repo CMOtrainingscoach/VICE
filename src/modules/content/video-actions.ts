@@ -15,6 +15,8 @@ import {
   loadOpenArtProjectId,
   openArtPlatformConnected,
   OPENART_RECONNECT_MESSAGE,
+  downloadCompletedOpenArtResource,
+  downloadOpenArtMedia,
   pollOpenArtResource,
   submitOpenArtImageToVideo,
   uploadOpenArtReferenceImage,
@@ -484,24 +486,8 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
   }
 }
 
-function looksLikeMp4(bytes: Uint8Array): boolean {
-  if (bytes.length < 12) return false;
-  const box = String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
-  return box === "ftyp";
-}
-
 async function downloadMp4(url: string, accessToken?: string): Promise<Uint8Array> {
-  const headers: Record<string, string> = {};
-  if (accessToken && /openart\.ai/i.test(url)) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error("MP4 download mislukt.");
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (!looksLikeMp4(bytes)) {
-    throw new Error("Download is geen geldige MP4 (controleer OpenArt-URL).");
-  }
-  return bytes;
+  return downloadOpenArtMedia(url, accessToken);
 }
 
 export async function pollVideoGenerationAction(conceptId: string): Promise<ActionResult<VideoConcept>> {
@@ -515,7 +501,9 @@ export async function pollVideoGenerationAction(conceptId: string): Promise<Acti
     !concept.outputVideoPath &&
     (concept.jobStatus === "processing" ||
       (concept.jobStatus === "failed" &&
-        /mime type video\/mp4 is not supported/i.test(concept.jobError ?? "")));
+        /mime type video\/mp4 is not supported|mp4 download mislukt|geen geldige mp4|geen videobestand/i.test(
+          concept.jobError ?? "",
+        )));
 
   if (concept.jobStatus !== "processing" && !openartRecover) {
     return { ok: true, data: concept };
@@ -546,7 +534,7 @@ export async function pollVideoGenerationAction(conceptId: string): Promise<Acti
           jobError: resource.message || "OpenArt-generatie mislukt",
         });
       }
-      const bytes = await downloadMp4(resource.url, accessToken);
+      const bytes = await downloadCompletedOpenArtResource(accessToken, concept.openartResourceId);
       const path = `${concept.tenantId}/video/${conceptId}/${crypto.randomUUID()}.mp4`;
       const admin = createAdminClient();
       const uploaded = await admin.storage.from("content-assets").upload(path, bytes, {

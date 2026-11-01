@@ -761,17 +761,121 @@ export type OpenArtResourcePoll = {
   message: string;
 };
 
-function pickOpenArtResourceMediaUrl(row: Record<string, unknown>): string {
+function scoreOpenArtVideoUrl(url: string): number {
+  const lower = url.toLowerCase();
+  if (/\.(webp|jpe?g|png|gif)(\?|$)/.test(lower)) return -20;
+  if (lower.includes(".mp4") || lower.includes("video_")) return 20;
+  if (lower.includes("/video") || lower.includes("production/")) return 10;
+  return 1;
+}
+
+function listOpenArtResourceVideoUrls(row: Record<string, unknown>): string[] {
   const candidates = [
     pickString(row, ["url"]),
+    pickString(row, ["watermarked_url", "watermarkedUrl"]),
     pickString(row, ["videoUrl", "video_url"]),
     pickString(row, ["downloadUrl", "download_url"]),
+    pickString(row, ["assetUrl", "asset_url"]),
   ].filter(Boolean);
-  for (const url of candidates) {
-    const lower = url.toLowerCase();
-    if (lower.includes(".mp4") || lower.includes("/video") || lower.includes("video_")) return url;
+
+  const nested = row.result_metadata ?? row.resultMetadata;
+  if (nested && typeof nested === "object") {
+    const meta = nested as Record<string, unknown>;
+    candidates.push(pickString(meta, ["url", "videoUrl", "video_url", "downloadUrl"]));
   }
-  return candidates[0] ?? "";
+
+  return [...new Set(candidates)]
+    .map((url) => ({ url, score: scoreOpenArtVideoUrl(url) }))
+    .sort((a, b) => b.score - a.score)
+    .filter((entry) => entry.score > 0)
+    .map((entry) => entry.url);
+}
+
+function pickOpenArtResourceMediaUrl(row: Record<string, unknown>): string {
+  const ranked = listOpenArtResourceVideoUrls(row);
+  if (ranked[0]) return ranked[0];
+  return pickString(row, ["url"]);
+}
+
+function openArtDownloadUsesBearer(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host === "cdn.openart.ai" || host.startsWith("cdn.")) return false;
+    return host === "openart.ai" || host.endsWith(".openart.ai");
+  } catch {
+    return false;
+  }
+}
+
+function looksLikeMp4Bytes(bytes: Uint8Array): boolean {
+  if (bytes.length < 12) return false;
+  const limit = Math.min(bytes.length - 4, 48);
+  for (let i = 0; i <= limit; i += 1) {
+    if (
+      bytes[i + 4] === 0x66 &&
+      bytes[i + 5] === 0x74 &&
+      bytes[i + 6] === 0x79 &&
+      bytes[i + 7] === 0x70
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Download a completed OpenArt video resource (CDN-safe headers, no Bearer on cdn). */
+export async function downloadOpenArtMedia(url: string, accessToken?: string): Promise<Uint8Array> {
+  const trimmed = url.trim();
+  if (!trimmed) throw new Error("OpenArt video-URL ontbreekt.");
+
+  const headers: Record<string, string> = {
+    ...OPENART_CLIENT_HEADERS,
+    Accept: "video/mp4,video/*,*/*",
+  };
+  if (accessToken && openArtDownloadUsesBearer(trimmed)) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch(trimmed, { headers, redirect: "follow" });
+  if (!response.ok) {
+    throw new Error(`MP4 download mislukt (HTTP ${response.status}).`);
+  }
+
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length < 1024 && contentType.includes("text")) {
+    throw new Error("MP4 download mislukt (geen videobestand ontvangen).");
+  }
+  if (!looksLikeMp4Bytes(bytes) && !contentType.includes("video")) {
+    throw new Error("Download is geen geldige MP4 (controleer OpenArt-URL).");
+  }
+  return bytes;
+}
+
+export async function downloadCompletedOpenArtResource(
+  accessToken: string,
+  resourceId: string,
+): Promise<Uint8Array> {
+  const raw = await openArtJsonWithRetry<unknown>(accessToken, `/resources/${resourceId}`);
+  const row = unwrapOpenArtRecord(raw);
+  const urls = listOpenArtResourceVideoUrls(row);
+  if (urls.length === 0) {
+    const fallback = pickString(row, ["url"]);
+    if (fallback) urls.push(fallback);
+  }
+  if (urls.length === 0) {
+    throw new Error("OpenArt video-URL ontbreekt op de resource.");
+  }
+
+  let lastError = "MP4 download mislukt.";
+  for (const url of urls) {
+    try {
+      return await downloadOpenArtMedia(url, accessToken);
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : lastError;
+    }
+  }
+  throw new Error(lastError);
 }
 
 export async function pollOpenArtResource(
