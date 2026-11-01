@@ -8,7 +8,6 @@ import {
   queryKlingTask,
 } from "@/lib/integrations/kling";
 import {
-  aspectPresetToOpenArtRatio,
   buildOpenArtVisualReference,
   estimateVideoCredits,
   getOpenArtAccessToken,
@@ -17,9 +16,10 @@ import {
   openArtPlatformConnected,
   OPENART_RECONNECT_MESSAGE,
   pollOpenArtResource,
-  submitOpenArtKlingImageToVideo,
+  submitOpenArtImageToVideo,
   uploadOpenArtReferenceImage,
 } from "@/lib/integrations/openart";
+import { parseOpenArtVideoModel } from "@/lib/content/openart-video-models";
 import {
   VIDEO_MIGRATION,
   type VideoAspectPreset,
@@ -88,6 +88,7 @@ async function mapConcept(raw: unknown): Promise<VideoConcept | null> {
     outputMimeType: String(row.outputMimeType ?? "video/mp4"),
     jobStatus: String(row.jobStatus ?? "idle") as VideoJobStatus,
     videoProvider: (row.videoProvider === "kling" ? "kling" : "openart") as VideoConcept["videoProvider"],
+    openartModel: parseOpenArtVideoModel(row.openartModel),
     klingTaskId: String(row.klingTaskId ?? ""),
     openartResourceId: String(row.openartResourceId ?? ""),
     jobError: String(row.jobError ?? ""),
@@ -361,7 +362,6 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
         prompt: concept.motionPrompt,
         durationSeconds: concept.durationSeconds,
         resolution: concept.resolution,
-        aspectRatio: aspectPresetToOpenArtRatio(concept.aspectPreset),
       };
 
       const trySubmit = async (imageUrl: string, imageAssetId: string) => {
@@ -372,8 +372,9 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
           filename,
           bytes,
         });
-        return submitOpenArtKlingImageToVideo({
+        return submitOpenArtImageToVideo({
           ...submitArgs,
+          model: concept.openartModel,
           imageUrl,
           imageAssetId,
           imageReference,

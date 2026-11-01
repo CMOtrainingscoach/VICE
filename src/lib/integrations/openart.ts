@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 
+import type { OpenArtVideoModel } from "@/lib/content/openart-video-models";
 import type { VideoAspectPreset, VideoDurationSeconds, VideoResolution } from "@/lib/content/video-types";
 import { estimateKlingUnits } from "@/lib/integrations/kling";
 import {
@@ -21,8 +22,6 @@ const OPENART_CLIENT_HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
 };
-
-const OPENART_I2V_CAPABILITY = "kling2-6:image2video";
 
 /** Matches OpenArt suite `UPLOADED_ASSET_*` enums (2026 upload/sign). */
 const OPENART_UPLOAD_RESOURCE_TYPE_IMAGE = "image";
@@ -216,8 +215,12 @@ export function buildOpenArtVisualReference(input: {
   return ref;
 }
 
-/** Kling 2.6 image2video `startFrame` shape (OpenArt suite form schema). */
-export function buildOpenArtKlingStartFrame(input: {
+function openArtI2vCapability(model: OpenArtVideoModel): string {
+  return `${model}:image2video`;
+}
+
+/** Image-to-video `startFrame` shape (OpenArt suite form schema). */
+export function buildOpenArtImageStartFrame(input: {
   url: string;
   label: string;
   reference: OpenArtVisualReference;
@@ -641,9 +644,10 @@ export async function uploadOpenArtReferenceImage(input: {
   }
 }
 
-export async function submitOpenArtKlingImageToVideo(input: {
+export async function submitOpenArtImageToVideo(input: {
   accessToken: string;
   projectId: string;
+  model: OpenArtVideoModel;
   prompt: string;
   imageUrl: string;
   imageAssetId?: string;
@@ -651,9 +655,8 @@ export async function submitOpenArtKlingImageToVideo(input: {
   startFrameLabel: string;
   durationSeconds: VideoDurationSeconds;
   resolution: VideoResolution;
-  aspectRatio: string;
 }): Promise<{ resourceId: string; historyId: string }> {
-  const capability = encodeURIComponent(OPENART_I2V_CAPABILITY);
+  const capability = encodeURIComponent(openArtI2vCapability(input.model));
   const ref = input.imageReference;
   const refId = input.imageAssetId?.trim() || ref.resourceId?.trim() || "";
   const refUrl = input.imageUrl.trim() || ref.url.trim();
@@ -661,25 +664,37 @@ export async function submitOpenArtKlingImageToVideo(input: {
     throw new Error("OpenArt startbeeld ontbreekt na upload.");
   }
 
-  const startFrame = buildOpenArtKlingStartFrame({
+  const startFrame = buildOpenArtImageStartFrame({
     url: refUrl,
     label: input.startFrameLabel,
     reference: ref,
     resourceId: refId,
   });
 
-  const body: Record<string, unknown> = {
+  const shared = {
     prompt: input.prompt,
     projectId: input.projectId,
     folderId: null,
     videoCount: 1,
     startFrame,
     duration: input.durationSeconds,
-    sound: false,
-    resolution: openArtKling26Resolution(input.resolution),
     enableUnlimited: true,
     autoEnhancePrompt: false,
   };
+
+  const body: Record<string, unknown> =
+    input.model === "byte-plus-seedance-2-5"
+      ? {
+          ...shared,
+          resolution: input.resolution,
+          generateAudio: false,
+          seed: -1,
+        }
+      : {
+          ...shared,
+          sound: false,
+          resolution: openArtKling26Resolution(input.resolution),
+        };
 
   let submitRaw: unknown;
   let lastSubmitError = "OpenArt image-to-video submit mislukt.";
@@ -719,6 +734,9 @@ export async function submitOpenArtKlingImageToVideo(input: {
   }
   return { resourceId, historyId };
 }
+
+/** @deprecated Use submitOpenArtImageToVideo */
+export const submitOpenArtKlingImageToVideo = submitOpenArtImageToVideo;
 
 export type OpenArtResourcePoll = {
   status: "pending" | "processing" | "completed" | "failed";

@@ -1,3 +1,5 @@
+import type { OpenArtVideoModel } from "@/lib/content/openart-video-models";
+
 export type VideoIntendedUse = "social" | "ads" | "hero" | "general";
 export type VideoAspectPreset =
   | "reel_9_16"
@@ -11,6 +13,13 @@ export type VideoDurationSeconds = 5 | 10;
 export type VideoResolution = "720p" | "1080p";
 export type VideoSourceKind = "upload" | "beeld";
 export type VideoProvider = "openart" | "kling";
+
+export type { OpenArtVideoModel } from "@/lib/content/openart-video-models";
+export {
+  DEFAULT_OPENART_VIDEO_MODEL,
+  OPENART_VIDEO_MODELS,
+  OPENART_VIDEO_MODEL_HELP,
+} from "@/lib/content/openart-video-models";
 
 export type VideoConcept = {
   id: string;
@@ -29,6 +38,7 @@ export type VideoConcept = {
   outputMimeType: string;
   jobStatus: VideoJobStatus;
   videoProvider: VideoProvider;
+  openartModel: OpenArtVideoModel;
   klingTaskId: string;
   openartResourceId: string;
   jobError: string;
@@ -57,13 +67,13 @@ export type VideoConceptSummary = {
 };
 
 export const VIDEO_MIGRATION =
-  "Pas migraties 20260330136416_video_concepts.sql, 20260330136417_openart_video_billing.sql en 20260330136418_content_assets_video_mp4.sql toe in Supabase.";
+  "Pas migraties 20260330136416_video_concepts.sql t/m 20260330136419_openart_video_model.sql toe in Supabase.";
 
 export const VIDEO_PROVIDERS: { id: VideoProvider; label: string; hint: string }[] = [
   {
     id: "openart",
     label: "OpenArt",
-    hint: "Jouw platform-abonnement (Kling 2.6 image-to-video)",
+    hint: "Jouw OpenArt-abonnement — kies het model hieronder (Kling 2.6 of Seedance 2.5).",
   },
   {
     id: "kling",

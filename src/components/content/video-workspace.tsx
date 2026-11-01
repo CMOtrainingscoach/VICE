@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
+import { CircleHelp, LoaderCircle, Pencil, Plus, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { beeldCompositionToJpegFile } from "@/lib/content/beeld-import";
@@ -21,6 +21,10 @@ import {
   type VideoProvider,
   type VideoResolution,
   VIDEO_PROVIDERS,
+  OPENART_VIDEO_MODELS,
+  OPENART_VIDEO_MODEL_HELP,
+  DEFAULT_OPENART_VIDEO_MODEL,
+  type OpenArtVideoModel,
 } from "@/lib/content/video-types";
 import type { ClientBrand } from "@/lib/brand/types";
 import { loadBeeldCompositionAction } from "@/modules/content/beeld-actions";
@@ -65,6 +69,10 @@ export function VideoWorkspace({
   const [resolution, setResolution] = useState<VideoResolution>(initial?.resolution ?? "720p");
   const [motionPrompt, setMotionPrompt] = useState(initial?.motionPrompt ?? "");
   const [videoProvider, setVideoProvider] = useState<VideoProvider>(initial?.videoProvider ?? "openart");
+  const [openartModel, setOpenartModel] = useState<OpenArtVideoModel>(
+    initial?.openartModel ?? DEFAULT_OPENART_VIDEO_MODEL,
+  );
+  const [openArtModelHelpOpen, setOpenArtModelHelpOpen] = useState(false);
   const [providerAvailability, setProviderAvailability] = useState<{ openart: boolean; kling: boolean } | null>(
     null,
   );
@@ -96,7 +104,8 @@ export function VideoWorkspace({
 
   useEffect(() => {
     if (concept?.videoProvider) setVideoProvider(concept.videoProvider);
-  }, [concept?.id, concept?.videoProvider]);
+    if (concept?.openartModel) setOpenartModel(concept.openartModel);
+  }, [concept?.id, concept?.videoProvider, concept?.openartModel]);
 
   useEffect(() => {
     if (!concept || concept.jobStatus !== "processing") return;
@@ -151,6 +160,7 @@ export function VideoWorkspace({
       resolution,
       motionPrompt,
       videoProvider,
+      openartModel,
     });
     if (!saved.ok || !saved.data) {
       setError(saved.ok ? "Opslaan mislukt" : saved.error);
@@ -332,6 +342,36 @@ export function VideoWorkspace({
                 ) : null}
               </p>
             </div>
+            {videoProvider === "openart" ? (
+              <div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-vice-text-muted">OpenArt-model</Label>
+                  <button
+                    type="button"
+                    className="inline-flex size-7 items-center justify-center rounded-md text-vice-text-muted hover:bg-vice-surface-muted hover:text-vice-text"
+                    aria-label="Uitleg over OpenArt-modellen"
+                    onClick={() => setOpenArtModelHelpOpen(true)}
+                  >
+                    <CircleHelp className="size-4" />
+                  </button>
+                </div>
+                <select
+                  className={`${fieldClass} mt-1`}
+                  value={openartModel}
+                  disabled={processing}
+                  onChange={(e) => setOpenartModel(e.target.value as OpenArtVideoModel)}
+                >
+                  {OPENART_VIDEO_MODELS.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-vice-text-muted">
+                  {OPENART_VIDEO_MODELS.find((m) => m.id === openartModel)?.summary}
+                </p>
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label className="text-xs text-vice-text-muted">Doel</Label>
@@ -424,8 +464,11 @@ export function VideoWorkspace({
             ) : null}
             {processing ? (
               <p className="text-sm text-vice-text-muted">
-                Generatie via {concept.videoProvider === "kling" ? "Kling API" : "OpenArt"}… dit kan enkele minuten
-                duren.
+                Generatie via{" "}
+                {concept.videoProvider === "kling"
+                  ? "Kling API"
+                  : `OpenArt (${OPENART_VIDEO_MODELS.find((m) => m.id === concept.openartModel)?.label ?? "model"})`}
+                … dit kan enkele minuten duren.
               </p>
             ) : null}
           </section>
@@ -493,6 +536,50 @@ export function VideoWorkspace({
       ) : (
         <p className="mt-10 text-sm text-vice-text-muted">Kies &quot;Nieuwe video&quot; om te beginnen.</p>
       )}
+
+      {openArtModelHelpOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="presentation"
+          onClick={() => setOpenArtModelHelpOpen(false)}
+        >
+          <div
+            className="max-h-[min(90vh,640px)] w-full max-w-lg overflow-y-auto rounded-xl border border-vice-border bg-vice-surface p-6 shadow-lg"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="openart-model-help-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <h2 id="openart-model-help-title" className="font-display text-xl text-vice-text">
+                {OPENART_VIDEO_MODEL_HELP.title}
+              </h2>
+              <button
+                type="button"
+                className="rounded-md p-1 text-vice-text-muted hover:bg-vice-surface-muted hover:text-vice-text"
+                aria-label="Sluiten"
+                onClick={() => setOpenArtModelHelpOpen(false)}
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+            <p className="mt-3 text-sm text-vice-text-muted">{OPENART_VIDEO_MODEL_HELP.intro}</p>
+            <ul className="mt-5 space-y-4">
+              {OPENART_VIDEO_MODEL_HELP.sections.map((section) => (
+                <li key={section.heading}>
+                  <h3 className="text-sm font-medium text-vice-text">{section.heading}</h3>
+                  <p className="mt-1 text-sm text-vice-text-muted">{section.body}</p>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-6 flex justify-end">
+              <Button type="button" variant="secondary" onClick={() => setOpenArtModelHelpOpen(false)}>
+                Begrepen
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {conceptList.length > 0 ? (
         <section className="mt-10">
