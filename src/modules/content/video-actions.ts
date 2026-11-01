@@ -490,11 +490,19 @@ export async function pollVideoGenerationAction(conceptId: string): Promise<Acti
   if (!loaded.ok || !loaded.data) return loaded;
   const concept = loaded.data;
 
-  if (concept.jobStatus !== "processing") {
+  const openartRecover =
+    concept.videoProvider === "openart" &&
+    Boolean(concept.openartResourceId?.trim()) &&
+    !concept.outputVideoPath &&
+    (concept.jobStatus === "processing" ||
+      (concept.jobStatus === "failed" &&
+        /mime type video\/mp4 is not supported/i.test(concept.jobError ?? "")));
+
+  if (concept.jobStatus !== "processing" && !openartRecover) {
     return { ok: true, data: concept };
   }
 
-  if (concept.videoProvider === "openart" && concept.openartResourceId) {
+  if (openartRecover) {
     try {
       const accessToken = await getOpenArtAccessToken();
       if (!accessToken) {
@@ -505,6 +513,12 @@ export async function pollVideoGenerationAction(conceptId: string): Promise<Acti
       }
       const resource = await pollOpenArtResource(accessToken, concept.openartResourceId);
       if (resource.status === "processing" || resource.status === "pending") {
+        if (concept.jobStatus === "failed") {
+          return saveVideoConceptAction(conceptId, concept.updatedAt, {
+            jobStatus: "processing",
+            jobError: "",
+          });
+        }
         return { ok: true, data: concept };
       }
       if (resource.status === "failed") {

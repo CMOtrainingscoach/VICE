@@ -57,7 +57,7 @@ export type VideoConceptSummary = {
 };
 
 export const VIDEO_MIGRATION =
-  "Pas migraties 20260330136416_video_concepts.sql en 20260330136417_openart_video_billing.sql toe in Supabase.";
+  "Pas migraties 20260330136416_video_concepts.sql, 20260330136417_openart_video_billing.sql en 20260330136418_content_assets_video_mp4.sql toe in Supabase.";
 
 export const VIDEO_PROVIDERS: { id: VideoProvider; label: string; hint: string }[] = [
   {

@@ -115,6 +115,32 @@ export function VideoWorkspace({
     return () => window.clearInterval(timer);
   }, [concept?.id, concept?.jobStatus]);
 
+  async function fetchOpenArtOutput() {
+    if (!concept) return;
+    setBusy("gen");
+    setError("");
+    const result = await pollVideoGenerationAction(concept.id);
+    setBusy("");
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (result.data) {
+      setConcept(result.data);
+      if (result.data.jobStatus === "ready") {
+        void getTenantVideoCreditsForVideoAction(tenantId).then((b) => {
+          if (b.ok && b.data) setUnitsBalance(b.data.balance);
+        });
+      }
+    }
+  }
+
+  const canRetryOpenArtFetch =
+    concept?.videoProvider === "openart" &&
+    concept.jobStatus === "failed" &&
+    Boolean(concept.openartResourceId?.trim()) &&
+    !concept.outputVideoPath;
+
   async function saveCurrent() {
     if (!concept) return null;
     const saved = await saveVideoConceptAction(concept.id, concept.updatedAt, {
@@ -389,6 +415,12 @@ export function VideoWorkspace({
             </Button>
             {concept.jobStatus === "failed" && concept.jobError ? (
               <p className="text-sm text-red-700">{concept.jobError}</p>
+            ) : null}
+            {canRetryOpenArtFetch ? (
+              <Button type="button" variant="secondary" disabled={busy !== ""} onClick={() => void fetchOpenArtOutput()}>
+                {busy === "gen" ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                MP4 ophalen uit OpenArt
+              </Button>
             ) : null}
             {processing ? (
               <p className="text-sm text-vice-text-muted">
