@@ -384,7 +384,11 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
 
       let submitted;
       let directSubmitError = "";
-      const publicImageUrl = await signedUrl(concept.sourceImagePath, 60 * 60);
+      /** Seedance validates startFrame metadata strictly (file_size_bytes); prefer OpenArt CDN URL. */
+      const preferOpenArtUpload = concept.openartModel === "byte-plus-seedance-2-5";
+      const publicImageUrl = preferOpenArtUpload
+        ? null
+        : await signedUrl(concept.sourceImagePath, 60 * 60);
       if (publicImageUrl) {
         try {
           submitted = await trySubmit(publicImageUrl, "");

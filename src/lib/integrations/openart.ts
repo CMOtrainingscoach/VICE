@@ -185,9 +185,32 @@ export type OpenArtVisualReference = {
     format: string;
     width: number;
     height: number;
-    size?: number;
+    /** Legacy / Kling suite fields */
+    size: number;
+    /** Required by Seedance (and Kling) frame validation on OpenArt */
+    file_size_bytes: number;
   };
 };
+
+export function buildOpenArtImageMetadata(input: {
+  contentType: string;
+  filename: string;
+  bytes: Uint8Array;
+}): OpenArtVisualReference["metadata"] {
+  const dims =
+    readRasterImageDimensions(input.bytes, input.contentType) ?? ({ width: 1024, height: 1024 } as const);
+  const format = mimeToFormat(input.contentType, input.filename);
+  const file_size_bytes = input.bytes.byteLength;
+  return {
+    media_type: "image",
+    mime_type: input.contentType || "image/jpeg",
+    format,
+    width: dims.width,
+    height: dims.height,
+    size: file_size_bytes,
+    file_size_bytes,
+  };
+}
 
 export function buildOpenArtVisualReference(input: {
   url: string;
@@ -196,20 +219,14 @@ export function buildOpenArtVisualReference(input: {
   filename: string;
   bytes: Uint8Array;
 }): OpenArtVisualReference {
-  const dims =
-    readRasterImageDimensions(input.bytes, input.contentType) ?? ({ width: 1024, height: 1024 } as const);
-  const format = mimeToFormat(input.contentType, input.filename);
   const ref: OpenArtVisualReference = {
     url: input.url,
     mediaType: "image",
-    metadata: {
-      media_type: "image",
-      mime_type: input.contentType || "image/jpeg",
-      format,
-      width: dims.width,
-      height: dims.height,
-      size: input.bytes.byteLength,
-    },
+    metadata: buildOpenArtImageMetadata({
+      contentType: input.contentType,
+      filename: input.filename,
+      bytes: input.bytes,
+    }),
   };
   if (input.resourceId?.trim()) ref.resourceId = input.resourceId.trim();
   return ref;
