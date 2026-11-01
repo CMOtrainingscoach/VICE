@@ -477,7 +477,14 @@ export function VideoWorkspace({
 
             <h2 className="pt-4 text-sm font-medium text-vice-text">Resultaat</h2>
             {concept.outputVideoUrl ? (
-              <video src={concept.outputVideoUrl} controls className="w-full rounded-lg bg-black" />
+              <video
+                key={concept.outputVideoUrl}
+                src={concept.outputVideoUrl}
+                controls
+                playsInline
+                preload="metadata"
+                className="w-full rounded-lg bg-black"
+              />
             ) : (
               <p className="text-xs text-vice-text-muted">Nog geen MP4. Status: {concept.jobStatus}</p>
             )}

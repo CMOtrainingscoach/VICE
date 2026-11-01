@@ -726,6 +726,19 @@ export type OpenArtResourcePoll = {
   message: string;
 };
 
+function pickOpenArtResourceMediaUrl(row: Record<string, unknown>): string {
+  const candidates = [
+    pickString(row, ["url"]),
+    pickString(row, ["videoUrl", "video_url"]),
+    pickString(row, ["downloadUrl", "download_url"]),
+  ].filter(Boolean);
+  for (const url of candidates) {
+    const lower = url.toLowerCase();
+    if (lower.includes(".mp4") || lower.includes("/video") || lower.includes("video_")) return url;
+  }
+  return candidates[0] ?? "";
+}
+
 export async function pollOpenArtResource(
   accessToken: string,
   resourceId: string,
@@ -733,7 +746,7 @@ export async function pollOpenArtResource(
   const raw = await openArtJsonWithRetry<unknown>(accessToken, `/resources/${resourceId}`);
   const row = unwrapOpenArtRecord(raw);
   const statusRaw = pickString(row, ["status"]).toLowerCase();
-  const url = pickString(row, ["url"]);
+  const url = pickOpenArtResourceMediaUrl(row);
   if (statusRaw === "completed" && url) {
     return { status: "completed", url, message: "" };
   }

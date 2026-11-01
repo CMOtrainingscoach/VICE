@@ -479,10 +479,24 @@ export async function startVideoGenerationAction(conceptId: string): Promise<Act
   }
 }
 
-async function downloadMp4(url: string): Promise<Uint8Array> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("MP4 download van Kling mislukt.");
-  return new Uint8Array(await response.arrayBuffer());
+function looksLikeMp4(bytes: Uint8Array): boolean {
+  if (bytes.length < 12) return false;
+  const box = String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
+  return box === "ftyp";
+}
+
+async function downloadMp4(url: string, accessToken?: string): Promise<Uint8Array> {
+  const headers: Record<string, string> = {};
+  if (accessToken && /openart\.ai/i.test(url)) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+  const response = await fetch(url, { headers });
+  if (!response.ok) throw new Error("MP4 download mislukt.");
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (!looksLikeMp4(bytes)) {
+    throw new Error("Download is geen geldige MP4 (controleer OpenArt-URL).");
+  }
+  return bytes;
 }
 
 export async function pollVideoGenerationAction(conceptId: string): Promise<ActionResult<VideoConcept>> {
@@ -527,7 +541,7 @@ export async function pollVideoGenerationAction(conceptId: string): Promise<Acti
           jobError: resource.message || "OpenArt-generatie mislukt",
         });
       }
-      const bytes = await downloadMp4(resource.url);
+      const bytes = await downloadMp4(resource.url, accessToken);
       const path = `${concept.tenantId}/video/${conceptId}/${crypto.randomUUID()}.mp4`;
       const admin = createAdminClient();
       const uploaded = await admin.storage.from("content-assets").upload(path, bytes, {
