@@ -30,6 +30,12 @@ export type SurveyNodeData = {
   scaleMax?: number;
   scaleMinLabel?: string;
   scaleMaxLabel?: string;
+  /** Storage path in survey-assets (tenant/survey/node.ext). */
+  cardImagePath?: string;
+  /** Optional https link shown on the card (opens in a new tab). */
+  cardLinkUrl?: string;
+  /** Link label; defaults to hostname when empty. */
+  cardLinkLabel?: string;
 };
 
 export type SurveyNode = {

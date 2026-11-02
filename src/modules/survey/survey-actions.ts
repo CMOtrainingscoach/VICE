@@ -13,6 +13,12 @@ import {
   type SurveyResponseRow,
   type SurveySummary,
 } from "@/lib/survey/survey-types";
+import { sniffImage } from "@/lib/brand/image-sniff";
+import {
+  SURVEY_ASSETS_BUCKET,
+  surveyCardImagePublicUrl,
+} from "@/lib/survey/survey-card-assets";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { loadClientBrandAction } from "@/modules/brand/actions";
 import { createClient } from "@/lib/supabase/server";
 
@@ -237,5 +243,56 @@ export async function submitSurveyResponseAction(input: {
     p_referrer: input.referrer ?? "",
   });
   if (error) return { ok: false, error: migrationError(error.message) };
+  return { ok: true };
+}
+
+export async function uploadSurveyCardImageAction(
+  surveyId: string,
+  nodeId: string,
+  formData: FormData,
+): Promise<ActionResult<{ path: string; publicUrl: string | null }>> {
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { ok: false, error: "Kies een afbeelding." };
+  if (file.size <= 0 || file.size > 8 * 1024 * 1024) {
+    return { ok: false, error: "Gebruik een afbeelding tot 8 MB." };
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const sniffed = sniffImage(bytes);
+  if (!sniffed) return { ok: false, error: "Gebruik PNG, JPEG of WebP." };
+
+  const loaded = await loadSurveyAction(surveyId);
+  if (!loaded.ok || !loaded.data) return loaded;
+
+  const path = `${loaded.data.tenantId}/${surveyId}/${nodeId}.${sniffed.ext}`;
+  const admin = createAdminClient();
+  const uploaded = await admin.storage.from(SURVEY_ASSETS_BUCKET).upload(path, bytes, {
+    contentType: sniffed.mime,
+    upsert: true,
+  });
+  if (uploaded.error) {
+    return { ok: false, error: migrationError(uploaded.error.message) };
+  }
+
+  return { ok: true, data: { path, publicUrl: surveyCardImagePublicUrl(path) } };
+}
+
+export async function removeSurveyCardImageAction(
+  surveyId: string,
+  path: string,
+): Promise<ActionResult> {
+  if (!path.trim()) return { ok: true };
+  const loaded = await loadSurveyAction(surveyId);
+  if (!loaded.ok) return loaded;
+
+  const expectedPrefix = `${loaded.data!.tenantId}/${surveyId}/`;
+  if (!path.startsWith(expectedPrefix)) {
+    return { ok: false, error: "Ongeldig afbeeldingspad." };
+  }
+
+  const admin = createAdminClient();
+  const removed = await admin.storage.from(SURVEY_ASSETS_BUCKET).remove([path]);
+  if (removed.error) {
+    return { ok: false, error: migrationError(removed.error.message) };
+  }
   return { ok: true };
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { LoaderCircle } from "lucide-react";
+import { SurveyCardExtras } from "@/components/survey/survey-card-extras";
 import {
   SurveyBrandedShell,
   surveyHeadingStyle,
@@ -163,6 +164,7 @@ export function SurveyPublicRunner({
         {welcome.data.screenDescription ? (
           <p className="mt-3 text-sm text-[color:var(--survey-text-muted)]">{welcome.data.screenDescription}</p>
         ) : null}
+        <SurveyCardExtras data={welcome.data} />
         {survey.definition.settings?.privacyText ? (
           <p className="mt-4 text-xs text-[color:var(--survey-text-muted)]">{survey.definition.settings.privacyText}</p>
         ) : null}
@@ -188,6 +190,7 @@ export function SurveyPublicRunner({
           {current.data.screenTitle}
         </h1>
         <p className="mt-3 text-sm text-[color:var(--survey-text-muted)]">{current.data.screenDescription}</p>
+        <SurveyCardExtras data={current.data} />
         {submitted ? (
           <p className="mt-4 text-xs text-[color:var(--survey-text-muted)]">Je antwoorden zijn opgeslagen.</p>
         ) : null}
@@ -201,6 +204,7 @@ export function SurveyPublicRunner({
       {current.data.screenDescription ? (
         <p className="mt-2 text-sm text-[color:var(--survey-text-muted)]">{current.data.screenDescription}</p>
       ) : null}
+      <SurveyCardExtras data={current.data} />
 
       <div className="mt-6">
         {isQuestionNode(current.type) && current.type !== "contact" ? (

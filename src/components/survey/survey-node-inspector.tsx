@@ -1,9 +1,11 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { ImageIcon, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { surveyCardImagePublicUrl } from "@/lib/survey/survey-card-assets";
 import {
   defaultNodeData,
   isBranchingQuestion,
@@ -13,19 +15,28 @@ import {
   type SurveyNode,
   type SurveyNodeType,
 } from "@/lib/survey/survey-types";
+import {
+  removeSurveyCardImageAction,
+  uploadSurveyCardImageAction,
+} from "@/modules/survey/survey-actions";
 
 const fieldClass =
   "w-full rounded-md border border-vice-border bg-vice-bg px-3 py-2 text-sm text-vice-text outline-none focus:border-vice-gold";
 
 export function SurveyNodeInspector({
+  surveyId,
   node,
   onChange,
   onPatchData,
 }: {
+  surveyId: string;
   node: SurveyNode | null;
   onChange: (next: SurveyNode) => void;
   onPatchData?: (patch: Partial<SurveyNode["data"]>) => void;
 }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   if (!node) {
     return (
       <p className="text-sm text-vice-text-muted">Selecteer een scherm in de flow om te bewerken.</p>
@@ -67,6 +78,106 @@ export function SurveyNodeInspector({
           onChange={(e) => patchData({ screenDescription: e.target.value })}
         />
       </div>
+
+      <div className="rounded-lg border border-vice-border p-3">
+        <Label className="text-xs text-vice-text-muted">Kaartafbeelding</Label>
+        <p className="mt-1 text-xs text-vice-text-muted">Wordt getoond op dit scherm in de enquête.</p>
+        {node.data.cardImagePath ? (
+          <div className="mt-2 space-y-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={surveyCardImagePublicUrl(node.data.cardImagePath) ?? ""}
+              alt=""
+              className="max-h-36 w-full rounded-md object-cover"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-xs text-vice-text-muted"
+              disabled={uploadBusy}
+              onClick={() => {
+                void (async () => {
+                  setUploadError("");
+                  setUploadBusy(true);
+                  const path = node.data.cardImagePath;
+                  if (path) {
+                    const removed = await removeSurveyCardImageAction(surveyId, path);
+                    if (!removed.ok) {
+                      setUploadError(removed.error);
+                      setUploadBusy(false);
+                      return;
+                    }
+                  }
+                  patchData({ cardImagePath: undefined });
+                  setUploadBusy(false);
+                })();
+              }}
+            >
+              Afbeelding verwijderen
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-2 w-full"
+            disabled={uploadBusy}
+            onClick={() => fileRef.current?.click()}
+          >
+            {uploadBusy ? <LoaderCircle className="size-4 animate-spin" /> : <ImageIcon className="size-4" />}
+            Afbeelding uploaden
+          </Button>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (!file || !node) return;
+            void (async () => {
+              setUploadError("");
+              setUploadBusy(true);
+              const form = new FormData();
+              form.set("file", file);
+              const result = await uploadSurveyCardImageAction(surveyId, node.id, form);
+              setUploadBusy(false);
+              if (!result.ok || !result.data) {
+                setUploadError(result.ok ? "Upload mislukt" : result.error);
+                return;
+              }
+              patchData({ cardImagePath: result.data.path });
+            })();
+          }}
+        />
+        {uploadError ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">{uploadError}</p> : null}
+      </div>
+
+      <div>
+        <Label className="text-xs text-vice-text-muted">Link (URL)</Label>
+        <Input
+          className="mt-1"
+          type="url"
+          placeholder="https://…"
+          value={node.data.cardLinkUrl ?? ""}
+          onChange={(e) => patchData({ cardLinkUrl: e.target.value.trim() || undefined })}
+        />
+        <p className="mt-1 text-xs text-vice-text-muted">Opent in een nieuw venster op de enquête.</p>
+      </div>
+
+      {node.data.cardLinkUrl ? (
+        <div>
+          <Label className="text-xs text-vice-text-muted">Linktekst (optioneel)</Label>
+          <Input
+            className="mt-1"
+            placeholder="Bijv. Meer informatie"
+            value={node.data.cardLinkLabel ?? ""}
+            onChange={(e) => patchData({ cardLinkLabel: e.target.value.trim() || undefined })}
+          />
+        </div>
+      ) : null}
 
       {type === "welcome" ? (
         <div>

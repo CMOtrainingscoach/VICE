@@ -1,3 +1,4 @@
+import { normalizeSurveyCardLinkUrl } from "@/lib/survey/survey-card-assets";
 import { defaultNodeData, type SurveyDefinition, type SurveyNode, type SurveyNodeType } from "@/lib/survey/survey-types";
 
 const NODE_TYPES = new Set<SurveyNodeType>([
@@ -52,6 +53,15 @@ export function normalizeSurveyNode(raw: unknown, index: number): SurveyNode | n
       scaleMax: dataRaw.scaleMax != null ? Number(dataRaw.scaleMax) : defaults.scaleMax,
       scaleMinLabel: dataRaw.scaleMinLabel != null ? String(dataRaw.scaleMinLabel) : defaults.scaleMinLabel,
       scaleMaxLabel: dataRaw.scaleMaxLabel != null ? String(dataRaw.scaleMaxLabel) : defaults.scaleMaxLabel,
+      cardImagePath:
+        dataRaw.cardImagePath != null && String(dataRaw.cardImagePath).trim()
+          ? String(dataRaw.cardImagePath)
+          : undefined,
+      cardLinkUrl: normalizeSurveyCardLinkUrl(dataRaw.cardLinkUrl),
+      cardLinkLabel:
+        dataRaw.cardLinkLabel != null && String(dataRaw.cardLinkLabel).trim()
+          ? String(dataRaw.cardLinkLabel)
+          : undefined,
     },
   };
 }

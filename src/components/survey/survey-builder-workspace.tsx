@@ -252,6 +252,7 @@ export function SurveyBuilderWorkspace({
           <h2 className="text-sm font-medium">Scherm bewerken</h2>
           <div className="mt-4">
             <SurveyNodeInspector
+              surveyId={survey.id}
               node={selectedNode}
               onChange={updateNode}
               onPatchData={(patch) => {
