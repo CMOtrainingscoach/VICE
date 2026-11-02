@@ -261,7 +261,8 @@ export async function uploadSurveyCardImageAction(
   if (!sniffed) return { ok: false, error: "Gebruik PNG, JPEG of WebP." };
 
   const loaded = await loadSurveyAction(surveyId);
-  if (!loaded.ok || !loaded.data) return loaded;
+  if (!loaded.ok) return { ok: false, error: loaded.error };
+  if (!loaded.data) return { ok: false, error: "Enquête niet gevonden." };
 
   const path = `${loaded.data.tenantId}/${surveyId}/${nodeId}.${sniffed.ext}`;
   const admin = createAdminClient();
@@ -282,9 +283,10 @@ export async function removeSurveyCardImageAction(
 ): Promise<ActionResult> {
   if (!path.trim()) return { ok: true };
   const loaded = await loadSurveyAction(surveyId);
-  if (!loaded.ok) return loaded;
+  if (!loaded.ok) return { ok: false, error: loaded.error };
+  if (!loaded.data) return { ok: false, error: "Enquête niet gevonden." };
 
-  const expectedPrefix = `${loaded.data!.tenantId}/${surveyId}/`;
+  const expectedPrefix = `${loaded.data.tenantId}/${surveyId}/`;
   if (!path.startsWith(expectedPrefix)) {
     return { ok: false, error: "Ongeldig afbeeldingspad." };
   }
