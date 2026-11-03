@@ -87,8 +87,8 @@ export function SurveyNodeInspector({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={surveyCardImagePublicUrl(node.data.cardImagePath) ?? ""}
-              alt=""
-              className="max-h-36 w-full rounded-md object-cover"
+              alt={node.data.cardImageDescription ?? ""}
+              className="block w-full max-w-full h-auto rounded-md"
             />
             <Button
               type="button"
@@ -153,31 +153,51 @@ export function SurveyNodeInspector({
           }}
         />
         {uploadError ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">{uploadError}</p> : null}
-      </div>
-
-      <div>
-        <Label className="text-xs text-vice-text-muted">Link (URL)</Label>
-        <Input
-          className="mt-1"
-          type="url"
-          placeholder="https://…"
-          value={node.data.cardLinkUrl ?? ""}
-          onChange={(e) => patchData({ cardLinkUrl: e.target.value.trim() || undefined })}
-        />
-        <p className="mt-1 text-xs text-vice-text-muted">Opent in een nieuw venster op de enquête.</p>
-      </div>
-
-      {node.data.cardLinkUrl ? (
-        <div>
-          <Label className="text-xs text-vice-text-muted">Linktekst (optioneel)</Label>
+        <div className="mt-3">
+          <Label className="text-xs text-vice-text-muted">Beschrijving onder afbeelding</Label>
           <Input
             className="mt-1"
-            placeholder="Bijv. Meer informatie"
-            value={node.data.cardLinkLabel ?? ""}
-            onChange={(e) => patchData({ cardLinkLabel: e.target.value.trim() || undefined })}
+            placeholder="Optionele toelichting bij de afbeelding"
+            value={node.data.cardImageDescription ?? ""}
+            onChange={(e) =>
+              patchData({ cardImageDescription: e.target.value.trim() || undefined })
+            }
           />
         </div>
-      ) : null}
+      </div>
+
+      <div className="rounded-lg border border-vice-border p-3">
+        <Label className="text-xs text-vice-text-muted">Hyperlink</Label>
+        <p className="mt-1 text-xs text-vice-text-muted">
+          Alleen de linktekst is zichtbaar in de enquête; de URL wordt niet getoond.
+        </p>
+        <div className="mt-3 space-y-3">
+          <div>
+            <Label className="text-xs text-vice-text-muted">URL</Label>
+            <Input
+              className="mt-1"
+              type="url"
+              placeholder="https://…"
+              value={node.data.cardLinkUrl ?? ""}
+              onChange={(e) => patchData({ cardLinkUrl: e.target.value.trim() || undefined })}
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-vice-text-muted">Linktekst</Label>
+            <Input
+              className="mt-1"
+              placeholder="Bijv. Meer informatie"
+              value={node.data.cardLinkLabel ?? ""}
+              onChange={(e) => patchData({ cardLinkLabel: e.target.value.trim() || undefined })}
+            />
+            {node.data.cardLinkUrl && !node.data.cardLinkLabel?.trim() ? (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                Vul linktekst in om de link op de enquête te tonen.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
 
       {type === "welcome" ? (
         <div>

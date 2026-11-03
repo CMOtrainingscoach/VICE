@@ -25,12 +25,7 @@ export function normalizeSurveyCardLinkUrl(raw: unknown): string | undefined {
   }
 }
 
-export function surveyCardLinkLabel(url: string, label: string | undefined): string {
+export function surveyCardLinkDisplayText(label: string | undefined): string | null {
   const trimmed = label?.trim();
-  if (trimmed) return trimmed;
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "Open link";
-  }
+  return trimmed ? trimmed : null;
 }

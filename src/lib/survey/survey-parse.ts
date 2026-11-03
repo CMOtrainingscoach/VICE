@@ -57,6 +57,10 @@ export function normalizeSurveyNode(raw: unknown, index: number): SurveyNode | n
         dataRaw.cardImagePath != null && String(dataRaw.cardImagePath).trim()
           ? String(dataRaw.cardImagePath)
           : undefined,
+      cardImageDescription:
+        dataRaw.cardImageDescription != null && String(dataRaw.cardImageDescription).trim()
+          ? String(dataRaw.cardImageDescription)
+          : undefined,
       cardLinkUrl: normalizeSurveyCardLinkUrl(dataRaw.cardLinkUrl),
       cardLinkLabel:
         dataRaw.cardLinkLabel != null && String(dataRaw.cardLinkLabel).trim()

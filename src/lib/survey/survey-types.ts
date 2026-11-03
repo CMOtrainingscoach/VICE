@@ -32,9 +32,11 @@ export type SurveyNodeData = {
   scaleMaxLabel?: string;
   /** Storage path in survey-assets (tenant/survey/node.ext). */
   cardImagePath?: string;
+  /** Caption shown under the card image on the public survey. */
+  cardImageDescription?: string;
   /** Optional https link shown on the card (opens in a new tab). */
   cardLinkUrl?: string;
-  /** Link label; defaults to hostname when empty. */
+  /** Visible link text; URL is never shown when this is set with cardLinkUrl. */
   cardLinkLabel?: string;
 };
 
