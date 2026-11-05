@@ -131,7 +131,11 @@ export function AppShell({
     Boolean(tenantIdFromPath) &&
     (pathname === `/klanten/${tenantIdFromPath}/strategie/brand` ||
       pathname.startsWith(`/klanten/${tenantIdFromPath}/strategie/brand/`));
-  const strategieActive = pathname.includes("/strategie") && !brandActive;
+  const websiteActive =
+    Boolean(tenantIdFromPath) &&
+    (pathname === `/klanten/${tenantIdFromPath}/strategie/website` ||
+      pathname.startsWith(`/klanten/${tenantIdFromPath}/strategie/website/`));
+  const strategieActive = pathname.includes("/strategie") && !brandActive && !websiteActive;
   const contentActive =
     Boolean(tenantIdFromPath) &&
     (pathname === `/klanten/${tenantIdFromPath}/content` ||
@@ -218,6 +222,12 @@ export function AppShell({
                 href={`/klanten/${activeClient.tenantId}/strategie/brand`}
                 label="Brand"
                 active={brandActive}
+                nested
+              />
+              <NavLink
+                href={`/klanten/${activeClient.tenantId}/strategie/website`}
+                label="Website"
+                active={websiteActive}
                 nested
               />
               <NavLink
