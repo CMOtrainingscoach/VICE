@@ -8,6 +8,7 @@ import { TenantIntegrationsPanel } from "@/components/clients/tenant-integration
 import type { BloggerPublicStatus } from "@/lib/integrations/blogger";
 import type { GoogleAnalyticsPublicStatus } from "@/lib/integrations/google-analytics";
 import type { SearchConsolePublicStatus } from "@/lib/integrations/search-console";
+import type { GoogleDocsPublicStatus } from "@/lib/integrations/google-docs";
 import type { WordPressPublicStatus } from "@/lib/integrations/wordpress";
 import type { TenantRow } from "@/lib/types/tenant";
 
@@ -20,9 +21,11 @@ export function TenantDetailTabs({
   searchConsole,
   googleAnalytics,
   wordpress,
+  googleDocs,
   bloggerFlash,
   gscFlash,
   gaFlash,
+  gdocsFlash,
 }: {
   tenant: TenantRow;
   tab: TenantDetailTab;
@@ -30,9 +33,11 @@ export function TenantDetailTabs({
   searchConsole: SearchConsolePublicStatus;
   googleAnalytics: GoogleAnalyticsPublicStatus;
   wordpress: WordPressPublicStatus;
+  googleDocs: GoogleDocsPublicStatus;
   bloggerFlash?: string | null;
   gscFlash?: string | null;
   gaFlash?: string | null;
+  gdocsFlash?: string | null;
 }) {
   const base = `/klanten/${tenant.id}`;
 
@@ -66,9 +71,11 @@ export function TenantDetailTabs({
           initialSearchConsole={searchConsole}
           initialGoogleAnalytics={googleAnalytics}
           initialWordPress={wordpress}
+          initialGoogleDocs={googleDocs}
           bloggerFlash={bloggerFlash}
           gscFlash={gscFlash}
           gaFlash={gaFlash}
+          gdocsFlash={gdocsFlash}
         />
       )}
     </div>

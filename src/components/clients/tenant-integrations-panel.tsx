@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { GoogleIntegrationSection } from "@/components/clients/google-integration-section";
 import type { BloggerBlog, BloggerPublicStatus } from "@/lib/integrations/blogger";
 import type { GoogleAnalyticsPublicStatus } from "@/lib/integrations/google-analytics";
+import type { GoogleDocsPublicStatus } from "@/lib/integrations/google-docs";
 import type { SearchConsolePublicStatus } from "@/lib/integrations/search-console";
 import type { WordPressPublicStatus } from "@/lib/integrations/wordpress";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,11 @@ import {
   listTenantSearchConsoleSitesAction,
   selectSearchConsoleSiteAction,
 } from "@/modules/integrations/search-console-actions";
+import {
+  disconnectGoogleDocsAction,
+  listTenantGoogleDocsResourcesAction,
+  selectGoogleDocsResourceAction,
+} from "@/modules/integrations/google-docs-actions";
 import {
   connectWordPressAction,
   disconnectWordPressAction,
@@ -51,6 +57,18 @@ const GSC_FLASH: Record<string, string> = {
   forbidden: "Geen toegang tot deze koppeling.",
 };
 
+const GDOCS_FLASH: Record<string, string> = {
+  connected:
+    "Google Docs / Drive is gekoppeld. Kies hieronder een map of Google Doc als documentenbron voor deze klant.",
+  denied: "Google-autorisatie geannuleerd.",
+  invalid: "Ongeldige OAuth-callback.",
+  state: "OAuth-sessie verlopen. Probeer opnieuw te koppelen.",
+  token: "Tokenuitwisseling met Google mislukt.",
+  save: "Koppeling opslaan mislukt. Controleer of migratie 20260330136421 is toegepast.",
+  "not-configured": "Zet GOOGLE_CLIENT_ID en GOOGLE_CLIENT_SECRET in de omgeving.",
+  forbidden: "Geen toegang tot deze koppeling.",
+};
+
 const GA_FLASH: Record<string, string> = {
   connected: "Google Analytics is gekoppeld. Kies hieronder welke GA4-property VICE mag gebruiken.",
   denied: "Google-autorisatie geannuleerd.",
@@ -68,24 +86,29 @@ export function TenantIntegrationsPanel({
   initialSearchConsole,
   initialGoogleAnalytics,
   initialWordPress,
+  initialGoogleDocs,
   bloggerFlash,
   gscFlash,
   gaFlash,
+  gdocsFlash,
 }: {
   tenantId: string;
   initialBlogger: BloggerPublicStatus;
   initialSearchConsole: SearchConsolePublicStatus;
   initialGoogleAnalytics: GoogleAnalyticsPublicStatus;
   initialWordPress: WordPressPublicStatus;
+  initialGoogleDocs: GoogleDocsPublicStatus;
   bloggerFlash?: string | null;
   gscFlash?: string | null;
   gaFlash?: string | null;
+  gdocsFlash?: string | null;
 }) {
   const router = useRouter();
   const [blogger, setBlogger] = useState(initialBlogger);
   const [searchConsole, setSearchConsole] = useState(initialSearchConsole);
   const [googleAnalytics, setGoogleAnalytics] = useState(initialGoogleAnalytics);
   const [wordpress, setWordPress] = useState(initialWordPress);
+  const [googleDocs, setGoogleDocs] = useState(initialGoogleDocs);
   const [wpSiteUrl, setWpSiteUrl] = useState(initialWordPress.siteUrl ?? "");
   const [wpUsername, setWpUsername] = useState(initialWordPress.accountEmail ?? "");
   const [wpAppPassword, setWpAppPassword] = useState("");
@@ -113,6 +136,10 @@ export function TenantIntegrationsPanel({
     setWpSiteUrl(initialWordPress.siteUrl ?? "");
     setWpUsername(initialWordPress.accountEmail ?? "");
   }, [initialWordPress]);
+
+  useEffect(() => {
+    setGoogleDocs(initialGoogleDocs);
+  }, [initialGoogleDocs]);
 
   useEffect(() => {
     if (!blogger.connected) return;
@@ -218,6 +245,20 @@ export function TenantIntegrationsPanel({
         id: site.siteUrl,
         title: site.siteUrl,
         subtitle: site.permissionLevel || undefined,
+      })),
+    };
+  }, [tenantId]);
+
+  const loadGoogleDocsResources = useCallback(async () => {
+    const result = await listTenantGoogleDocsResourcesAction(tenantId);
+    if (!result.ok) return { ok: false as const, error: result.error };
+    return {
+      ok: true as const,
+      data: (result.data ?? []).map((item) => ({
+        id: item.id,
+        title: item.name,
+        subtitle:
+          item.resourceType === "folder" ? "Google Drive-map" : "Google Doc",
       })),
     };
   }, [tenantId]);
@@ -411,6 +452,55 @@ export function TenantIntegrationsPanel({
           </div>
         )}
       </section>
+
+      <GoogleIntegrationSection
+        title="Google Docs / Drive"
+        description="Koppel een Google-account en kies een Drive-map of Google Doc als documentenbron voor deze klant (Documenten in VICE)."
+        connected={googleDocs.connected}
+        accountEmail={googleDocs.accountEmail}
+        selectedId={googleDocs.resourceId}
+        selectedLabel={googleDocs.resourceName}
+        lastError={googleDocs.lastError}
+        connectHref={`/api/integrations/google-docs/connect?tenantId=${encodeURIComponent(tenantId)}`}
+        callbackPathLabel="/api/integrations/google-docs/callback"
+        connectButtonLabel="Koppel Google Docs"
+        emptyListMessage="Geen mappen of Google Docs gevonden op dit account."
+        selectPrompt="Kies een Drive-map (aanbevolen) of een Google Doc."
+        selectedMessage={(label) =>
+          googleDocs.resourceType === "folder"
+            ? `Actieve documentenmap: ${label}`
+            : `Gekoppeld document: ${label}`
+        }
+        disconnectedMessage="Google Docs / Drive ontkoppeld."
+        initialFlash={gdocsFlash}
+        flashMessages={GDOCS_FLASH}
+        reloadKey={`${googleDocs.connected}-${googleDocs.updatedAt ?? ""}-${googleDocs.resourceId ?? ""}`}
+        onLoadList={loadGoogleDocsResources}
+        onSelect={async (item) => {
+          const list = await listTenantGoogleDocsResourcesAction(tenantId);
+          const match = list.ok ? list.data?.find((r) => r.id === item.id) : undefined;
+          if (!match) return { ok: false, error: "Item niet gevonden" };
+          const result = await selectGoogleDocsResourceAction(tenantId, match);
+          if (result.ok && result.data) setGoogleDocs(result.data);
+          return result.ok ? { ok: true } : { ok: false, error: result.error };
+        }}
+        onDisconnect={async () => {
+          const result = await disconnectGoogleDocsAction(tenantId);
+          if (result.ok) {
+            setGoogleDocs({
+              connected: false,
+              status: "disconnected",
+              accountEmail: "",
+              resourceType: null,
+              resourceId: null,
+              resourceName: null,
+              resourceUrl: null,
+              lastError: "",
+            });
+          }
+          return result.ok ? { ok: true } : { ok: false, error: result.error };
+        }}
+      />
 
       <GoogleIntegrationSection
         title="Google Search Console"

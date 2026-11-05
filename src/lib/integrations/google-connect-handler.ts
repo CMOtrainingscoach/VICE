@@ -14,7 +14,7 @@ export async function startGoogleIntegrationConnect(input: {
   redirectUri: (baseUrl: string) => string;
   oauthCookieName: string;
   redirectCookieName: string;
-  flashPrefix: "gsc" | "ga";
+  flashPrefix: "gsc" | "ga" | "gdocs";
   missingTenantRedirect: string;
 }) {
   const {

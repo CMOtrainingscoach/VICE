@@ -12,6 +12,7 @@ import {
   emptySearchConsoleStatus,
   parseSearchConsolePublic,
 } from "@/lib/integrations/search-console";
+import { emptyGoogleDocsStatus, parseGoogleDocsPublic } from "@/lib/integrations/google-docs";
 import { emptyWordPressStatus, parseWordPressPublic } from "@/lib/integrations/wordpress";
 import { createClient } from "@/lib/supabase/server";
 import { TENANT_STATUS_LABELS, type TenantRow } from "@/lib/types/tenant";
@@ -27,6 +28,7 @@ export default async function TenantDetailPage({
   const bloggerFlash = typeof query.blogger === "string" ? query.blogger : null;
   const gscFlash = typeof query.gsc === "string" ? query.gsc : null;
   const gaFlash = typeof query.ga === "string" ? query.ga : null;
+  const gdocsFlash = typeof query.gdocs === "string" ? query.gdocs : null;
 
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
@@ -50,8 +52,9 @@ export default async function TenantDetailPage({
   let searchConsole = emptySearchConsoleStatus();
   let googleAnalytics = emptyGoogleAnalyticsStatus();
   let wordpress = emptyWordPressStatus();
+  let googleDocs = emptyGoogleDocsStatus();
   if (isAdmin) {
-    const [bloggerStatus, gscStatus, gaStatus, wpStatus] = await Promise.all([
+    const [bloggerStatus, gscStatus, gaStatus, wpStatus, gdocsStatus] = await Promise.all([
       supabase.schema("app").rpc("get_tenant_integration_public", {
         p_tenant_id: tenantId,
         p_provider: "blogger",
@@ -68,6 +71,10 @@ export default async function TenantDetailPage({
         p_tenant_id: tenantId,
         p_provider: "wordpress",
       }),
+      supabase.schema("app").rpc("get_tenant_integration_public", {
+        p_tenant_id: tenantId,
+        p_provider: "google_docs",
+      }),
     ]);
     if (!bloggerStatus.error) {
       blogger = parseBloggerPublic(bloggerStatus.data);
@@ -80,6 +87,9 @@ export default async function TenantDetailPage({
     }
     if (!wpStatus.error) {
       wordpress = parseWordPressPublic(wpStatus.data);
+    }
+    if (!gdocsStatus.error) {
+      googleDocs = parseGoogleDocsPublic(gdocsStatus.data);
     }
   }
 
@@ -139,9 +149,11 @@ export default async function TenantDetailPage({
             searchConsole={searchConsole}
             googleAnalytics={googleAnalytics}
             wordpress={wordpress}
+            googleDocs={googleDocs}
             bloggerFlash={bloggerFlash}
             gscFlash={gscFlash}
             gaFlash={gaFlash}
+            gdocsFlash={gdocsFlash}
           />
         </>
       ) : (
