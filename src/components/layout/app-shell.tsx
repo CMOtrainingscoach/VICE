@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { QuickAccessMenu } from "@/components/layout/quick-access-menu";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -139,6 +140,10 @@ export function AppShell({
     Boolean(tenantIdFromPath) &&
     (pathname === `/klanten/${tenantIdFromPath}/enquetes` ||
       pathname.startsWith(`/klanten/${tenantIdFromPath}/enquetes/`));
+  const documentenActive =
+    Boolean(tenantIdFromPath) &&
+    (pathname === `/klanten/${tenantIdFromPath}/documenten` ||
+      pathname.startsWith(`/klanten/${tenantIdFromPath}/documenten/`));
 
   const initials = userLabel
     .split(/\s+/)
@@ -198,11 +203,10 @@ export function AppShell({
                 indent
               />
               <NavLink
-                href="#"
+                href={`/klanten/${activeClient.tenantId}/documenten`}
                 label="Documenten"
-                active={false}
+                active={documentenActive}
                 indent
-                disabled
               />
               <NavLink
                 href={`/klanten/${activeClient.tenantId}/strategie`}
@@ -271,7 +275,15 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1">{children}</main>
+      <main className="relative min-w-0 flex-1">
+        {isPlatformAdmin ? (
+          <QuickAccessMenu
+            tenantId={activeClient?.tenantId ?? tenantIdFromPath}
+            isPlatformAdmin={isPlatformAdmin}
+          />
+        ) : null}
+        {children}
+      </main>
     </div>
   );
 }
