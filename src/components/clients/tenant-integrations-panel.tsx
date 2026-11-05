@@ -25,11 +25,8 @@ import {
   listTenantSearchConsoleSitesAction,
   selectSearchConsoleSiteAction,
 } from "@/modules/integrations/search-console-actions";
-import {
-  disconnectGoogleDocsAction,
-  listTenantGoogleDocsResourcesAction,
-  selectGoogleDocsResourceAction,
-} from "@/modules/integrations/google-docs-actions";
+import { disconnectGoogleDocsAction } from "@/modules/integrations/google-docs-actions";
+import Link from "next/link";
 import {
   connectWordPressAction,
   disconnectWordPressAction,
@@ -59,7 +56,7 @@ const GSC_FLASH: Record<string, string> = {
 
 const GDOCS_FLASH: Record<string, string> = {
   connected:
-    "Google Docs / Drive is gekoppeld. Kies hieronder een map of Google Doc als documentenbron voor deze klant.",
+    "Google Drive is gekoppeld. Blader en beheer bestanden onder Documenten → tab Google Drive.",
   denied: "Google-autorisatie geannuleerd.",
   invalid: "Ongeldige OAuth-callback.",
   state: "OAuth-sessie verlopen. Probeer opnieuw te koppelen.",
@@ -245,20 +242,6 @@ export function TenantIntegrationsPanel({
         id: site.siteUrl,
         title: site.siteUrl,
         subtitle: site.permissionLevel || undefined,
-      })),
-    };
-  }, [tenantId]);
-
-  const loadGoogleDocsResources = useCallback(async () => {
-    const result = await listTenantGoogleDocsResourcesAction(tenantId);
-    if (!result.ok) return { ok: false as const, error: result.error };
-    return {
-      ok: true as const,
-      data: (result.data ?? []).map((item) => ({
-        id: item.id,
-        title: item.name,
-        subtitle:
-          item.resourceType === "folder" ? "Google Drive-map" : "Google Doc",
       })),
     };
   }, [tenantId]);
@@ -453,54 +436,96 @@ export function TenantIntegrationsPanel({
         )}
       </section>
 
-      <GoogleIntegrationSection
-        title="Google Docs / Drive"
-        description="Koppel een Google-account en kies een Drive-map of Google Doc als documentenbron voor deze klant (Documenten in VICE)."
-        connected={googleDocs.connected}
-        accountEmail={googleDocs.accountEmail}
-        selectedId={googleDocs.resourceId}
-        selectedLabel={googleDocs.resourceName}
-        lastError={googleDocs.lastError}
-        connectHref={`/api/integrations/google-docs/connect?tenantId=${encodeURIComponent(tenantId)}`}
-        callbackPathLabel="/api/integrations/google-docs/callback"
-        connectButtonLabel="Koppel Google Docs"
-        emptyListMessage="Geen mappen of Google Docs gevonden op dit account."
-        selectPrompt="Kies een Drive-map (aanbevolen) of een Google Doc."
-        selectedMessage={(label) =>
-          googleDocs.resourceType === "folder"
-            ? `Actieve documentenmap: ${label}`
-            : `Gekoppeld document: ${label}`
-        }
-        disconnectedMessage="Google Docs / Drive ontkoppeld."
-        initialFlash={gdocsFlash}
-        flashMessages={GDOCS_FLASH}
-        reloadKey={`${googleDocs.connected}-${googleDocs.updatedAt ?? ""}-${googleDocs.resourceId ?? ""}`}
-        onLoadList={loadGoogleDocsResources}
-        onSelect={async (item) => {
-          const list = await listTenantGoogleDocsResourcesAction(tenantId);
-          const match = list.ok ? list.data?.find((r) => r.id === item.id) : undefined;
-          if (!match) return { ok: false, error: "Item niet gevonden" };
-          const result = await selectGoogleDocsResourceAction(tenantId, match);
-          if (result.ok && result.data) setGoogleDocs(result.data);
-          return result.ok ? { ok: true } : { ok: false, error: result.error };
-        }}
-        onDisconnect={async () => {
-          const result = await disconnectGoogleDocsAction(tenantId);
-          if (result.ok) {
-            setGoogleDocs({
-              connected: false,
-              status: "disconnected",
-              accountEmail: "",
-              resourceType: null,
-              resourceId: null,
-              resourceName: null,
-              resourceUrl: null,
-              lastError: "",
-            });
-          }
-          return result.ok ? { ok: true } : { ok: false, error: result.error };
-        }}
-      />
+      <section className="rounded-lg border border-vice-border bg-vice-surface p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-medium text-vice-text">Google Docs / Drive</h3>
+            <p className="mt-1 max-w-prose text-sm text-vice-text-muted">
+              Koppel het Google-account van de klant. Bestanden beheer je in{" "}
+              <Link href={`/klanten/${tenantId}/documenten?tab=drive`} className="text-vice-gold hover:underline">
+                Documenten → Google Drive
+              </Link>
+              , niet hier.
+            </p>
+          </div>
+          {googleDocs.connected ? (
+            <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800">
+              Gekoppeld
+            </span>
+          ) : (
+            <span className="rounded-md bg-vice-bg px-2 py-1 text-xs font-medium text-vice-text-muted">
+              Niet gekoppeld
+            </span>
+          )}
+        </div>
+
+        {gdocsFlash ? (
+          <p className="mt-4 text-sm text-vice-text">{GDOCS_FLASH[gdocsFlash] ?? null}</p>
+        ) : null}
+        {googleDocs.lastError ? (
+          <p className="mt-2 text-sm text-red-700 dark:text-red-300">{googleDocs.lastError}</p>
+        ) : null}
+
+        {!googleDocs.connected ? (
+          <div className="mt-5">
+            <a
+              href={`/api/integrations/google-docs/connect?tenantId=${encodeURIComponent(tenantId)}`}
+              className="inline-flex rounded-md bg-vice-gold px-4 py-2 text-sm font-medium text-white hover:bg-vice-gold-hover"
+            >
+              Koppel Google Drive
+            </a>
+            <p className="mt-3 text-xs text-vice-text-muted">
+              Redirect-URI: <code className="text-[11px]">/api/integrations/google-docs/callback</code>
+            </p>
+          </div>
+        ) : (
+          <div className="mt-5 space-y-3">
+            <p className="text-sm text-vice-text-muted">
+              Account: <span className="text-vice-text">{googleDocs.accountEmail || "onbekend"}</span>
+            </p>
+            {googleDocs.projectFolderName ? (
+              <p className="text-sm text-vice-text">
+                Projectmap (AI): <strong>{googleDocs.projectFolderName}</strong>
+              </p>
+            ) : null}
+            <Link
+              href={`/klanten/${tenantId}/documenten?tab=drive`}
+              className="inline-flex text-sm font-medium text-vice-gold hover:underline"
+            >
+              Open Google Drive-tab
+            </Link>
+            <div>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy !== ""}
+                onClick={() => {
+                  void (async () => {
+                    setBusy("gdocs-disconnect");
+                    const result = await disconnectGoogleDocsAction(tenantId);
+                    setBusy("");
+                    if (result.ok) {
+                      setGoogleDocs({
+                        connected: false,
+                        status: "disconnected",
+                        accountEmail: "",
+                        projectFolderId: null,
+                        projectFolderName: null,
+                        projectFolderUrl: null,
+                        lastError: "",
+                      });
+                      setMessage("Google Drive ontkoppeld.");
+                      router.refresh();
+                    } else setError(result.error);
+                  })();
+                }}
+              >
+                {busy === "gdocs-disconnect" ? "Bezig…" : "Ontkoppelen"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
 
       <GoogleIntegrationSection
         title="Google Search Console"

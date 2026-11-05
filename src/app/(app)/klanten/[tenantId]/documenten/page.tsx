@@ -1,15 +1,21 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { GoogleDriveWorkspace } from "@/components/documents/google-drive-workspace";
 import { getUserAppContext } from "@/lib/auth/context";
 import { emptyGoogleDocsStatus, parseGoogleDocsPublic } from "@/lib/integrations/google-docs";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function TenantDocumentsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantId: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
   const { tenantId } = await params;
+  const { tab: tabRaw } = await searchParams;
+  const tab = tabRaw === "drive" ? "drive" : "bronnen";
+
   const ctx = await getUserAppContext();
   if (!ctx) redirect("/login");
   if (!ctx.isPlatformAdmin) redirect(`/klanten/${tenantId}`);
@@ -33,6 +39,7 @@ export default async function TenantDocumentsPage({
     : emptyGoogleDocsStatus();
 
   const settingsHref = `/klanten/${tenantId}?tab=instellingen`;
+  const base = `/klanten/${tenantId}/documenten`;
 
   return (
     <div className="p-8">
@@ -48,84 +55,80 @@ export default async function TenantDocumentsPage({
         <span className="text-vice-text">Documenten</span>
       </nav>
 
-      <header className="mb-8">
+      <header className="mb-6">
         <h1 className="text-3xl font-semibold text-vice-text">Documenten</h1>
         <p className="mt-2 max-w-prose text-sm text-vice-text-muted">
-          Centrale documenten voor deze klant. Koppel Google Docs / Drive in{" "}
-          <Link href={settingsHref} className="text-vice-gold hover:underline">
-            Instellingen
-          </Link>
-          .
+          Bronnen in VICE en gekoppelde Google Drive van deze klant.
         </p>
       </header>
 
-      <section className="mb-8 rounded-lg border border-vice-border bg-vice-surface p-6">
-        <h2 className="text-lg font-medium text-vice-text">Google Docs / Drive</h2>
-        {!googleDocs.connected ? (
-          <p className="mt-3 text-sm text-vice-text-muted">
-            Nog niet gekoppeld.{" "}
-            <Link href={settingsHref} className="font-medium text-vice-gold hover:underline">
-              Koppel in Instellingen
-            </Link>
-            .
-          </p>
-        ) : !googleDocs.resourceId ? (
-          <p className="mt-3 text-sm text-amber-800 dark:text-amber-200">
-            Google-account ({googleDocs.accountEmail || "onbekend"}) is gekoppeld — kies nog een map of
-            document in{" "}
-            <Link href={settingsHref} className="font-medium text-vice-gold hover:underline">
-              Instellingen
-            </Link>
-            .
-          </p>
-        ) : (
-          <div className="mt-3 space-y-2 text-sm">
-            <p className="text-vice-text">
-              {googleDocs.resourceType === "folder" ? "Documentenmap" : "Document"}:{" "}
-              <strong>{googleDocs.resourceName}</strong>
-            </p>
-            {googleDocs.resourceUrl ? (
-              <p>
-                <a
-                  href={googleDocs.resourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-vice-gold hover:underline"
-                >
-                  Open in Google Drive
-                </a>
-              </p>
-            ) : null}
-            {googleDocs.lastError ? (
-              <p className="text-red-700 dark:text-red-300">{googleDocs.lastError}</p>
-            ) : null}
-          </div>
-        )}
-      </section>
+      <div className="mb-6 flex gap-1 border-b border-vice-border">
+        <TabLink href={`${base}?tab=bronnen`} active={tab === "bronnen"}>
+          Bronnen in VICE
+        </TabLink>
+        <TabLink href={`${base}?tab=drive`} active={tab === "drive"}>
+          Google Drive
+        </TabLink>
+      </div>
 
-      <section className="rounded-lg border border-vice-border bg-vice-surface p-6">
-        <h2 className="text-lg font-medium text-vice-text">Overige bronnen in VICE</h2>
-        <ul className="mt-4 space-y-3 text-sm">
-          <li>
-            <Link
-              href={`/klanten/${tenantId}/strategie?tab=document`}
-              className="font-medium text-vice-gold hover:underline"
-            >
-              Strategisch auditdocument
-            </Link>
-            <span className="text-vice-text-muted"> — markdown context voor strategie en ICP.</span>
-          </li>
-          <li>
-            <Link
-              href={`/klanten/${tenantId}/meetings`}
-              className="font-medium text-vice-gold hover:underline"
-            >
-              Meetingtranscripten
-            </Link>
-            <span className="text-vice-text-muted"> — opnames en goedgekeurde teksten.</span>
-          </li>
-        </ul>
-      </section>
+      {tab === "drive" ? (
+        <GoogleDriveWorkspace
+          tenantId={tenantId}
+          settingsHref={settingsHref}
+          initialStatus={googleDocs}
+        />
+      ) : (
+        <section className="rounded-lg border border-vice-border bg-vice-surface p-6">
+          <h2 className="text-lg font-medium text-vice-text">Interne bronnen</h2>
+          <ul className="mt-4 space-y-3 text-sm">
+            <li>
+              <Link
+                href={`/klanten/${tenantId}/strategie?tab=document`}
+                className="font-medium text-vice-gold hover:underline"
+              >
+                Strategisch auditdocument
+              </Link>
+              <span className="text-vice-text-muted"> — markdown voor strategie en ICP.</span>
+            </li>
+            <li>
+              <Link
+                href={`/klanten/${tenantId}/meetings`}
+                className="font-medium text-vice-gold hover:underline"
+              >
+                Meetingtranscripten
+              </Link>
+              <span className="text-vice-text-muted"> — opnames en goedgekeurde teksten.</span>
+            </li>
+          </ul>
+          <p className="mt-4 text-sm text-vice-text-muted">
+            Google Drive: tab <Link href={`${base}?tab=drive`} className="text-vice-gold hover:underline">Google Drive</Link>
+            {googleDocs.connected ? "" : " (koppel eerst in Instellingen)"}.
+          </p>
+        </section>
+      )}
     </div>
+  );
+}
+
+function TabLink({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={
+        active
+          ? "border-b-2 border-vice-gold px-4 py-2 text-sm font-medium text-vice-text"
+          : "px-4 py-2 text-sm text-vice-text-muted hover:text-vice-text"
+      }
+    >
+      {children}
+    </Link>
   );
 }
