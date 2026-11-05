@@ -101,7 +101,17 @@ export default async function TenantDocumentsPage({
             </li>
           </ul>
           <p className="mt-4 text-sm text-vice-text-muted">
-            Google Drive: tab <Link href={`${base}?tab=drive`} className="text-vice-gold hover:underline">Google Drive</Link>
+            Google Drive:{" "}
+            <Link
+              href={
+                googleDocs.projectFolderId ? `${base}?tab=drive#vice-project-folder` : `${base}?tab=drive`
+              }
+              className="text-vice-gold hover:underline"
+            >
+              {googleDocs.projectFolderName
+                ? `Projectmap «${googleDocs.projectFolderName}»`
+                : "tab Google Drive"}
+            </Link>
             {googleDocs.connected ? "" : " (koppel eerst in Instellingen)"}.
           </p>
         </section>

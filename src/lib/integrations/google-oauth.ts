@@ -51,7 +51,12 @@ export function parseOAuthState(state: string): { tenantId: string } | null {
   return { tenantId };
 }
 
-export function buildGoogleAuthUrl(scopes: string[], state: string, redirectUri: string) {
+export function buildGoogleAuthUrl(
+  scopes: string[],
+  state: string,
+  redirectUri: string,
+  options?: { includeGrantedScopes?: boolean },
+) {
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID ?? "",
     redirect_uri: redirectUri,
@@ -61,7 +66,27 @@ export function buildGoogleAuthUrl(scopes: string[], state: string, redirectUri:
     prompt: "consent",
     state,
   });
+  if (options?.includeGrantedScopes === false) {
+    params.set("include_granted_scopes", "false");
+  }
   return `${GOOGLE_AUTH}?${params.toString()}`;
+}
+
+export async function fetchGoogleAccessTokenScopes(accessToken: string): Promise<string[]> {
+  const res = await fetch(
+    `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
+  );
+  const json = (await res.json()) as { scope?: string; error?: string };
+  if (!res.ok || !json.scope) return [];
+  return json.scope.split(/\s+/).filter(Boolean);
+}
+
+export async function revokeGoogleToken(token: string): Promise<void> {
+  if (!token.trim()) return;
+  await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
 }
 
 export async function exchangeGoogleCode(code: string, redirectUri: string) {

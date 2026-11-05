@@ -9,11 +9,23 @@ import {
 } from "@/lib/integrations/google-oauth";
 
 /** Full Drive + Docs for browse/CRUD in Documenten (users must reconnect after scope change). */
-const SCOPES = [
+export const GOOGLE_DOCS_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/drive",
   "https://www.googleapis.com/auth/documents",
   "https://www.googleapis.com/auth/userinfo.email",
-];
+] as const;
+
+/** Required for create/upload/delete in Drive (not drive.readonly). */
+export const GOOGLE_DRIVE_WRITE_SCOPE = "https://www.googleapis.com/auth/drive";
+
+const SCOPES = [...GOOGLE_DOCS_OAUTH_SCOPES];
+
+export function googleDriveTokenCanWrite(scopes: string[]): boolean {
+  return scopes.includes(GOOGLE_DRIVE_WRITE_SCOPE);
+}
+
+export const GOOGLE_DRIVE_INSUFFICIENT_SCOPE_HELP =
+  "Je Google-koppeling heeft alleen leestoegang (oude koppeling). Ga naar Instellingen → Ontkoppelen → opnieuw Koppel Google Drive, of klik Autoriseer opnieuw en geef schrijftoegang tot Drive.";
 
 const CONNECT_PATH = "/api/integrations/google-docs/connect";
 const CALLBACK_PATH = "/api/integrations/google-docs/callback";
@@ -38,7 +50,9 @@ export function googleDocsRedirectUri(baseUrl?: string) {
 }
 
 export function buildGoogleDocsAuthUrl(state: string, redirectUri?: string) {
-  return buildGoogleAuthUrl(SCOPES, state, redirectUri ?? googleDocsRedirectUri());
+  return buildGoogleAuthUrl(SCOPES, state, redirectUri ?? googleDocsRedirectUri(), {
+    includeGrantedScopes: false,
+  });
 }
 
 export async function exchangeGoogleDocsCode(code: string, redirectUri?: string) {

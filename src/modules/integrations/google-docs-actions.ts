@@ -10,7 +10,17 @@ import {
   uploadDriveFile,
   type DriveBrowseItem,
 } from "@/lib/integrations/google-drive-api";
-import { parseGoogleDocsPublic, type GoogleDocsPublicStatus } from "@/lib/integrations/google-docs";
+import {
+  GOOGLE_DRIVE_INSUFFICIENT_SCOPE_HELP,
+  googleDriveTokenCanWrite,
+  parseGoogleDocsPublic,
+  type GoogleDocsPublicStatus,
+} from "@/lib/integrations/google-docs";
+import {
+  fetchGoogleAccessTokenScopes,
+  parseGoogleIntegrationSecrets,
+  revokeGoogleToken,
+} from "@/lib/integrations/google-oauth";
 import { requirePlatformAdminMfa, requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -35,6 +45,27 @@ function revalidateDocs(tenantId: string) {
   revalidatePath(`/klanten/${tenantId}/documenten`);
 }
 
+function mapDriveActionError(error: unknown): string {
+  const msg = error instanceof Error ? error.message : "Actie mislukt";
+  if (/insufficient authentication scopes/i.test(msg)) {
+    return GOOGLE_DRIVE_INSUFFICIENT_SCOPE_HELP;
+  }
+  return msg;
+}
+
+export async function checkGoogleDriveWriteAccessAction(
+  tenantId: string,
+): Promise<ActionResult<{ canWrite: boolean }>> {
+  try {
+    const supabase = await authed();
+    const accessToken = await driveToken(supabase, tenantId);
+    const scopes = await fetchGoogleAccessTokenScopes(accessToken);
+    return { ok: true, data: { canWrite: googleDriveTokenCanWrite(scopes) } };
+  } catch (error) {
+    return { ok: false, error: mapDriveActionError(error) };
+  }
+}
+
 export async function getGoogleDocsStatusAction(
   tenantId: string,
 ): Promise<ActionResult<GoogleDocsPublicStatus>> {
@@ -57,7 +88,7 @@ export async function listDriveFolderAction(
     const items = await listDriveFolder(accessToken, folderId || "root");
     return { ok: true, data: items };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Map laden mislukt" };
+    return { ok: false, error: mapDriveActionError(error) };
   }
 }
 
@@ -73,7 +104,7 @@ export async function createDriveFolderAction(
     const item = await createDriveFolder(accessToken, parentId || "root", name);
     return { ok: true, data: item };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Map aanmaken mislukt" };
+    return { ok: false, error: mapDriveActionError(error) };
   }
 }
 
@@ -88,7 +119,7 @@ export async function createGoogleDocumentAction(
     const item = await createGoogleDocument(accessToken, parentId || "root", title);
     return { ok: true, data: item };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Document aanmaken mislukt" };
+    return { ok: false, error: mapDriveActionError(error) };
   }
 }
 
@@ -104,7 +135,7 @@ export async function renameDriveItemAction(
     const item = await renameDriveItem(accessToken, fileId, name);
     return { ok: true, data: item };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Hernoemen mislukt" };
+    return { ok: false, error: mapDriveActionError(error) };
   }
 }
 
@@ -115,7 +146,7 @@ export async function deleteDriveItemAction(tenantId: string, fileId: string): P
     await deleteDriveItem(accessToken, fileId);
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Verwijderen mislukt" };
+    return { ok: false, error: mapDriveActionError(error) };
   }
 }
 
@@ -144,7 +175,7 @@ export async function uploadDriveFileAction(
     );
     return { ok: true, data: item };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Upload mislukt" };
+    return { ok: false, error: mapDriveActionError(error) };
   }
 }
 
@@ -187,6 +218,21 @@ export async function clearGoogleDriveProjectFolderAction(
 
 export async function disconnectGoogleDocsAction(tenantId: string): Promise<ActionResult> {
   const supabase = await authed();
+  const secretsResult = await supabase.schema("app").rpc("get_tenant_integration_secrets", {
+    p_tenant_id: tenantId,
+    p_provider: "google_docs",
+  });
+  if (!secretsResult.error) {
+    const secrets = parseGoogleIntegrationSecrets(secretsResult.data);
+    const revoke = secrets?.refreshToken || secrets?.accessToken;
+    if (revoke) {
+      try {
+        await revokeGoogleToken(revoke);
+      } catch {
+        /* best-effort */
+      }
+    }
+  }
   const result = await supabase.schema("app").rpc("disconnect_tenant_integration", {
     p_tenant_id: tenantId,
     p_provider: "google_docs",

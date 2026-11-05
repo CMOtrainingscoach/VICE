@@ -1,10 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { fetchGoogleAccountEmail, parseOAuthState, resolveAppBaseUrl } from "@/lib/integrations/google-oauth";
+import {
+  fetchGoogleAccessTokenScopes,
+  fetchGoogleAccountEmail,
+  parseOAuthState,
+  resolveAppBaseUrl,
+} from "@/lib/integrations/google-oauth";
 import {
   GOOGLE_DOCS_OAUTH_COOKIE,
   GOOGLE_DOCS_REDIRECT_COOKIE,
   exchangeGoogleDocsCode,
   googleDocsRedirectUri,
+  googleDriveTokenCanWrite,
 } from "@/lib/integrations/google-docs";
 import { getSession, isPlatformAdmin } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
@@ -48,6 +54,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const tokens = await exchangeGoogleDocsCode(code, redirectUri);
+    if (!tokens.refreshToken?.trim()) {
+      return fail("no-refresh");
+    }
+    const grantedScopes = await fetchGoogleAccessTokenScopes(tokens.accessToken);
+    if (!googleDriveTokenCanWrite(grantedScopes)) {
+      return fail("scope");
+    }
     const email = await fetchGoogleAccountEmail(tokens.accessToken);
     const expires = new Date(Date.now() + tokens.expiresIn * 1000).toISOString();
     const supabase = await createClient();
@@ -58,7 +71,7 @@ export async function GET(request: NextRequest) {
       p_access_token: tokens.accessToken,
       p_refresh_token: tokens.refreshToken,
       p_token_expires_at: expires,
-      p_metadata: {},
+      p_metadata: { oauthScopes: grantedScopes.join(" ") },
     });
     if (upsert.error) {
       console.error("google_docs upsert", upsert.error.message);

@@ -64,6 +64,10 @@ const GDOCS_FLASH: Record<string, string> = {
   save: "Koppeling opslaan mislukt. Controleer of migratie 20260330136421 is toegepast.",
   "not-configured": "Zet GOOGLE_CLIENT_ID en GOOGLE_CLIENT_SECRET in de omgeving.",
   forbidden: "Geen toegang tot deze koppeling.",
+  scope:
+    "Google heeft geen schrijftoegang tot Drive gegeven. Ontkoppel, koppel opnieuw en accepteer alle gevraagde rechten.",
+  "no-refresh":
+    "Geen vernieuwingstoken ontvangen. Klik eerst op Ontkoppelen, daarna opnieuw op Koppel Google Drive.",
 };
 
 const GA_FLASH: Record<string, string> = {
@@ -494,6 +498,16 @@ export function TenantIntegrationsPanel({
             >
               Open Google Drive-tab
             </Link>
+            <p className="text-xs text-vice-text-muted">
+              Werkt mappen aanmaken niet?{" "}
+              <a
+                href={`/api/integrations/google-docs/connect?tenantId=${encodeURIComponent(tenantId)}`}
+                className="font-medium text-vice-gold hover:underline"
+              >
+                Autoriseer opnieuw
+              </a>{" "}
+              (schrijftoegang) of ontkoppel eerst en koppel daarna opnieuw.
+            </p>
             <div>
               <Button
                 type="button"
