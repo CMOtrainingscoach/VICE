@@ -23,12 +23,15 @@ import {
   setWebsitePageInMemoryAction,
 } from "@/modules/website/crawl-actions";
 
+const CRAWL_TIME_ZONE = "Europe/Brussels";
+
 function formatWhen(iso: string | null): string {
   if (!iso) return "Nog niet opgehaald";
   try {
     return new Intl.DateTimeFormat("nl-BE", {
       dateStyle: "medium",
       timeStyle: "short",
+      timeZone: CRAWL_TIME_ZONE,
     }).format(new Date(iso));
   } catch {
     return iso;
@@ -161,7 +164,9 @@ export function WebsiteCrawlWorkspace({
                 <span> — bron: {settings.sourceHost}</span>
               ) : null}
             </p>
-            <p className="mt-0.5 text-xs text-vice-text-muted">Laatst opgehaald: {formatWhen(settings.lastFetchedAt)}</p>
+            <p className="mt-0.5 text-xs text-vice-text-muted" suppressHydrationWarning>
+              Laatst opgehaald: {formatWhen(settings.lastFetchedAt)}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="inline-flex items-center rounded-md bg-vice-gold/15 px-2.5 py-1 text-xs font-medium text-vice-text">

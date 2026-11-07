@@ -1,10 +1,22 @@
 import type { NextConfig } from "next";
 
+function normalizeAppOrigin(raw: string | undefined): string | null {
+  const cleaned = (raw ?? "").trim().replace(/\)+$/, "").replace(/\/+$/, "");
+  if (!cleaned) return null;
+  try {
+    return new URL(cleaned.startsWith("http") ? cleaned : `https://${cleaned}`).origin;
+  } catch {
+    return null;
+  }
+}
+
 function appOrigin(): string {
-  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (configured) return configured.replace(/\/$/, "");
-  const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) return `https://${vercel.replace(/\/$/, "")}`;
+  const configured = normalizeAppOrigin(process.env.NEXT_PUBLIC_APP_URL);
+  if (configured) return configured;
+  const vercel = normalizeAppOrigin(
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL.trim()}` : undefined,
+  );
+  if (vercel) return vercel;
   return "http://localhost:3000";
 }
 
