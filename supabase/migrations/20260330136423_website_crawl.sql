@@ -90,29 +90,34 @@ begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
   if not app.has_capability(p_tenant_id, 'audit.edit') then raise exception 'Forbidden'; end if;
 
-  return coalesce((
-    select jsonb_agg(jsonb_build_object(
-      'id', p.id,
-      'url', p.url,
-      'urlPath', p.url_path,
-      'pageType', p.page_type,
-      'language', p.language,
-      'crawlState', p.crawl_state,
-      'inMemory', p.in_memory,
-      'archived', p.archived,
-      'title', p.title,
-      'httpStatus', p.http_status,
-      'lastCrawledAt', p.last_crawled_at
-    ) order by p.page_type, p.url_path),
-    '[]'::jsonb
+  return (
+    select coalesce(
+      jsonb_agg(
+        jsonb_build_object(
+          'id', p.id,
+          'url', p.url,
+          'urlPath', p.url_path,
+          'pageType', p.page_type,
+          'language', p.language,
+          'crawlState', p.crawl_state,
+          'inMemory', p.in_memory,
+          'archived', p.archived,
+          'title', p.title,
+          'httpStatus', p.http_status,
+          'lastCrawledAt', p.last_crawled_at
+        )
+        order by p.page_type, p.url_path
+      ),
+      '[]'::jsonb
+    )
     from app.tenant_website_pages p
-    where p.tenant_id = p_tenant_id
+    where p.tenant_id = list_website_crawl_pages.p_tenant_id
       and (p_include_archived or not p.archived)
       and (v_search = '' or lower(p.url) like '%' || v_search || '%' or lower(p.title) like '%' || v_search || '%')
       and (btrim(coalesce(p_page_type, '')) = '' or p.page_type = p_page_type)
       and (btrim(coalesce(p_language, '')) = '' or p.language = p_language)
       and (btrim(coalesce(p_crawl_state, '')) = '' or p.crawl_state = p_crawl_state)
-  ), '[]'::jsonb);
+  );
 end;
 $$;
 

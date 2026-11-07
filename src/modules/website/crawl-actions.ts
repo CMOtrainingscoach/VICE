@@ -147,6 +147,7 @@ export async function saveAndFetchWebsiteSitemapAction(
       p_crawl_state: "",
       p_include_archived: false,
     });
+    if (pagesRes.error) return { ok: false, error: migrationMsg(pagesRes.error.message) };
     revalidate(tenantId);
     return {
       ok: true,
@@ -214,6 +215,7 @@ export async function recrawlWebsitePagesAction(
       p_crawl_state: "",
       p_include_archived: false,
     });
+    if (fresh.error) return { ok: false, error: migrationMsg(fresh.error.message) };
     revalidate(tenantId);
     return {
       ok: true,

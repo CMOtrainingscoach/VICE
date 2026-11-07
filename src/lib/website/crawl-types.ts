@@ -36,7 +36,7 @@ export type WebsiteCrawlPage = {
 };
 
 export const WEBSITE_CRAWL_MIGRATION =
-  "Pas migratie 20260330136423_website_crawl.sql toe in de Supabase SQL-editor.";
+  "Pas migraties 20260330136423 en 20260330136424_website_crawl.sql toe in de Supabase SQL-editor.";
 
 export const PAGE_TYPE_LABELS: Record<string, string> = {
   homepage: "Homepage",
